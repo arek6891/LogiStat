@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}LogiStat{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    {% if current_user.is_authenticated %}
+    <div class="app-container">
+        <nav class="sidebar">
+            <div class="sidebar-logo">
+                <h1>LogiStat</h1>
+                <div class="subtitle">Workforce Management</div>
+            </div>
+            <ul class="sidebar-nav">
+                <li><a href="{{ url_for('scanner', shift_number=1) }}"
+                       class="{% if request.endpoint == 'scanner' %}active{% endif %}">
+                    <span class="icon">📷</span> Skaner zmian
+                </a></li>
+                <li><a href="{{ url_for('assignment') }}"
+                       class="{% if request.endpoint == 'assignment' %}active{% endif %}">
+                    <span class="icon">📋</span> Przydzielanie
+                </a></li>
+                <li><a href="{{ url_for('data_entry') }}"
+                       class="{% if request.endpoint == 'data_entry' %}active{% endif %}">
+                    <span class="icon">✏️</span> Wpis ilości
+                </a></li>
+                <li><a href="{{ url_for('stats') }}"
+                       class="{% if request.endpoint == 'stats' %}active{% endif %}">
+                    <span class="icon">📊</span> Statystyki
+                </a></li>
+                {% if current_user.role == 'admin' %}
+                <li><a href="{{ url_for('admin_activities') }}"
+                       class="{% if request.endpoint == 'admin_activities' %}active{% endif %}">
+                    <span class="icon">⚙️</span> Czynności
+                </a></li>
+                {% endif %}
+                <li><a href="{{ url_for('admin_users') }}"
+                       class="{% if request.endpoint == 'admin_users' %}active{% endif %}">
+                    <span class="icon">👤</span> Użytkownicy
+                </a></li>
+            </ul>
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <div class="avatar">{{ current_user.display_name[0] }}</div>
+                    <div>
+                        <div style="font-weight:600;">{{ current_user.display_name }}</div>
+                        <div style="color:var(--text-muted);font-size:0.75rem;">{{ current_user.role }}</div>
+                    </div>
+                </div>
+                <a href="{{ url_for('logout') }}" class="btn btn-ghost btn-sm" style="margin-top:12px;width:100%;justify-content:center;">Wyloguj</a>
+            </div>
+        </nav>
+        <main class="main-content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+    {% else %}
+    {% block content_noauth %}{% endblock %}
+    {% endif %}
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+    function showToast(message, type = 'success') {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+        toast.className = `toast toast-${type}`;
+        toast.innerHTML = `<span>${icons[type] || ''}</span><span>${message}</span>`;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 4000);
+    }
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

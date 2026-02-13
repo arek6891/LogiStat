@@ -1,0 +1,152 @@
+{% extends 'base.html' %}
+{% block title %}LogiStat — Wpis ilości{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>✏️ Wpis ilości</h2>
+    <p class="subtitle">Wpisz ilości zrobione przez pracowników</p>
+</div>
+
+<div class="assignment-controls">
+    <div class="form-group" style="margin-bottom:0;">
+        <label>Data</label>
+        <input type="date" id="entryDate" class="form-control" style="width:180px;">
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+        <label>Zmiana</label>
+        <div class="shift-tabs" style="margin-bottom:0;">
+            <button class="shift-tab active" data-shift="1" onclick="switchShift(1)">Zmiana 1</button>
+            <button class="shift-tab" data-shift="2" onclick="switchShift(2)">Zmiana 2</button>
+        </div>
+    </div>
+    <div style="margin-left:auto;align-self:flex-end;">
+        <button class="btn btn-primary" onclick="saveEntries()">💾 Zapisz wszystko</button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="table-container">
+        <table class="data-entry-table" id="dataTable">
+            <thead>
+                <tr>
+                    <th>Pracownik</th>
+                    <th>Czynność</th>
+                    <th>Ilość</th>
+                    <th>Uwagi</th>
+                </tr>
+            </thead>
+            <tbody id="dataBody">
+                <tr>
+                    <td colspan="4" class="empty-state">
+                        <p>Wybierz datę i zmianę, aby załadować dane.</p>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let currentShift = 1;
+
+    document.getElementById('entryDate').valueAsDate = new Date();
+
+    function switchShift(num) {
+        currentShift = num;
+        document.querySelectorAll('.shift-tab').forEach(t => {
+            t.classList.toggle('active', parseInt(t.dataset.shift) === num);
+        });
+        loadEntries();
+    }
+
+    document.getElementById('entryDate').addEventListener('change', loadEntries);
+    document.addEventListener('DOMContentLoaded', loadEntries);
+
+    async function loadEntries() {
+        const dateVal = document.getElementById('entryDate').value;
+        const tbody = document.getElementById('dataBody');
+
+        try {
+            const res = await fetch(`/api/daily-stats?date=${dateVal}&shift_number=${currentShift}`);
+            const data = await res.json();
+
+            if (!data.assignments || data.assignments.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="empty-state"><div class="icon">📝</div><p>Brak przydziałów na tę datę i zmianę.<br>Najpierw przydziel pracowników do czynności.</p></td></tr>';
+                return;
+            }
+
+            // Build existing stats map
+            const statsMap = {};
+            (data.stats || []).forEach(s => {
+                statsMap[`${s.user_id}-${s.activity_id}`] = s;
+            });
+
+            tbody.innerHTML = '';
+            data.assignments.forEach(a => {
+                const key = `${a.user_id}-${a.activity_id}`;
+                const stat = statsMap[key] || {};
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                <td>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <div class="mini-avatar" style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#a78bfa);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.7rem;color:white;">
+                            ${a.user.display_name[0]}
+                        </div>
+                        ${a.user.display_name}
+                    </div>
+                </td>
+                <td>${a.activity.name}</td>
+                <td><input type="number" class="qty-input" data-user="${a.user_id}" data-activity="${a.activity_id}"
+                    value="${stat.quantity || 0}" min="0"></td>
+                <td><input type="text" class="form-control note-input" data-user="${a.user_id}" data-activity="${a.activity_id}"
+                    value="${stat.note || ''}" placeholder="Uwagi..." style="width:200px;padding:6px 10px;font-size:0.85rem;"></td>
+            `;
+                tbody.appendChild(tr);
+            });
+        } catch (err) {
+            showToast('Błąd ładowania danych.', 'error');
+        }
+    }
+
+    async function saveEntries() {
+        const dateVal = document.getElementById('entryDate').value;
+        const entries = [];
+
+        document.querySelectorAll('.qty-input').forEach(input => {
+            const noteInput = document.querySelector(`.note-input[data-user="${input.dataset.user}"][data-activity="${input.dataset.activity}"]`);
+            entries.push({
+                user_id: parseInt(input.dataset.user),
+                activity_id: parseInt(input.dataset.activity),
+                quantity: parseInt(input.value) || 0,
+                note: noteInput ? noteInput.value : ''
+            });
+        });
+
+        if (entries.length === 0) {
+            showToast('Brak danych do zapisania.', 'warning');
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/daily-stats', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    date: dateVal,
+                    shift_number: currentShift,
+                    entries: entries
+                })
+            });
+            if (res.ok) {
+                showToast('Statystyki zapisane!', 'success');
+            } else {
+                showToast('Błąd zapisu.', 'error');
+            }
+        } catch (err) {
+            showToast('Błąd połączenia.', 'error');
+        }
+    }
+</script>
+{% endblock %}

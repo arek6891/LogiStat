@@ -1,0 +1,271 @@
+{% extends 'base.html' %}
+{% block title %}LogiStat — Przydzielanie{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>📋 Przydzielanie do czynności</h2>
+    <p class="subtitle">Przeciągnij pracowników do odpowiednich czynności</p>
+</div>
+
+<div class="assignment-controls">
+    <div class="form-group" style="margin-bottom:0;">
+        <label>Data</label>
+        <input type="date" id="assignDate" class="form-control" style="width:180px;">
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+        <label>Zmiana</label>
+        <div class="shift-tabs" style="margin-bottom:0;">
+            <button class="shift-tab active" data-shift="1" onclick="switchShift(1)">Zmiana 1</button>
+            <button class="shift-tab" data-shift="2" onclick="switchShift(2)">Zmiana 2</button>
+        </div>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:10px;align-self:flex-end;">
+        <button class="btn btn-ghost" onclick="loadSuggestions()">🤖 Sugestie AI</button>
+        <button class="btn btn-primary" onclick="saveAssignments()">💾 Zapisz</button>
+    </div>
+</div>
+
+<div class="assignment-board">
+    <div class="assignment-column-unassigned">
+        <div class="assignment-column">
+            <div class="assignment-column-header">
+                <span>Dostępni pracownicy</span>
+                <span class="count" id="unassignedCount">0</span>
+            </div>
+            <div class="assignment-drop-zone" id="unassignedZone" data-activity="0">
+            </div>
+        </div>
+    </div>
+
+    <div class="assignment-columns" id="activityColumns">
+        {% for activity in activities %}
+        <div class="assignment-column">
+            <div class="assignment-column-header">
+                <span>{{ activity.name }}</span>
+                <span class="count" data-count-for="{{ activity.id }}">0</span>
+            </div>
+            <div class="assignment-drop-zone" id="zone-{{ activity.id }}" data-activity="{{ activity.id }}">
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let currentShift = 1;
+    let selectedCards = new Set();
+
+    // Init date to today
+    document.getElementById('assignDate').valueAsDate = new Date();
+
+    function switchShift(num) {
+        currentShift = num;
+        document.querySelectorAll('.shift-tab').forEach(t => {
+            t.classList.toggle('active', parseInt(t.dataset.shift) === num);
+        });
+        loadData();
+    }
+
+    // ── Load assignment data ──
+    async function loadData() {
+        const dateVal = document.getElementById('assignDate').value;
+        try {
+            const res = await fetch(`/api/assignment/data?date=${dateVal}&shift_number=${currentShift}`);
+            const data = await res.json();
+            renderBoard(data);
+        } catch (err) {
+            showToast('Błąd ładowania danych.', 'error');
+        }
+    }
+
+    function renderBoard(data) {
+        // Clear all zones
+        document.querySelectorAll('.assignment-drop-zone').forEach(z => z.innerHTML = '');
+        selectedCards.clear();
+
+        const assignedMap = {};
+        data.assignments.forEach(a => {
+            assignedMap[a.user_id] = a.activity_id;
+        });
+
+        // Render assigned users into their activity zones
+        data.attendees.forEach(user => {
+            const activityId = assignedMap[user.id] || 0;
+            const zoneId = activityId === 0 ? 'unassignedZone' : `zone-${activityId}`;
+            const zone = document.getElementById(zoneId);
+            if (zone) {
+                zone.appendChild(createUserCard(user));
+            }
+        });
+
+        updateCounts();
+    }
+
+    function createUserCard(user) {
+        const card = document.createElement('div');
+        card.className = 'assignment-user-card';
+        card.dataset.userId = user.id;
+        card.draggable = true;
+        card.innerHTML = `
+        <div class="checkbox"></div>
+        <div class="mini-avatar">${user.display_name[0]}</div>
+        <span>${user.display_name}</span>
+    `;
+
+        // Click to select/deselect
+        card.addEventListener('click', (e) => {
+            e.preventDefault();
+            card.classList.toggle('selected');
+            if (card.classList.contains('selected')) {
+                selectedCards.add(card);
+            } else {
+                selectedCards.delete(card);
+            }
+        });
+
+        // Drag single or group
+        card.addEventListener('dragstart', (e) => {
+            if (!card.classList.contains('selected')) {
+                // If dragging an unselected card, clear selection and select only this one
+                selectedCards.forEach(c => c.classList.remove('selected'));
+                selectedCards.clear();
+                card.classList.add('selected');
+                selectedCards.add(card);
+            }
+            // Store user IDs being dragged
+            const ids = [...selectedCards].map(c => c.dataset.userId);
+            e.dataTransfer.setData('text/plain', JSON.stringify(ids));
+            selectedCards.forEach(c => c.classList.add('dragging'));
+        });
+
+        card.addEventListener('dragend', () => {
+            selectedCards.forEach(c => c.classList.remove('dragging'));
+        });
+
+        return card;
+    }
+
+    // ── Drop zones ──
+    document.addEventListener('DOMContentLoaded', () => {
+        loadData();
+        setupDropZones();
+    });
+
+    document.getElementById('assignDate').addEventListener('change', loadData);
+
+    function setupDropZones() {
+        document.querySelectorAll('.assignment-drop-zone').forEach(zone => {
+            zone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                zone.classList.add('drag-over');
+            });
+
+            zone.addEventListener('dragleave', () => {
+                zone.classList.remove('drag-over');
+            });
+
+            zone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                zone.classList.remove('drag-over');
+
+                const userIds = JSON.parse(e.dataTransfer.getData('text/plain'));
+                userIds.forEach(uid => {
+                    const card = document.querySelector(`.assignment-user-card[data-user-id="${uid}"]`);
+                    if (card) {
+                        zone.appendChild(card);
+                        card.classList.remove('selected', 'dragging');
+                    }
+                });
+                selectedCards.clear();
+                updateCounts();
+            });
+        });
+    }
+
+    function updateCounts() {
+        // Unassigned count
+        const unassigned = document.getElementById('unassignedZone').children.length;
+        document.getElementById('unassignedCount').textContent = unassigned;
+
+        // Per-activity counts
+        document.querySelectorAll('[data-count-for]').forEach(badge => {
+            const actId = badge.dataset.countFor;
+            const zone = document.getElementById(`zone-${actId}`);
+            badge.textContent = zone ? zone.children.length : 0;
+        });
+    }
+
+    // ── AI Suggestions ──
+    async function loadSuggestions() {
+        const dateVal = document.getElementById('assignDate').value;
+        try {
+            const res = await fetch(`/api/assignment/suggestions?date=${dateVal}&shift_number=${currentShift}`);
+            const data = await res.json();
+
+            if (!data.suggestions || data.suggestions.length === 0) {
+                showToast('Brak danych do sugestii.', 'info');
+                return;
+            }
+
+            // Move all cards back to unassigned first
+            const allCards = document.querySelectorAll('.assignment-user-card');
+            const unassignedZone = document.getElementById('unassignedZone');
+            allCards.forEach(c => unassignedZone.appendChild(c));
+
+            // Apply suggestions
+            data.suggestions.forEach(s => {
+                const card = document.querySelector(`.assignment-user-card[data-user-id="${s.user_id}"]`);
+                const zone = document.getElementById(`zone-${s.activity_id}`);
+                if (card && zone) {
+                    zone.appendChild(card);
+                }
+            });
+
+            updateCounts();
+            showToast('Sugestie AI załadowane. Możesz je zmienić.', 'success');
+        } catch (err) {
+            showToast('Błąd ładowania sugestii.', 'error');
+        }
+    }
+
+    // ── Save ──
+    async function saveAssignments() {
+        const dateVal = document.getElementById('assignDate').value;
+        const assignments = [];
+
+        document.querySelectorAll('.assignment-drop-zone').forEach(zone => {
+            const activityId = parseInt(zone.dataset.activity);
+            if (activityId === 0) return; // skip unassigned
+
+            zone.querySelectorAll('.assignment-user-card').forEach(card => {
+                assignments.push({
+                    user_id: parseInt(card.dataset.userId),
+                    activity_id: activityId,
+                    is_suggestion: false
+                });
+            });
+        });
+
+        try {
+            const res = await fetch('/api/assignment/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    date: dateVal,
+                    shift_number: currentShift,
+                    assignments: assignments
+                })
+            });
+            if (res.ok) {
+                showToast('Przydzielenie zapisane!', 'success');
+            } else {
+                showToast('Błąd zapisu.', 'error');
+            }
+        } catch (err) {
+            showToast('Błąd połączenia.', 'error');
+        }
+    }
+</script>
+{% endblock %}

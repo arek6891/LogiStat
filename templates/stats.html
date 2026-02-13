@@ -1,0 +1,287 @@
+{% extends 'base.html' %}
+{% block title %}LogiStat — Statystyki{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>📊 Statystyki</h2>
+    <p class="subtitle">Sprawdź wyniki pracowników per czynność, dzień i miesiąc</p>
+</div>
+
+<div class="stats-grid">
+    <!-- User list -->
+    <div class="card">
+        <div class="card-header">
+            <h3>Pracownicy</h3>
+        </div>
+        <input type="text" id="userSearch" class="form-control" placeholder="Szukaj..." style="margin-bottom:12px;">
+        <div class="user-list" id="userList">
+            {% for user in users %}
+            <div class="user-list-item" data-user-id="{{ user.id }}"
+                onclick="selectUser({{ user.id }}, '{{ user.display_name }}')">
+                <div class="mini-avatar"
+                    style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#a78bfa);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.7rem;color:white;flex-shrink:0;">
+                    {{ user.display_name[0] }}
+                </div>
+                <span>{{ user.display_name }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Stats detail -->
+    <div>
+        <div id="statsPlaceholder" class="card" style="text-align:center;padding:80px 24px;">
+            <div style="font-size:3rem;margin-bottom:16px;">📊</div>
+            <p style="color:var(--text-secondary);">Wybierz pracownika z listy po lewej stronie</p>
+        </div>
+
+        <div id="statsDetail" style="display:none;">
+            <!-- Filters -->
+            <div class="card" style="margin-bottom:16px;">
+                <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+                    <h3 id="statsUserName" style="margin-right:auto;"></h3>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Czynność</label>
+                        <select id="filterActivity" class="form-control" style="width:180px;"
+                            onchange="loadUserStats()">
+                            <option value="">Wszystkie</option>
+                            {% for a in activities %}
+                            <option value="{{ a.id }}">{{ a.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Od</label>
+                        <input type="date" id="filterFrom" class="form-control" style="width:160px;"
+                            onchange="loadUserStats()">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Do</label>
+                        <input type="date" id="filterTo" class="form-control" style="width:160px;"
+                            onchange="loadUserStats()">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Monthly summary -->
+            <div class="card" style="margin-bottom:16px;">
+                <div class="card-header">
+                    <h3>Podsumowanie miesięczne</h3>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Miesiąc</th>
+                                <th>Czynność</th>
+                                <th>Suma ilości</th>
+                                <th>Dni pracy</th>
+                                <th>Średnia/dzień</th>
+                            </tr>
+                        </thead>
+                        <tbody id="monthlyBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Chart -->
+            <div class="card" style="margin-bottom:16px;">
+                <div class="card-header">
+                    <h3>Wykres dzienny</h3>
+                </div>
+                <canvas id="dailyChart" height="100"></canvas>
+            </div>
+
+            <!-- Daily details -->
+            <div class="card">
+                <div class="card-header">
+                    <h3>Szczegóły dzienne</h3>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Zmiana</th>
+                                <th>Czynność</th>
+                                <th>Ilość</th>
+                                <th>Uwagi</th>
+                                <th>Wpisał</th>
+                                <th>Zmienił</th>
+                                <th>Akcje</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dailyBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let currentUserId = null;
+    let dailyChart = null;
+
+    // User search
+    document.getElementById('userSearch').addEventListener('input', (e) => {
+        const q = e.target.value.toLowerCase();
+        document.querySelectorAll('.user-list-item').forEach(item => {
+            item.style.display = item.textContent.toLowerCase().includes(q) ? '' : 'none';
+        });
+    });
+
+    // Set default date range (last 30 days)
+    const today = new Date();
+    const thirtyAgo = new Date(today);
+    thirtyAgo.setDate(thirtyAgo.getDate() - 30);
+    document.getElementById('filterTo').valueAsDate = today;
+    document.getElementById('filterFrom').valueAsDate = thirtyAgo;
+
+    function selectUser(userId, name) {
+        currentUserId = userId;
+        document.querySelectorAll('.user-list-item').forEach(i =>
+            i.classList.toggle('active', parseInt(i.dataset.userId) === userId));
+        document.getElementById('statsPlaceholder').style.display = 'none';
+        document.getElementById('statsDetail').style.display = 'block';
+        document.getElementById('statsUserName').textContent = name;
+        loadUserStats();
+    }
+
+    async function loadUserStats() {
+        if (!currentUserId) return;
+
+        const activityId = document.getElementById('filterActivity').value;
+        const dateFrom = document.getElementById('filterFrom').value;
+        const dateTo = document.getElementById('filterTo').value;
+
+        let url = `/api/stats/user/${currentUserId}?`;
+        if (activityId) url += `activity_id=${activityId}&`;
+        if (dateFrom) url += `date_from=${dateFrom}&`;
+        if (dateTo) url += `date_to=${dateTo}&`;
+
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+            renderMonthly(data.monthly);
+            renderDaily(data.daily);
+            renderChart(data.daily);
+        } catch (err) {
+            showToast('Błąd ładowania statystyk.', 'error');
+        }
+    }
+
+    function renderMonthly(monthly) {
+        const tbody = document.getElementById('monthlyBody');
+        if (!monthly.length) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">Brak danych</td></tr>';
+            return;
+        }
+        tbody.innerHTML = monthly.map(m => `
+        <tr>
+            <td>${m.month}</td>
+            <td>${m.activity}</td>
+            <td><strong>${m.total_quantity}</strong></td>
+            <td>${m.days_worked}</td>
+            <td>${m.avg_per_day}</td>
+        </tr>
+    `).join('');
+    }
+
+    function renderDaily(daily) {
+        const tbody = document.getElementById('dailyBody');
+        if (!daily.length) {
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">Brak danych</td></tr>';
+            return;
+        }
+        tbody.innerHTML = daily.map(d => `
+        <tr>
+            <td>${d.date}</td>
+            <td>Zmiana ${d.shift_number}</td>
+            <td>${d.activity}</td>
+            <td>
+                <input type="number" class="edit-qty" data-stat-id="${d.stat_id}" value="${d.quantity}"
+                    style="width:80px;padding:4px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-family:var(--font);text-align:center;">
+            </td>
+            <td style="color:var(--text-secondary);font-size:0.85rem;">${d.note || '-'}</td>
+            <td style="font-size:0.8rem;color:var(--text-muted);">${d.entered_by || '-'}</td>
+            <td style="font-size:0.8rem;color:var(--text-muted);">${d.modified_by ? d.modified_by + '<br>' + d.modified_at : '-'}</td>
+            <td><button class="btn btn-sm btn-ghost" onclick="updateStat(${d.stat_id}, this)">💾</button></td>
+        </tr>
+    `).join('');
+    }
+
+    function renderChart(daily) {
+        const ctx = document.getElementById('dailyChart');
+        if (dailyChart) dailyChart.destroy();
+
+        // Group by date
+        const byDate = {};
+        daily.forEach(d => {
+            if (!byDate[d.date]) byDate[d.date] = 0;
+            byDate[d.date] += d.quantity;
+        });
+
+        const labels = Object.keys(byDate).reverse();
+        const values = labels.map(l => byDate[l]);
+
+        dailyChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Ilość',
+                    data: values,
+                    backgroundColor: 'rgba(108, 99, 255, 0.6)',
+                    borderColor: 'rgba(108, 99, 255, 1)',
+                    borderWidth: 1,
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: {
+                        ticks: { color: '#9aa0b0' },
+                        grid: { color: 'rgba(46,51,64,0.5)' }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: '#9aa0b0' },
+                        grid: { color: 'rgba(46,51,64,0.5)' }
+                    }
+                }
+            }
+        });
+    }
+
+    async function updateStat(statId, btn) {
+        const row = btn.closest('tr');
+        const input = row.querySelector('.edit-qty');
+        const quantity = parseInt(input.value) || 0;
+
+        try {
+            const res = await fetch(`/api/daily-stats/${statId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ quantity: quantity })
+            });
+            if (res.ok) {
+                showToast('Zaktualizowano.', 'success');
+                loadUserStats(); // refresh to show audit info
+            } else {
+                showToast('Błąd.', 'error');
+            }
+        } catch (err) {
+            showToast('Błąd połączenia.', 'error');
+        }
+    }
+</script>
+{% endblock %}

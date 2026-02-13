@@ -1,0 +1,132 @@
+{% extends 'base.html' %}
+{% block title %}LogiStat — Skaner zmiana {{ shift_number }}{% endblock %}
+
+{% block content %}
+<div class="scanner-page">
+    <div class="page-header" style="text-align:center;">
+        <div class="shift-tabs">
+            <a href="{{ url_for('scanner', shift_number=1) }}"
+                class="shift-tab {% if shift_number == 1 %}active{% endif %}">Zmiana 1</a>
+            <a href="{{ url_for('scanner', shift_number=2) }}"
+                class="shift-tab {% if shift_number == 2 %}active{% endif %}">Zmiana 2</a>
+        </div>
+    </div>
+
+    <div class="scanner-input-area">
+        <div class="scanner-shift-badge">Zmiana {{ shift_number }}</div>
+        <div class="scanner-subtitle">{{ today.strftime('%d.%m.%Y') }} — Zeskanuj kod kreskowy pracownika</div>
+        <input type="text" id="barcodeInput" class="scanner-input" placeholder="Skanuj kod kreskowy..." autofocus
+            autocomplete="off">
+    </div>
+
+    <div class="scanned-count">
+        Zeskanowanych: <strong id="scanCount">{{ attendances|length }}</strong>
+    </div>
+
+    <div class="scanned-list" id="scannedList">
+        {% for a in attendances %}
+        <div class="scanned-card" data-id="{{ a.id }}">
+            <div class="user-avatar">{{ a.user.display_name[0] }}</div>
+            <div class="user-info">
+                <div class="user-name">{{ a.user.display_name }}</div>
+                <div class="user-time">{{ a.scanned_at.strftime('%H:%M:%S') }}</div>
+            </div>
+            <button class="remove-btn" onclick="removeAttendance({{ a.id }})" title="Usuń">✕</button>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const SHIFT_NUMBER = {{ shift_number }};
+    const TODAY = '{{ today.isoformat() }}';
+    const barcodeInput = document.getElementById('barcodeInput');
+    const scannedList = document.getElementById('scannedList');
+    const scanCount = document.getElementById('scanCount');
+    let scanTimer = null;
+
+    // Timeout-based barcode detection (EAN-128, no Enter)
+    barcodeInput.addEventListener('input', () => {
+        clearTimeout(scanTimer);
+        if (barcodeInput.value.length > 0) {
+            barcodeInput.classList.add('scanning');
+            scanTimer = setTimeout(() => {
+                const barcode = barcodeInput.value.trim();
+                if (barcode.length >= 3) {
+                    processScan(barcode);
+                }
+                barcodeInput.value = '';
+                barcodeInput.classList.remove('scanning');
+            }, 300);
+        }
+    });
+
+    // Keep focus on input
+    barcodeInput.addEventListener('blur', () => {
+        setTimeout(() => barcodeInput.focus(), 100);
+    });
+
+    async function processScan(barcode) {
+        try {
+            const res = await fetch('/api/scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    barcode: barcode,
+                    shift_number: SHIFT_NUMBER,
+                    date: TODAY
+                })
+            });
+            const data = await res.json();
+
+            if (res.status === 404) {
+                showToast(data.error, 'error');
+                return;
+            }
+            if (data.already_scanned) {
+                showToast(data.warning, 'warning');
+                return;
+            }
+            if (res.ok) {
+                showToast(data.message, 'success');
+                addScannedCard(data.user, data.attendance);
+                scanCount.textContent = parseInt(scanCount.textContent) + 1;
+            }
+        } catch (err) {
+            showToast('Błąd połączenia z serwerem.', 'error');
+        }
+    }
+
+    function addScannedCard(user, attendance) {
+        const card = document.createElement('div');
+        card.className = 'scanned-card';
+        card.dataset.id = attendance.id;
+        const time = new Date(attendance.scanned_at).toLocaleTimeString('pl');
+        card.innerHTML = `
+        <div class="user-avatar">${user.display_name[0]}</div>
+        <div class="user-info">
+            <div class="user-name">${user.display_name}</div>
+            <div class="user-time">${time}</div>
+        </div>
+        <button class="remove-btn" onclick="removeAttendance(${attendance.id})" title="Usuń">✕</button>
+    `;
+        scannedList.prepend(card);
+    }
+
+    async function removeAttendance(id) {
+        if (!confirm('Usunąć rejestrację?')) return;
+        try {
+            const res = await fetch(`/api/scan/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                document.querySelector(`.scanned-card[data-id="${id}"]`)?.remove();
+                scanCount.textContent = Math.max(0, parseInt(scanCount.textContent) - 1);
+                showToast('Usunięto rejestrację.', 'info');
+            }
+        } catch (err) {
+            showToast('Błąd.', 'error');
+        }
+    }
+</script>
+{% endblock %}

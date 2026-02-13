@@ -1,0 +1,221 @@
+{% extends 'base.html' %}
+{% block title %}LogiStat — Zarządzanie użytkownikami{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>👤 Zarządzanie użytkownikami</h2>
+    <p class="subtitle">Dodawaj i edytuj pracowników. Ustaw kod kreskowy EAN-128 aby skaner mógł rozpoznać operatora.
+    </p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3>Użytkownicy</h3>
+        <button class="btn btn-primary btn-sm" onclick="showAddModal()">+ Dodaj użytkownika</button>
+    </div>
+
+    <input type="text" id="userSearch" class="form-control" placeholder="Szukaj..." style="margin-bottom:16px;">
+
+    <div id="userList">
+        {% for user in users %}
+        <div class="admin-list-item user-row" data-name="{{ user.display_name|lower }}">
+            <div style="display:flex;align-items:center;gap:12px;">
+                <div
+                    style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#a78bfa);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem;color:white;flex-shrink:0;">
+                    {{ user.display_name[0] }}
+                </div>
+                <div>
+                    <div style="font-weight:600;">{{ user.display_name }}</div>
+                    <div style="font-size:0.8rem;color:var(--text-muted);">
+                        @{{ user.username }}
+                        {% if user.barcode_id %} · 🔖 {{ user.barcode_id }}{% endif %}
+                    </div>
+                </div>
+                <span class="badge badge-{{ user.role }}">{{ user.role }}</span>
+                {% if not user.is_active_user %}
+                <span class="badge badge-inactive">nieaktywny</span>
+                {% endif %}
+            </div>
+            <div class="admin-actions">
+                <button class="btn btn-ghost btn-sm" onclick='editUser({{ user.id }}, {{ user.to_dict()|tojson }})'>✏️
+                    Edytuj</button>
+                {% if user.is_active_user %}
+                <button class="btn btn-ghost btn-sm" onclick="deactivateUser({{ user.id }})"
+                    style="color:var(--danger);">🚫</button>
+                {% else %}
+                <button class="btn btn-ghost btn-sm" onclick="activateUser({{ user.id }})"
+                    style="color:var(--success);">✅</button>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal-overlay" id="userModal" style="display:none;">
+    <div class="modal">
+        <h3 id="modalTitle">Dodaj użytkownika</h3>
+        <input type="hidden" id="editUserId" value="">
+
+        <div class="form-group">
+            <label>Login (nazwa użytkownika)</label>
+            <input type="text" id="userUsername" class="form-control" placeholder="np. jkowalski">
+        </div>
+        <div class="form-group">
+            <label>Nazwa wyświetlana</label>
+            <input type="text" id="userDisplayName" class="form-control" placeholder="np. Jan Kowalski">
+        </div>
+        <div class="form-group">
+            <label>Kod kreskowy (EAN-128)</label>
+            <input type="text" id="userBarcode" class="form-control" placeholder="Zeskanuj lub wpisz kod...">
+        </div>
+        <div class="form-group">
+            <label>Rola</label>
+            <select id="userRole" class="form-control">
+                <option value="operator">Operator</option>
+                <option value="leader">Lider</option>
+                <option value="admin">Administrator</option>
+            </select>
+        </div>
+        <div class="form-group" id="passwordGroup">
+            <label>Hasło <span style="color:var(--text-muted);font-size:0.8rem;">(wymagane dla
+                    liderów/adminów)</span></label>
+            <input type="password" id="userPassword" class="form-control" placeholder="Hasło...">
+        </div>
+
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeModal()">Anuluj</button>
+            <button class="btn btn-primary" onclick="saveUser()">Zapisz</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Search
+    document.getElementById('userSearch').addEventListener('input', (e) => {
+        const q = e.target.value.toLowerCase();
+        document.querySelectorAll('.user-row').forEach(row => {
+            row.style.display = row.dataset.name.includes(q) ? '' : 'none';
+        });
+    });
+
+    // Show/hide password based on role
+    document.getElementById('userRole').addEventListener('change', () => {
+        const role = document.getElementById('userRole').value;
+        document.getElementById('passwordGroup').style.display =
+            role === 'operator' ? 'none' : 'block';
+    });
+
+    function showAddModal() {
+        document.getElementById('modalTitle').textContent = 'Dodaj użytkownika';
+        document.getElementById('editUserId').value = '';
+        document.getElementById('userUsername').value = '';
+        document.getElementById('userDisplayName').value = '';
+        document.getElementById('userBarcode').value = '';
+        document.getElementById('userRole').value = 'operator';
+        document.getElementById('userPassword').value = '';
+        document.getElementById('passwordGroup').style.display = 'none';
+        document.getElementById('userUsername').disabled = false;
+        document.getElementById('userModal').style.display = 'flex';
+        document.getElementById('userUsername').focus();
+    }
+
+    function editUser(id, user) {
+        document.getElementById('modalTitle').textContent = 'Edytuj użytkownika';
+        document.getElementById('editUserId').value = id;
+        document.getElementById('userUsername').value = user.username;
+        document.getElementById('userDisplayName').value = user.display_name;
+        document.getElementById('userBarcode').value = user.barcode_id || '';
+        document.getElementById('userRole').value = user.role;
+        document.getElementById('userPassword').value = '';
+        document.getElementById('passwordGroup').style.display =
+            user.role === 'operator' ? 'none' : 'block';
+        document.getElementById('userUsername').disabled = true;
+        document.getElementById('userModal').style.display = 'flex';
+    }
+
+    function closeModal() {
+        document.getElementById('userModal').style.display = 'none';
+    }
+
+    async function saveUser() {
+        const id = document.getElementById('editUserId').value;
+        const payload = {
+            username: document.getElementById('userUsername').value.trim(),
+            display_name: document.getElementById('userDisplayName').value.trim(),
+            barcode_id: document.getElementById('userBarcode').value.trim(),
+            role: document.getElementById('userRole').value,
+            password: document.getElementById('userPassword').value
+        };
+
+        if (!payload.username || !payload.display_name) {
+            showToast('Login i nazwa wyświetlana są wymagane.', 'warning');
+            return;
+        }
+
+        try {
+            let res;
+            if (id) {
+                res = await fetch(`/api/users/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            } else {
+                res = await fetch('/api/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            }
+
+            const data = await res.json();
+            if (res.ok) {
+                showToast('Zapisano.', 'success');
+                location.reload();
+            } else {
+                showToast(data.error || 'Błąd.', 'error');
+            }
+        } catch (err) {
+            showToast('Błąd połączenia.', 'error');
+        }
+    }
+
+    async function deactivateUser(id) {
+        if (!confirm('Dezaktywować użytkownika?')) return;
+        try {
+            const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                showToast('Dezaktywowano.', 'success');
+                location.reload();
+            }
+        } catch (err) {
+            showToast('Błąd.', 'error');
+        }
+    }
+
+    async function activateUser(id) {
+        try {
+            const res = await fetch(`/api/users/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_active_user: true })
+            });
+            if (res.ok) {
+                showToast('Aktywowano.', 'success');
+                location.reload();
+            }
+        } catch (err) {
+            showToast('Błąd.', 'error');
+        }
+    }
+
+    // Close modal on backdrop click
+    document.getElementById('userModal').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeModal();
+    });
+</script>
+{% endblock %}

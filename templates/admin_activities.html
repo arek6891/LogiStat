@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+{% block title %}LogiStat — Zarządzanie czynnościami{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>⚙️ Zarządzanie czynnościami</h2>
+    <p class="subtitle">Dodawaj, edytuj i zmieniaj kolejność czynności</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3>Czynności</h3>
+        <button class="btn btn-primary btn-sm" onclick="showAddModal()">+ Dodaj czynność</button>
+    </div>
+
+    <div id="activityList">
+        {% for activity in activities %}
+        <div class="admin-list-item" data-id="{{ activity.id }}">
+            <div style="display:flex;align-items:center;gap:12px;">
+                <span style="cursor:grab;color:var(--text-muted);">⠿</span>
+                <span class="activity-name">{{ activity.name }}</span>
+                {% if not activity.is_active %}
+                <span class="badge badge-inactive">nieaktywna</span>
+                {% endif %}
+            </div>
+            <div class="admin-actions">
+                <button class="btn btn-ghost btn-sm" onclick="editActivity({{ activity.id }}, '{{ activity.name }}')">✏️
+                    Edytuj</button>
+                <button class="btn btn-ghost btn-sm"
+                    onclick="toggleActivity({{ activity.id }}, {{ 'true' if activity.is_active else 'false' }})">
+                    {% if activity.is_active %}🚫 Dezaktywuj{% else %}✅ Aktywuj{% endif %}
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal-overlay" id="activityModal" style="display:none;">
+    <div class="modal">
+        <h3 id="modalTitle">Dodaj czynność</h3>
+        <div class="form-group">
+            <label>Nazwa</label>
+            <input type="text" id="activityName" class="form-control" placeholder="Nazwa czynności...">
+        </div>
+        <input type="hidden" id="activityId" value="">
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeModal()">Anuluj</button>
+            <button class="btn btn-primary" onclick="saveActivity()">Zapisz</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function showAddModal() {
+        document.getElementById('modalTitle').textContent = 'Dodaj czynność';
+        document.getElementById('activityName').value = '';
+        document.getElementById('activityId').value = '';
+        document.getElementById('activityModal').style.display = 'flex';
+        document.getElementById('activityName').focus();
+    }
+
+    function editActivity(id, name) {
+        document.getElementById('modalTitle').textContent = 'Edytuj czynność';
+        document.getElementById('activityName').value = name;
+        document.getElementById('activityId').value = id;
+        document.getElementById('activityModal').style.display = 'flex';
+        document.getElementById('activityName').focus();
+    }
+
+    function closeModal() {
+        document.getElementById('activityModal').style.display = 'none';
+    }
+
+    async function saveActivity() {
+        const id = document.getElementById('activityId').value;
+        const name = document.getElementById('activityName').value.trim();
+        if (!name) {
+            showToast('Nazwa jest wymagana.', 'warning');
+            return;
+        }
+
+        try {
+            let res;
+            if (id) {
+                res = await fetch(`/api/activities/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name })
+                });
+            } else {
+                res = await fetch('/api/activities', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name })
+                });
+            }
+
+            if (res.ok) {
+                showToast('Zapisano.', 'success');
+                location.reload();
+            } else {
+                const data = await res.json();
+                showToast(data.error || 'Błąd.', 'error');
+            }
+        } catch (err) {
+            showToast('Błąd połączenia.', 'error');
+        }
+    }
+
+    async function toggleActivity(id, isActive) {
+        try {
+            const res = await fetch(`/api/activities/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_active: !isActive })
+            });
+            if (res.ok) {
+                showToast(isActive ? 'Dezaktywowano.' : 'Aktywowano.', 'success');
+                location.reload();
+            }
+        } catch (err) {
+            showToast('Błąd.', 'error');
+        }
+    }
+
+    // Close modal on backdrop click
+    document.getElementById('activityModal').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeModal();
+    });
+</script>
+{% endblock %}

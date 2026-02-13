@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environment
+.venv/
+venv/
+env/
+ENV/
+
+# SQLite database (generated at runtime)
+instance/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker
+deploy.tar
+deployment.tar.gz
+
+# Byte-compiled
+*.egg-info/
+dist/
+build/
+
+# Logs
+*.log

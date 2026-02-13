@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}LogiStat — Login{% endblock %}
+
+{% block content_noauth %}
+<div class="login-page">
+    <div class="login-card card">
+        <h1>LogiStat</h1>
+        <p class="subtitle">Zaloguj się jako lider lub administrator</p>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div style="padding:10px 16px;margin-bottom:16px;border-radius:8px;font-size:0.9rem;
+            background:{% if category == 'error' %}var(--danger-bg){% else %}var(--success-bg){% endif %};
+            color:{% if category == 'error' %}var(--danger){% else %}var(--success){% endif %};
+            border:1px solid {% if category == 'error' %}var(--danger){% else %}var(--success){% endif %};">
+            {{ message }}
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <form method="POST">
+            <input type="text" name="username" class="form-control" placeholder="Login" required autofocus>
+            <input type="password" name="password" class="form-control" placeholder="Hasło" required>
+            <button type="submit" class="btn btn-primary btn-lg">Zaloguj</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
