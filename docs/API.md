@@ -175,3 +175,31 @@ Parametry query: `activity_id`, `date_from`, `date_to`
 ```
 
 > Wszystkie endpointy wymagają roli `admin`.
+
+---
+
+## Admin — Import CSV i Statystyki
+
+| Method | URL | Opis |
+|--------|-----|------|
+| POST | `/api/import-csv` | Wrzucenie pliku CSV (multipart/form-data z kluczem `file`). Zwraca statystyki importowanych, pomiętych i zaaktualizowanych kartonów. |
+| GET | `/api/general-stats` | Lista statystyk z importu CSV do tabeli rozliczeniowej |
+| PUT | `/api/general-stats/<id>` | Edytuj statystykę (pole `category_data` ze słownikiem 10 kategorii) |
+
+**PUT body dla /api/general-stats:**
+```json
+{
+  "category_data": {
+    "sorting": {
+      "amount": 25,
+      "cost": 12.50
+    },
+    "textile": {
+      "amount": 0,
+      "cost": 0.00
+    }
+  }
+}
+```
+
+> Wszystkie endpointy wymagają roli `admin`.

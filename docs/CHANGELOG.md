@@ -1,5 +1,24 @@
 # LogiStat — Changelog
 
+## [1.2.0] — 2026-03-05
+
+### Import CSV i Statystyki Ogólne
+
+#### Backend
+- Dwa nowe modele: `ImportedCarton` (dane wg pliku CSV) i `GeneralStat` (agregacje statystyk)
+- Deduplikacja danych wejściowych po unikalnym `barcode`
+- Matchowanie z `CountryMapping` (Land == Innenauftrag)
+- Agregacja danych dla statystyk po liście, kraju i dacie ładowania
+- Nowe strony: `/import-csv`, `/general-stats`
+- Nowe endpointy: `POST /api/import-csv` z autodetekcją kodowania (UTF-8/Latin-1), `GET /api/general-stats`, `PUT /api/general-stats/<id>`
+
+#### Frontend
+- Niezależne zakładki w sidebarze: **Import CSV**, **Statystyki ogólne**
+- `import_csv.html` — zintegrowany mechanizm drag & drop i szybki wykaz przetworzonych danych
+- `general_stats.html` — interaktywna tabela rozliczeniowa (jak widok Excela), umożliwiająca wewnątrzkomórkową edycję kosztów dla 10 konfigurowalnych kategorii. Sumowanie "Total cost" w czasie rzeczywistym.
+
+> ⚠️ Wymaga usunięcia bazy `instance/logistat.db` i restartu (nowy model w bazie danych)
+
 ## [1.1.0] — 2026-03-05
 
 ### Panel Admina + Mapowanie krajów i zleceń

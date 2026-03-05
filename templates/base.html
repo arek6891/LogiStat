@@ -48,6 +48,14 @@
                         class="{% if request.endpoint in ('admin_panel', 'admin_country_mapping') %}active{% endif %}">
                         <span class="icon">🛡️</span> Panel Admina
                     </a></li>
+                <li><a href="{{ url_for('import_csv_page') }}"
+                        class="{% if request.endpoint == 'import_csv_page' %}active{% endif %}">
+                        <span class="icon">📥</span> Import CSV
+                    </a></li>
+                <li><a href="{{ url_for('general_stats_page') }}"
+                        class="{% if request.endpoint == 'general_stats_page' %}active{% endif %}">
+                        <span class="icon">📊</span> Statystyki ogólne
+                    </a></li>
                 {% endif %}
             </ul>
             <div class="sidebar-footer">

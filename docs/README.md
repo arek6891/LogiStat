@@ -58,7 +58,9 @@ LogiStat/
 │   ├── admin_activities.html # CRUD czynności
 │   ├── admin_users.html    # Zarządzanie użytkownikami
 │   ├── admin_panel.html    # Panel Admina (hub)
-│   └── admin_country_mapping.html # Mapowanie krajów → Innenauftrag
+│   ├── admin_country_mapping.html # Mapowanie krajów
+│   ├── import_csv.html     # Importowanie pliku CSV
+│   └── general_stats.html  # Statystyki ogólne z CSV
 └── docs/
     ├── README.md           # Ten plik
     ├── API.md              # Dokumentacja API
@@ -84,3 +86,5 @@ LogiStat/
 6. **Użytkownicy** (`/admin/users`) — dodawanie/edycja operatorów
 7. **Panel Admina** (`/admin/panel`) — hub administracyjny (admin)
 8. **Mapowanie krajów** (`/admin/country-mapping`) — tabela Country → Innenauftrag (admin)
+9. **Import CSV** (`/import-csv`) — drag & drop danych wejściowych z automatyczną deduplikacją (admin)
+10. **Statystyki ogólne** (`/general-stats`) — edytowalna tabela zestawień wg listów i dat (admin)

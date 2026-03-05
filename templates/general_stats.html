@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Statystyki ogólne — LogiStat{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <div>
+        <h1>📊 Statystyki ogólne</h1>
+        <p style="color:var(--text-muted);">Dane zagregowane z importów CSV. Kolumny kategorii edytowalne inline.</p>
+    </div>
+    <button class="btn btn-primary" onclick="saveAll()">💾 Zapisz zmiany</button>
+</div>
+
+<div style="overflow-x:auto;">
+    <table class="data-table" id="statsTable">
+        <thead>
+            <tr>
+                <th rowspan="2" style="min-width:100px;">Loading date</th>
+                <th rowspan="2" style="min-width:50px;">Week</th>
+                <th rowspan="2" style="min-width:80px;">List-ID</th>
+                <th rowspan="2" style="min-width:120px;">Country of destination</th>
+                <th rowspan="2" style="min-width:120px;">Country ledger</th>
+                <th rowspan="2" style="min-width:70px;">Amounts</th>
+                {% for cat in categories %}
+                <th colspan="2"
+                    style="text-align:center;background:rgba(99,102,241,.08);border-bottom:2px solid var(--accent);min-width:160px;">
+                    {{ category_labels[cat] }}
+                </th>
+                {% endfor %}
+                <th rowspan="2" style="min-width:100px;background:rgba(34,197,94,.08);">Total cost (EUR)</th>
+            </tr>
+            <tr>
+                {% for cat in categories %}
+                <th style="font-size:.75rem;min-width:70px;">Amount</th>
+                <th style="font-size:.75rem;min-width:80px;">Cost (EUR)</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in stats %}
+            <tr data-id="{{ s.id }}">
+                <td>{{ s.loading_date.strftime('%d.%m.%Y') }}</td>
+                <td>{{ s.week_number }}</td>
+                <td>{{ s.list_id }}</td>
+                <td>{{ s.country_of_destination or '—' }}</td>
+                <td>{{ s.country_ledger }}</td>
+                <td style="font-weight:600;">{{ s.amounts }}</td>
+                {% set cd = s.get_category_data() %}
+                {% for cat in categories %}
+                <td>
+                    <input type="number" class="inline-input cat-amount" data-cat="{{ cat }}" data-field="amount"
+                        value="{{ cd.get(cat, {}).get('amount', 0) }}" min="0" step="1" style="width:65px;">
+                </td>
+                <td>
+                    <input type="number" class="inline-input cat-cost" data-cat="{{ cat }}" data-field="cost"
+                        value="{{ '%.2f'|format(cd.get(cat, {}).get('cost', 0)) }}" min="0" step="0.01"
+                        style="width:75px;">
+                </td>
+                {% endfor %}
+                <td class="total-cost" style="font-weight:700;color:var(--success,#22c55e);">
+                    {{ '%.2f'|format(s.total_cost()) }} €
+                </td>
+            </tr>
+            {% endfor %}
+            {% if not stats %}
+            <tr>
+                <td colspan="{{ 6 + categories|length * 2 + 1 }}"
+                    style="text-align:center;padding:3rem;color:var(--text-muted);">
+                    Brak danych. Wrzuć plik CSV aby wygenerować statystyki.
+                </td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+
+<style>
+    .inline-input {
+        background: transparent;
+        border: 1px solid transparent;
+        color: var(--text);
+        padding: 4px 6px;
+        border-radius: 4px;
+        font-size: .85rem;
+        text-align: right;
+        transition: all .15s;
+    }
+
+    .inline-input:focus {
+        border-color: var(--accent);
+        background: rgba(99, 102, 241, .05);
+        outline: none;
+    }
+
+    .inline-input:hover {
+        border-color: var(--border);
+    }
+
+    .inline-input.modified {
+        background: rgba(251, 191, 36, .1);
+        border-color: #fbbf24;
+    }
+
+    #statsTable th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+    }
+</style>
+
+<script>
+    // Track modifications
+    document.querySelectorAll('.inline-input').forEach(input => {
+        const original = input.value;
+        input.dataset.original = original;
+        input.addEventListener('input', function () {
+            if (this.value !== this.dataset.original) {
+                this.classList.add('modified');
+            } else {
+                this.classList.remove('modified');
+            }
+            updateRowTotal(this.closest('tr'));
+        });
+    });
+
+    function updateRowTotal(row) {
+        let total = 0;
+        row.querySelectorAll('.cat-cost').forEach(inp => {
+            total += parseFloat(inp.value) || 0;
+        });
+        row.querySelector('.total-cost').textContent = total.toFixed(2) + ' €';
+    }
+
+    async function saveAll() {
+        const rows = document.querySelectorAll('#statsTable tbody tr[data-id]');
+        let saved = 0;
+        let errors = 0;
+
+        for (const row of rows) {
+            const modified = row.querySelectorAll('.inline-input.modified');
+            if (modified.length === 0) continue;
+
+            const id = row.dataset.id;
+            const categoryData = {};
+
+            // Collect all category data for this row
+            const cats = new Set();
+            row.querySelectorAll('.inline-input').forEach(inp => {
+                cats.add(inp.dataset.cat);
+            });
+
+            cats.forEach(cat => {
+                const amountInput = row.querySelector(`[data-cat="${cat}"][data-field="amount"]`);
+                const costInput = row.querySelector(`[data-cat="${cat}"][data-field="cost"]`);
+                categoryData[cat] = {
+                    amount: parseInt(amountInput.value) || 0,
+                    cost: parseFloat(costInput.value) || 0
+                };
+            });
+
+            try {
+                const resp = await fetch(`/api/general-stats/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ category_data: categoryData })
+                });
+                if (resp.ok) {
+                    saved++;
+                    modified.forEach(inp => {
+                        inp.dataset.original = inp.value;
+                        inp.classList.remove('modified');
+                    });
+                } else {
+                    errors++;
+                }
+            } catch (e) {
+                errors++;
+            }
+        }
+
+        if (saved > 0) showToast(`Zapisano ${saved} wierszy.`, 'success');
+        if (errors > 0) showToast(`Błąd zapisu ${errors} wierszy.`, 'error');
+        if (saved === 0 && errors === 0) showToast('Brak zmian do zapisania.', 'info');
+    }
+</script>
+{% endblock %}

@@ -1,4 +1,7 @@
 import os
+import csv
+import io
+import json
 from datetime import datetime, date, timedelta
 from functools import wraps
 
@@ -197,6 +200,104 @@ class CountryMapping(db.Model):
         }
 
 
+STAT_CATEGORIES = [
+    'labelling_on', 'labelling_tvl', 'labelling_try', 'textile',
+    'accessoire', 'sunglasses', 'card_facture', 'labelling_polybag',
+    'sorting', 'carton_labeling'
+]
+
+STAT_CATEGORY_LABELS = {
+    'labelling_on': 'Labelling on',
+    'labelling_tvl': 'Labelling tvl',
+    'labelling_try': 'Labelling try',
+    'textile': 'Textile',
+    'accessoire': 'accessoire',
+    'sunglasses': 'Sunglasses',
+    'card_facture': 'Card facture',
+    'labelling_polybag': 'Labelling polybag',
+    'sorting': 'Sorting',
+    'carton_labeling': 'Carton labeling'
+}
+
+
+def empty_category_data():
+    """Return default empty category_data dict."""
+    return {cat: {'amount': 0, 'cost': 0.0} for cat in STAT_CATEGORIES}
+
+
+class ImportedCarton(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    barcode = db.Column(db.String(100), unique=True, nullable=False)
+    land = db.Column(db.String(150), nullable=True)
+    stueckzahl = db.Column(db.Integer, default=0)
+    kategorie = db.Column(db.String(100), nullable=True)
+    ziel_datum = db.Column(db.Date, nullable=True)
+    uebergabe_nr = db.Column(db.String(100), nullable=True)
+    country_mapping_id = db.Column(db.Integer, db.ForeignKey('country_mapping.id'), nullable=True)
+    imported_at = db.Column(db.DateTime, default=datetime.utcnow)
+    imported_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+    country_mapping = db.relationship('CountryMapping', backref=db.backref('cartons', lazy=True))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'barcode': self.barcode,
+            'land': self.land,
+            'stueckzahl': self.stueckzahl,
+            'kategorie': self.kategorie,
+            'ziel_datum': self.ziel_datum.isoformat() if self.ziel_datum else None,
+            'uebergabe_nr': self.uebergabe_nr,
+            'country_mapping_id': self.country_mapping_id
+        }
+
+
+class GeneralStat(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    loading_date = db.Column(db.Date, nullable=False)
+    week_number = db.Column(db.Integer, nullable=False)
+    list_id = db.Column(db.String(100), nullable=False)
+    country_of_destination = db.Column(db.String(150), nullable=True)
+    country_ledger = db.Column(db.String(150), nullable=False)
+    amounts = db.Column(db.Integer, default=0)
+    category_data = db.Column(db.Text, default='{}')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=True)
+    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+    __table_args__ = (
+        db.UniqueConstraint('list_id', 'country_ledger', 'loading_date',
+                            name='uq_general_stat'),
+    )
+
+    def get_category_data(self):
+        try:
+            return json.loads(self.category_data) if self.category_data else empty_category_data()
+        except (json.JSONDecodeError, TypeError):
+            return empty_category_data()
+
+    def set_category_data(self, data):
+        self.category_data = json.dumps(data)
+
+    def total_cost(self):
+        cd = self.get_category_data()
+        return sum(v.get('cost', 0) for v in cd.values())
+
+    def to_dict(self):
+        cd = self.get_category_data()
+        return {
+            'id': self.id,
+            'loading_date': self.loading_date.isoformat(),
+            'week_number': self.week_number,
+            'list_id': self.list_id,
+            'country_of_destination': self.country_of_destination,
+            'country_ledger': self.country_ledger,
+            'amounts': self.amounts,
+            'category_data': cd,
+            'total_cost': self.total_cost()
+        }
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  AUTH HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -343,6 +444,22 @@ def admin_panel():
 def admin_country_mapping():
     mappings = CountryMapping.query.order_by(CountryMapping.country).all()
     return render_template('admin_country_mapping.html', mappings=mappings)
+
+
+@app.route('/import-csv')
+@admin_required
+def import_csv_page():
+    return render_template('import_csv.html')
+
+
+@app.route('/general-stats')
+@admin_required
+def general_stats_page():
+    stats = GeneralStat.query.order_by(GeneralStat.loading_date.desc()).all()
+    return render_template('general_stats.html',
+                           stats=stats,
+                           categories=STAT_CATEGORIES,
+                           category_labels=STAT_CATEGORY_LABELS)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -928,6 +1045,196 @@ def api_country_mapping_delete(mapping_id):
     db.session.delete(mapping)
     db.session.commit()
     return jsonify({'message': 'Usunięto mapowanie.'}), 200
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  API: CSV IMPORT + GENERAL STATS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def detect_csv_encoding(raw_bytes):
+    """Try UTF-8 first, then Latin-1."""
+    for enc in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']:
+        try:
+            raw_bytes.decode(enc)
+            return enc
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return 'latin-1'
+
+
+def normalize_header(h):
+    """Normalize CSV header to handle encoding issues."""
+    h = h.strip().lower()
+    replacements = {
+        'st\u00fcckzahl': 'stueckzahl',
+        'st\u00fcckel': 'stueckzahl',
+        'stã¼ckzahl': 'stueckzahl',
+        'stã¼ckel': 'stueckzahl',
+        '\u00fcbergabe nr.': 'uebergabe_nr',
+        '\u00fcbergabe nr': 'uebergabe_nr',
+        'ãœbergabe nr.': 'uebergabe_nr',
+        'ãœbergabe nr': 'uebergabe_nr',
+        'ziel-datum': 'ziel_datum',
+        'land': 'land',
+        'barcode': 'barcode',
+        'kategorie': 'kategorie',
+    }
+    for key, val in replacements.items():
+        if key in h:
+            return val
+    return h
+
+
+@app.route('/api/import-csv', methods=['POST'])
+@admin_required
+def api_import_csv():
+    if 'file' not in request.files:
+        return jsonify({'error': 'Brak pliku.'}), 400
+
+    file = request.files['file']
+    if not file.filename:
+        return jsonify({'error': 'Brak nazwy pliku.'}), 400
+
+    raw_bytes = file.read()
+    encoding = detect_csv_encoding(raw_bytes)
+    text = raw_bytes.decode(encoding)
+
+    reader = csv.DictReader(io.StringIO(text), delimiter=';')
+
+    # Normalize headers
+    if reader.fieldnames:
+        header_map = {h: normalize_header(h) for h in reader.fieldnames}
+    else:
+        return jsonify({'error': 'Plik CSV nie ma nag\u0142\u00f3wk\u00f3w.'}), 400
+
+    imported = 0
+    skipped = 0
+    skipped_barcodes = []
+    errors = []
+    aggregation = {}  # key: (list_id, land, date_str) -> sum of stueckzahl
+
+    for i, row in enumerate(reader, start=2):
+        # Remap keys
+        mapped = {header_map.get(k, k): v for k, v in row.items()}
+
+        barcode = (mapped.get('barcode') or '').strip()
+        land = (mapped.get('land') or '').strip()
+        stueckzahl_str = (mapped.get('stueckzahl') or '0').strip().replace(',', '')
+        kategorie = (mapped.get('kategorie') or '').strip()
+        ziel_datum_str = (mapped.get('ziel_datum') or '').strip()
+        uebergabe_nr = (mapped.get('uebergabe_nr') or '').strip()
+
+        if not barcode:
+            continue
+
+        # Check barcode uniqueness
+        if ImportedCarton.query.filter_by(barcode=barcode).first():
+            skipped += 1
+            skipped_barcodes.append(barcode)
+            continue
+
+        # Parse quantity
+        try:
+            stueckzahl = int(float(stueckzahl_str))
+        except (ValueError, TypeError):
+            stueckzahl = 0
+
+        # Parse date
+        ziel_datum = None
+        for fmt in ('%d.%m.%Y', '%Y-%m-%d', '%d/%m/%Y'):
+            try:
+                ziel_datum = datetime.strptime(ziel_datum_str, fmt).date()
+                break
+            except ValueError:
+                continue
+
+        # Match Land to CountryMapping
+        mapping = CountryMapping.query.filter_by(innenauftrag=land).first()
+
+        carton = ImportedCarton(
+            barcode=barcode,
+            land=land,
+            stueckzahl=stueckzahl,
+            kategorie=kategorie,
+            ziel_datum=ziel_datum,
+            uebergabe_nr=uebergabe_nr,
+            country_mapping_id=mapping.id if mapping else None,
+            imported_by=current_user.id
+        )
+        db.session.add(carton)
+        imported += 1
+
+        # Aggregate for GeneralStat
+        if uebergabe_nr and ziel_datum:
+            agg_key = (uebergabe_nr, land, ziel_datum.isoformat())
+            if agg_key not in aggregation:
+                aggregation[agg_key] = {
+                    'stueckzahl': 0,
+                    'country': mapping.country if mapping else None,
+                    'date': ziel_datum
+                }
+            aggregation[agg_key]['stueckzahl'] += stueckzahl
+
+    # Create/update GeneralStat entries
+    stats_created = 0
+    stats_updated = 0
+    for (list_id, land_val, date_str), agg in aggregation.items():
+        existing = GeneralStat.query.filter_by(
+            list_id=list_id,
+            country_ledger=land_val,
+            loading_date=agg['date']
+        ).first()
+
+        if existing:
+            existing.amounts += agg['stueckzahl']
+            existing.updated_at = datetime.utcnow()
+            existing.updated_by = current_user.id
+            stats_updated += 1
+        else:
+            stat = GeneralStat(
+                loading_date=agg['date'],
+                week_number=agg['date'].isocalendar()[1],
+                list_id=list_id,
+                country_of_destination=agg['country'],
+                country_ledger=land_val,
+                amounts=agg['stueckzahl'],
+                category_data=json.dumps(empty_category_data())
+            )
+            db.session.add(stat)
+            stats_created += 1
+
+    db.session.commit()
+
+    return jsonify({
+        'message': f'Zaimportowano {imported} karton\u00f3w.',
+        'imported': imported,
+        'skipped': skipped,
+        'skipped_barcodes': skipped_barcodes[:50],
+        'stats_created': stats_created,
+        'stats_updated': stats_updated
+    }), 200
+
+
+@app.route('/api/general-stats', methods=['GET'])
+@admin_required
+def api_general_stats():
+    stats = GeneralStat.query.order_by(GeneralStat.loading_date.desc()).all()
+    return jsonify([s.to_dict() for s in stats]), 200
+
+
+@app.route('/api/general-stats/<int:stat_id>', methods=['PUT'])
+@admin_required
+def api_general_stat_update(stat_id):
+    stat = GeneralStat.query.get_or_404(stat_id)
+    data = request.get_json()
+
+    if 'category_data' in data:
+        stat.set_category_data(data['category_data'])
+    stat.updated_at = datetime.utcnow()
+    stat.updated_by = current_user.id
+
+    db.session.commit()
+    return jsonify(stat.to_dict()), 200
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -41,6 +41,8 @@
 - [x] Role: operator/leader/admin
 - [x] Panel Admina z przyciskiem w sidebarze (admin only)
 - [x] Mapowanie krajów i zleceń (Country → Innenauftrag) — CRUD + seed 29 mapowań
+- [x] Import CSV z automatyczną deduplikacją po `barcode`
+- [x] Tabela statystyk ogólnych (General Stats) z inline edycją kosztów
 
 ---
 
@@ -85,6 +87,12 @@
 - Strony: `/admin/panel` (hub), `/admin/country-mapping` (tabela CRUD)
 - Przy dodawaniu nowego modelu — pamiętaj o seed w `seed_data()` i usunięciu bazy
 - Template wzorowany na `admin_activities.html` (modal add/edit, potwierdzenie delete)
+
+### Import CSV i Statystyki Ogólne
+- **Modele:** `ImportedCarton` reprezentuje surowy zrzucony wiersz CSV, `GeneralStat` agreguje te wiersze grupując je na podstawie daty (Loading date), kraju docelowego (Land + CountryMapping) oraz numeru listu (List-ID).
+- **Format danych CSV:** Kod operuje na niemieckojęzycznych nazwach kolumn (Stückzahl, Übergabe Nr. itd) dlatego ma wbudowane elastyczne formatowanie używając UTF-8 oraz Latin-1.
+- **Deduplikacja:** Numer `barcode` kartonu gra rolę unikalnego klucza (UNIQUE). Jeśli plik posiada powtarzające się kartony, skrypt automatycznie je `wyskipuje`.
+- **Kolumny kosztów:** Przechowywane są kompresją do JSON w obiekcie `category_data` w tabeli statystyk ogólnych, dla skalowalności. Total calculation obsługiwane jest przez metodę instancji `total_cost()`.
 
 ### Deployment
 - Taki sam flow jak Jewelry-Tracker: `docker-compose up --build -d`

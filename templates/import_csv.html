@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Import CSV — LogiStat{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>📥 Import CSV</h1>
+    <p style="color:var(--text-muted);">Wrzuć plik CSV z danymi kartonów. Dane zostaną zparsowane i zagregowane do
+        Statystyk ogólnych.</p>
+</div>
+
+<div class="card" style="max-width:700px;">
+    <div id="dropZone"
+        style="border:2px dashed var(--border);border-radius:12px;padding:3rem;text-align:center;cursor:pointer;transition:all .2s;"
+        ondragover="event.preventDefault();this.style.borderColor='var(--accent)';this.style.background='rgba(99,102,241,.08)';"
+        ondragleave="this.style.borderColor='var(--border)';this.style.background='transparent';"
+        ondrop="handleDrop(event)">
+        <div style="font-size:3rem;margin-bottom:1rem;">📄</div>
+        <p style="font-size:1.1rem;font-weight:600;">Przeciągnij plik CSV tutaj</p>
+        <p style="color:var(--text-muted);margin:.5rem 0;">lub</p>
+        <label class="btn btn-primary" style="cursor:pointer;">
+            Wybierz plik
+            <input type="file" id="fileInput" accept=".csv" style="display:none;" onchange="handleFile(this.files[0])">
+        </label>
+        <p id="fileName" style="color:var(--text-muted);margin-top:1rem;font-size:.85rem;"></p>
+    </div>
+</div>
+
+<!-- Results -->
+<div id="results" class="card" style="max-width:700px;display:none;margin-top:1.5rem;">
+    <h3 style="margin-bottom:1rem;">📊 Wynik importu</h3>
+    <div id="resultContent"></div>
+</div>
+
+<!-- Loading -->
+<div id="loading" style="display:none;text-align:center;margin-top:2rem;">
+    <div style="font-size:2rem;">⏳</div>
+    <p>Przetwarzanie pliku...</p>
+</div>
+
+<script>
+    function handleDrop(e) {
+        e.preventDefault();
+        e.target.closest('#dropZone').style.borderColor = 'var(--border)';
+        e.target.closest('#dropZone').style.background = 'transparent';
+        const file = e.dataTransfer.files[0];
+        if (file) handleFile(file);
+    }
+
+    function handleFile(file) {
+        if (!file || !file.name.toLowerCase().endsWith('.csv')) {
+            showToast('Wybierz plik .csv', 'error');
+            return;
+        }
+        document.getElementById('fileName').textContent = '📎 ' + file.name;
+        uploadFile(file);
+    }
+
+    async function uploadFile(file) {
+        const loading = document.getElementById('loading');
+        const results = document.getElementById('results');
+        loading.style.display = 'block';
+        results.style.display = 'none';
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const resp = await fetch('/api/import-csv', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await resp.json();
+            loading.style.display = 'none';
+
+            if (!resp.ok) {
+                showToast(data.error || 'Błąd importu', 'error');
+                return;
+            }
+
+            results.style.display = 'block';
+            let html = `
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin-bottom:1.5rem;">
+                <div style="background:var(--success-bg,rgba(34,197,94,.1));padding:1rem;border-radius:8px;text-align:center;">
+                    <div style="font-size:1.8rem;font-weight:700;color:var(--success,#22c55e);">${data.imported}</div>
+                    <div style="font-size:.85rem;color:var(--text-muted);">Zaimportowane</div>
+                </div>
+                <div style="background:rgba(251,191,36,.1);padding:1rem;border-radius:8px;text-align:center;">
+                    <div style="font-size:1.8rem;font-weight:700;color:#fbbf24;">${data.skipped}</div>
+                    <div style="font-size:.85rem;color:var(--text-muted);">Pominięte (duplikaty)</div>
+                </div>
+                <div style="background:rgba(99,102,241,.1);padding:1rem;border-radius:8px;text-align:center;">
+                    <div style="font-size:1.8rem;font-weight:700;color:var(--accent);">${data.stats_created}</div>
+                    <div style="font-size:.85rem;color:var(--text-muted);">Nowe wiersze statystyk</div>
+                </div>
+                <div style="background:rgba(168,85,247,.1);padding:1rem;border-radius:8px;text-align:center;">
+                    <div style="font-size:1.8rem;font-weight:700;color:#a855f7;">${data.stats_updated}</div>
+                    <div style="font-size:.85rem;color:var(--text-muted);">Zaktualizowane statystyki</div>
+                </div>
+            </div>`;
+
+            if (data.skipped_barcodes && data.skipped_barcodes.length > 0) {
+                html += `<details style="margin-top:1rem;"><summary style="cursor:pointer;color:var(--text-muted);">Pominięte barcodes (${data.skipped_barcodes.length})</summary>`;
+                html += `<div style="margin-top:.5rem;max-height:200px;overflow-y:auto;font-size:.8rem;color:var(--text-muted);">`;
+                data.skipped_barcodes.forEach(b => { html += `<code>${b}</code> `; });
+                html += `</div></details>`;
+            }
+
+            document.getElementById('resultContent').innerHTML = html;
+            showToast(data.message, 'success');
+
+        } catch (err) {
+            loading.style.display = 'none';
+            showToast('Błąd połączenia: ' + err.message, 'error');
+        }
+    }
+</script>
+{% endblock %}
