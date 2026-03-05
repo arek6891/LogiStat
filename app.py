@@ -281,7 +281,7 @@ class GeneralStat(db.Model):
 
     def total_cost(self):
         cd = self.get_category_data()
-        return sum(v.get('cost', 0) for v in cd.values())
+        return sum(v.get('amount', 0) * v.get('cost', 0) for v in cd.values())
 
     def to_dict(self):
         cd = self.get_category_data()
@@ -455,11 +455,36 @@ def import_csv_page():
 @app.route('/general-stats')
 @admin_required
 def general_stats_page():
-    stats = GeneralStat.query.order_by(GeneralStat.loading_date.desc()).all()
+    date_from_str = request.args.get('date_from', '')
+    date_to_str = request.args.get('date_to', '')
+    
+    query = GeneralStat.query
+    
+    date_from = None
+    date_to = None
+    
+    if date_from_str:
+        try:
+            date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date()
+            query = query.filter(GeneralStat.loading_date >= date_from)
+        except ValueError:
+            pass
+            
+    if date_to_str:
+        try:
+            date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date()
+            query = query.filter(GeneralStat.loading_date <= date_to)
+        except ValueError:
+            pass
+
+    stats = query.order_by(GeneralStat.loading_date.desc()).all()
+    
     return render_template('general_stats.html',
                            stats=stats,
                            categories=STAT_CATEGORIES,
-                           category_labels=STAT_CATEGORY_LABELS)
+                           category_labels=STAT_CATEGORY_LABELS,
+                           date_from=date_from_str,
+                           date_to=date_to_str)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

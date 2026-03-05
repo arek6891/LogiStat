@@ -4,9 +4,22 @@
 <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;">
     <div>
         <h1>📊 Statystyki ogólne</h1>
-        <p style="color:var(--text-muted);">Dane zagregowane z importów CSV. Kolumny kategorii edytowalne inline.</p>
+        <p style="color:var(--text-muted);">Dane zagregowane z importów CSV. Puste filtry pokazują wszystkie daty.</p>
     </div>
-    <button class="btn btn-primary" onclick="saveAll()">💾 Zapisz zmiany</button>
+    <div style="display:flex;gap:1rem;align-items:center;">
+        <form method="GET" style="display:flex;gap:.5rem;align-items:center;">
+            <input type="date" name="date_from" value="{{ date_from }}" class="form-control" style="width:140px;"
+                placeholder="Od">
+            <span style="color:var(--text-muted);">—</span>
+            <input type="date" name="date_to" value="{{ date_to }}" class="form-control" style="width:140px;"
+                placeholder="Do">
+            <button type="submit" class="btn btn-secondary">Filtruj</button>
+            <a href="{{ url_for('general_stats_page') }}" class="btn btn-secondary" style="padding:0.5rem;"
+                title="Wyczyść">✖</a>
+        </form>
+        <div style="width:1px;height:30px;background:var(--border);margin:0 .5rem;"></div>
+        <button class="btn btn-primary" onclick="saveAll()">💾 Zapisz zmiany</button>
+    </div>
 </div>
 
 <div style="overflow-x:auto;">
@@ -33,8 +46,36 @@
                 <th style="font-size:.75rem;min-width:80px;">Cost (EUR)</th>
                 {% endfor %}
             </tr>
+            </tr>
         </thead>
         <tbody>
+            <!-- PODSUMOWANIE (SUM ROW) -->
+            <tr style="background: var(--surface); border-bottom: 2px solid var(--border); font-weight: bold;">
+                <td colspan="5" style="text-align:right; padding-right:1rem;">SUMA DLA WIDOCZNYCH ZAKRESÓW:</td>
+                <td id="sumAmounts" style="color:var(--accent);">0</td>
+                {% for cat in categories %}
+                <td id="sum-{{ cat }}-amount" style="text-align:right; font-size:.85rem;">0</td>
+                <td id="sum-{{ cat }}-cost" style="text-align:right; font-size:.85rem; color:var(--text-muted);">0.00 €
+                </td>
+                {% endfor %}
+                <td id="sumTotalCost" style="color:var(--success,#22c55e);">0.00 €</td>
+            </tr>
+            <!-- WYPEŁNIANIE MASOWE (BULK ROW) -->
+            <tr style="background: rgba(99,102,241,.05); border-bottom: 2px solid var(--border);">
+                <td colspan="6"
+                    style="text-align:right; padding-right:1rem; font-size: 0.85rem; color: var(--text-muted); font-style: italic;">
+                    Wpisz kwotę i naciśnij Enter by nadpisać w kolumnie:
+                </td>
+                {% for cat in categories %}
+                <td></td>
+                <td>
+                    <input type="number" class="bulk-input" data-cat="{{ cat }}" placeholder="0.00" min="0" step="0.01"
+                        style="width:75px; font-size:0.8rem; text-align:right; padding:2px 4px; border:1px solid var(--border); border-radius:4px; background:var(--bg);"
+                        title="Wpisz kwotę i naciśnij Enter">
+                </td>
+                {% endfor %}
+                <td></td>
+            </tr>
             {% for s in stats %}
             <tr data-id="{{ s.id }}">
                 <td>{{ s.loading_date.strftime('%d.%m.%Y') }}</td>
@@ -42,7 +83,7 @@
                 <td>{{ s.list_id }}</td>
                 <td>{{ s.country_of_destination or '—' }}</td>
                 <td>{{ s.country_ledger }}</td>
-                <td style="font-weight:600;">{{ s.amounts }}</td>
+                <td style="font-weight:600;" class="row-amounts" data-val="{{ s.amounts }}">{{ s.amounts }}</td>
                 {% set cd = s.get_category_data() %}
                 {% for cat in categories %}
                 <td>
@@ -118,16 +159,111 @@
                 this.classList.remove('modified');
             }
             updateRowTotal(this.closest('tr'));
+            updateGlobalSums();
         });
     });
 
     function updateRowTotal(row) {
         let total = 0;
-        row.querySelectorAll('.cat-cost').forEach(inp => {
-            total += parseFloat(inp.value) || 0;
+        const categories = JSON.parse('{{ categories|tojson|safe }}');
+        categories.forEach(cat => {
+            const amountInput = row.querySelector(`[data-cat="${cat}"][data-field="amount"]`);
+            const costInput = row.querySelector(`[data-cat="${cat}"][data-field="cost"]`);
+            if (amountInput && costInput) {
+                const amt = parseInt(amountInput.value) || 0;
+                const cst = parseFloat(costInput.value) || 0;
+                total += (amt * cst);
+            }
         });
-        row.querySelector('.total-cost').textContent = total.toFixed(2) + ' €';
+
+        const totalCell = row.querySelector('.total-cost');
+        if (totalCell) {
+            totalCell.textContent = total.toFixed(2) + ' €';
+            totalCell.dataset.val = total;
+        }
     }
+
+    function updateGlobalSums() {
+        // Amount Sums
+        let sumAmounts = 0;
+        document.querySelectorAll('.row-amounts').forEach(td => {
+            sumAmounts += parseInt(td.dataset.val) || 0;
+        });
+        document.getElementById('sumAmounts').textContent = sumAmounts;
+
+        // Category Amounts and Costs
+        const categories = JSON.parse('{{ categories|tojson|safe }}');
+        categories.forEach(cat => {
+            let catAmount = 0;
+            let catCost = 0;
+            document.querySelectorAll(`[data-cat="${cat}"][data-field="amount"]`).forEach(inp => {
+                catAmount += parseInt(inp.value) || 0;
+            });
+            document.querySelectorAll(`[data-cat="${cat}"][data-field="cost"]`).forEach(inp => {
+                // Cost is Amount * Unit Cost in the global sum logic
+                const row = inp.closest('tr');
+                const amtInp = row.querySelector(`[data-cat="${cat}"][data-field="amount"]`);
+                const amt = parseInt(amtInp.value) || 0;
+                const cst = parseFloat(inp.value) || 0;
+                catCost += (amt * cst);
+            });
+            const amtEl = document.getElementById(`sum-${cat}-amount`);
+            const costEl = document.getElementById(`sum-${cat}-cost`);
+            if (amtEl) amtEl.textContent = catAmount;
+            if (costEl) costEl.textContent = catCost.toFixed(2) + ' €';
+        });
+
+        // Global Total Cost
+        let sumTotalCost = 0;
+        document.querySelectorAll('.total-cost').forEach(td => {
+            let rowVal = parseFloat(td.dataset.val);
+            if (isNaN(rowVal)) { // initialize fallback if dataset is missing
+                rowVal = parseFloat(td.textContent.replace('€', '').trim()) || 0;
+                td.dataset.val = rowVal;
+            }
+            sumTotalCost += rowVal;
+        });
+        document.getElementById('sumTotalCost').textContent = sumTotalCost.toFixed(2) + ' €';
+    }
+
+    // Initialize sums on load
+    updateGlobalSums();
+
+    // Bulk filling logic
+    document.querySelectorAll('.bulk-input').forEach(input => {
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const cat = this.dataset.cat;
+                const val = parseFloat(this.value);
+                if (isNaN(val)) return;
+
+                let updated = 0;
+                // Update all visible corresponding cost inputs
+                document.querySelectorAll(`input.cat-cost[data-cat="${cat}"]`).forEach(costInput => {
+                    if (costInput.closest('tr').style.display !== 'none') {
+                        costInput.value = val.toFixed(2);
+
+                        // Manually trigger the 'modified' and calculation flow
+                        if (costInput.value !== costInput.dataset.original) {
+                            costInput.classList.add('modified');
+                        } else {
+                            costInput.classList.remove('modified');
+                        }
+                        updateRowTotal(costInput.closest('tr'));
+                        updated++;
+                    }
+                });
+
+                updateGlobalSums();
+                if (updated > 0) {
+                    showToast(`Nadpisano kwotę w ${updated} wierszach dla kolumny.`, 'info');
+                    this.value = ''; // clear after applying
+                    this.blur();
+                }
+            }
+        });
+    });
 
     async function saveAll() {
         const rows = document.querySelectorAll('#statsTable tbody tr[data-id]');
