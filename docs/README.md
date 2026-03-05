@@ -56,7 +56,9 @@ LogiStat/
 │   ├── data_entry.html     # Wpis ilości
 │   ├── stats.html          # Dashboard statystyk
 │   ├── admin_activities.html # CRUD czynności
-│   └── admin_users.html    # Zarządzanie użytkownikami
+│   ├── admin_users.html    # Zarządzanie użytkownikami
+│   ├── admin_panel.html    # Panel Admina (hub)
+│   └── admin_country_mapping.html # Mapowanie krajów → Innenauftrag
 └── docs/
     ├── README.md           # Ten plik
     ├── API.md              # Dokumentacja API
@@ -70,7 +72,7 @@ LogiStat/
 |------|-------------|
 | **operator** | Skanuje się na zmianę. Nie loguje się. |
 | **leader** | Loguje się hasłem. Skanuje, przydziela, wpisuje ilości, dodaje użytkowników. |
-| **admin** | Wszystko + zarządzanie czynnościami. |
+| **admin** | Wszystko + zarządzanie czynnościami + Panel Admina (mapowanie krajów) |
 
 ## Ekrany aplikacji
 
@@ -80,3 +82,5 @@ LogiStat/
 4. **Statystyki** (`/stats`) — wykresy i tabele per pracownik
 5. **Czynności** (`/admin/activities`) — zarządzanie czynnościami (admin)
 6. **Użytkownicy** (`/admin/users`) — dodawanie/edycja operatorów
+7. **Panel Admina** (`/admin/panel`) — hub administracyjny (admin)
+8. **Mapowanie krajów** (`/admin/country-mapping`) — tabela Country → Innenauftrag (admin)

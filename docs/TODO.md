@@ -39,7 +39,8 @@
 - [x] Admin czynności (CRUD + reorder)
 - [x] Admin użytkownicy (CRUD + barcode)
 - [x] Role: operator/leader/admin
-- [x] Docker + Gunicorn
+- [x] Panel Admina z przyciskiem w sidebarze (admin only)
+- [x] Mapowanie krajów i zleceń (Country → Innenauftrag) — CRUD + seed 29 mapowań
 
 ---
 
@@ -76,6 +77,14 @@
 - `User is not JSON serializable` → użyj `user.to_dict()|tojson` w szablonach
 - Port conflict → sprawdź `docker-compose.yml` i `app.py` (port 5001)
 - Brak migracji → przy zmianach modeli usuń `instance/logistat.db` i restartuj
+
+### Mapowanie krajów
+- Model `CountryMapping` — przechowuje pary Country → Innenauftrag
+- Dane seed: 29 domyślnych mapowań (np. Schweiz → 91000741810)
+- API: `/api/country-mappings` (GET/POST/PUT/DELETE), wymaga roli `admin`
+- Strony: `/admin/panel` (hub), `/admin/country-mapping` (tabela CRUD)
+- Przy dodawaniu nowego modelu — pamiętaj o seed w `seed_data()` i usunięciu bazy
+- Template wzorowany na `admin_activities.html` (modal add/edit, potwierdzenie delete)
 
 ### Deployment
 - Taki sam flow jak Jewelry-Tracker: `docker-compose up --build -d`

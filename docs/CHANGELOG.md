@@ -1,5 +1,22 @@
 # LogiStat — Changelog
 
+## [1.1.0] — 2026-03-05
+
+### Panel Admina + Mapowanie krajów i zleceń
+
+#### Backend
+- Nowy model `CountryMapping` (country, innenauftrag)
+- 4 endpointy API CRUD: `/api/country-mappings` (GET, POST, PUT, DELETE)
+- Seed 29 domyślnych mapowań Country → Innenauftrag
+- Nowe strony: `/admin/panel`, `/admin/country-mapping`
+
+#### Frontend
+- Nowy link w sidebarze: **Panel Admina** (widoczny tylko dla admin)
+- `admin_panel.html` — hub z kartą-przyciskiem do mapowania
+- `admin_country_mapping.html` — tabela z CRUD (dodaj/edytuj/usuń z modalem)
+
+> ⚠️ Wymaga usunięcia bazy `instance/logistat.db` i restartu (nowy model)
+
 ## [1.0.0] — 2026-02-13
 
 ### Pierwsza wersja aplikacji

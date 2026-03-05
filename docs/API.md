@@ -154,3 +154,24 @@ Parametry query: `activity_id`, `date_from`, `date_to`
 ```
 
 > Hasło wymagane tylko dla ról `leader` i `admin`.
+
+---
+
+## Admin — Mapowanie krajów i zleceń
+
+| Method | URL | Opis |
+|--------|-----|------|
+| GET | `/api/country-mappings` | Lista mapowań Country → Innenauftrag |
+| POST | `/api/country-mappings` | Dodaj mapowanie `{ "country": "...", "innenauftrag": "..." }` |
+| PUT | `/api/country-mappings/<id>` | Edytuj mapowanie |
+| DELETE | `/api/country-mappings/<id>` | Usuń mapowanie |
+
+**POST/PUT body:**
+```json
+{
+  "country": "Deutschland",
+  "innenauftrag": "Orsay DE"
+}
+```
+
+> Wszystkie endpointy wymagają roli `admin`.

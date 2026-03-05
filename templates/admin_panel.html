@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block title %}LogiStat — Panel Admina{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>🛡️ Panel Admina</h2>
+    <p class="subtitle">Zarządzanie ustawieniami systemowymi</p>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:24px;margin-top:24px;">
+    <a href="{{ url_for('admin_country_mapping') }}" class="card"
+        style="text-decoration:none;color:inherit;cursor:pointer;transition:transform 0.2s,box-shadow 0.2s;"
+        onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 8px 32px rgba(124,58,237,0.3)'"
+        onmouseout="this.style.transform='';this.style.boxShadow=''">
+        <div style="padding:32px;text-align:center;">
+            <div style="font-size:3rem;margin-bottom:16px;">🌍</div>
+            <h3 style="margin:0 0 8px 0;font-size:1.2rem;">Mapowanie krajów i zleceń</h3>
+            <p style="color:var(--text-muted);margin:0;font-size:0.9rem;">Zarządzaj mapowaniem Country → Innenauftrag
+            </p>
+        </div>
+    </a>
+</div>
+{% endblock %}

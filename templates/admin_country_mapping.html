@@ -1,0 +1,186 @@
+{% extends 'base.html' %}
+{% block title %}LogiStat — Mapowanie krajów i zleceń{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>🌍 Mapowanie krajów i zleceń</h2>
+    <p class="subtitle">Zarządzaj powiązaniami Country → Innenauftrag</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3>Mapowania ({{ mappings|length }})</h3>
+        <button class="btn btn-primary btn-sm" onclick="showAddModal()">+ Dodaj mapowanie</button>
+    </div>
+
+    <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;">
+            <thead>
+                <tr style="border-bottom:1px solid var(--border);">
+                    <th
+                        style="padding:12px 16px;text-align:left;color:var(--text-muted);font-weight:500;font-size:0.85rem;text-transform:uppercase;letter-spacing:0.05em;">
+                        Country</th>
+                    <th
+                        style="padding:12px 16px;text-align:left;color:var(--text-muted);font-weight:500;font-size:0.85rem;text-transform:uppercase;letter-spacing:0.05em;">
+                        Innenauftrag</th>
+                    <th
+                        style="padding:12px 16px;text-align:right;color:var(--text-muted);font-weight:500;font-size:0.85rem;text-transform:uppercase;letter-spacing:0.05em;">
+                        Akcje</th>
+                </tr>
+            </thead>
+            <tbody id="mappingsBody">
+                {% for m in mappings %}
+                <tr style="border-bottom:1px solid var(--border);transition:background 0.15s;"
+                    onmouseover="this.style.background='rgba(124,58,237,0.05)'" onmouseout="this.style.background=''">
+                    <td style="padding:12px 16px;font-weight:500;">{{ m.country }}</td>
+                    <td style="padding:12px 16px;"><code
+                            style="background:rgba(124,58,237,0.15);padding:2px 8px;border-radius:4px;font-size:0.9rem;">{{ m.innenauftrag }}</code>
+                    </td>
+                    <td style="padding:12px 16px;text-align:right;">
+                        <button class="btn btn-ghost btn-sm"
+                            onclick="editMapping({{ m.id }}, '{{ m.country|e }}', '{{ m.innenauftrag|e }}')">✏️
+                            Edytuj</button>
+                        <button class="btn btn-ghost btn-sm" style="color:var(--danger);"
+                            onclick="deleteMapping({{ m.id }}, '{{ m.country|e }}')">🗑️ Usuń</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div style="margin-top:16px;">
+    <a href="{{ url_for('admin_panel') }}" class="btn btn-ghost btn-sm">← Powrót do Panelu Admina</a>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal-overlay" id="mappingModal" style="display:none;">
+    <div class="modal">
+        <h3 id="modalTitle">Dodaj mapowanie</h3>
+        <div class="form-group">
+            <label>Country</label>
+            <input type="text" id="mappingCountry" class="form-control" placeholder="Nazwa kraju...">
+        </div>
+        <div class="form-group">
+            <label>Innenauftrag</label>
+            <input type="text" id="mappingInnenauftrag" class="form-control" placeholder="Kod zlecenia...">
+        </div>
+        <input type="hidden" id="mappingId" value="">
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeModal()">Anuluj</button>
+            <button class="btn btn-primary" onclick="saveMapping()">Zapisz</button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirm Modal -->
+<div class="modal-overlay" id="deleteModal" style="display:none;">
+    <div class="modal">
+        <h3>Potwierdzenie</h3>
+        <p>Czy na pewno chcesz usunąć mapowanie dla <strong id="deleteCountryName"></strong>?</p>
+        <input type="hidden" id="deleteId" value="">
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeDeleteModal()">Anuluj</button>
+            <button class="btn btn-primary" style="background:var(--danger);" onclick="confirmDelete()">Usuń</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function showAddModal() {
+        document.getElementById('modalTitle').textContent = 'Dodaj mapowanie';
+        document.getElementById('mappingCountry').value = '';
+        document.getElementById('mappingInnenauftrag').value = '';
+        document.getElementById('mappingId').value = '';
+        document.getElementById('mappingModal').style.display = 'flex';
+        document.getElementById('mappingCountry').focus();
+    }
+
+    function editMapping(id, country, innenauftrag) {
+        document.getElementById('modalTitle').textContent = 'Edytuj mapowanie';
+        document.getElementById('mappingCountry').value = country;
+        document.getElementById('mappingInnenauftrag').value = innenauftrag;
+        document.getElementById('mappingId').value = id;
+        document.getElementById('mappingModal').style.display = 'flex';
+        document.getElementById('mappingCountry').focus();
+    }
+
+    function closeModal() {
+        document.getElementById('mappingModal').style.display = 'none';
+    }
+
+    function deleteMapping(id, country) {
+        document.getElementById('deleteId').value = id;
+        document.getElementById('deleteCountryName').textContent = country;
+        document.getElementById('deleteModal').style.display = 'flex';
+    }
+
+    function closeDeleteModal() {
+        document.getElementById('deleteModal').style.display = 'none';
+    }
+
+    async function saveMapping() {
+        const id = document.getElementById('mappingId').value;
+        const country = document.getElementById('mappingCountry').value.trim();
+        const innenauftrag = document.getElementById('mappingInnenauftrag').value.trim();
+
+        if (!country || !innenauftrag) {
+            showToast('Oba pola są wymagane.', 'warning');
+            return;
+        }
+
+        try {
+            let res;
+            if (id) {
+                res = await fetch(`/api/country-mappings/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ country, innenauftrag })
+                });
+            } else {
+                res = await fetch('/api/country-mappings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ country, innenauftrag })
+                });
+            }
+
+            if (res.ok) {
+                showToast('Zapisano.', 'success');
+                location.reload();
+            } else {
+                const data = await res.json();
+                showToast(data.error || 'Błąd.', 'error');
+            }
+        } catch (err) {
+            showToast('Błąd połączenia.', 'error');
+        }
+    }
+
+    async function confirmDelete() {
+        const id = document.getElementById('deleteId').value;
+        try {
+            const res = await fetch(`/api/country-mappings/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                showToast('Usunięto mapowanie.', 'success');
+                location.reload();
+            } else {
+                showToast('Błąd usuwania.', 'error');
+            }
+        } catch (err) {
+            showToast('Błąd połączenia.', 'error');
+        }
+    }
+
+    // Close modals on backdrop click
+    document.getElementById('mappingModal').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeModal();
+    });
+    document.getElementById('deleteModal').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeDeleteModal();
+    });
+</script>
+{% endblock %}

@@ -184,6 +184,19 @@ class DailyStat(db.Model):
         }
 
 
+class CountryMapping(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    country = db.Column(db.String(150), nullable=False)
+    innenauftrag = db.Column(db.String(100), nullable=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'country': self.country,
+            'innenauftrag': self.innenauftrag
+        }
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  AUTH HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -317,6 +330,19 @@ def admin_activities():
 def admin_users():
     users = User.query.order_by(User.display_name).all()
     return render_template('admin_users.html', users=users)
+
+
+@app.route('/admin/panel')
+@admin_required
+def admin_panel():
+    return render_template('admin_panel.html')
+
+
+@app.route('/admin/country-mapping')
+@admin_required
+def admin_country_mapping():
+    mappings = CountryMapping.query.order_by(CountryMapping.country).all()
+    return render_template('admin_country_mapping.html', mappings=mappings)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -857,6 +883,54 @@ def api_user_delete(user_id):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  API: ADMIN — COUNTRY MAPPINGS
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/country-mappings', methods=['GET'])
+@admin_required
+def api_country_mappings():
+    mappings = CountryMapping.query.order_by(CountryMapping.country).all()
+    return jsonify([m.to_dict() for m in mappings]), 200
+
+
+@app.route('/api/country-mappings', methods=['POST'])
+@admin_required
+def api_country_mapping_create():
+    data = request.get_json()
+    country = data.get('country', '').strip()
+    innenauftrag = data.get('innenauftrag', '').strip()
+    if not country or not innenauftrag:
+        return jsonify({'error': 'Kraj i Innenauftrag są wymagane.'}), 400
+
+    mapping = CountryMapping(country=country, innenauftrag=innenauftrag)
+    db.session.add(mapping)
+    db.session.commit()
+    return jsonify(mapping.to_dict()), 201
+
+
+@app.route('/api/country-mappings/<int:mapping_id>', methods=['PUT'])
+@admin_required
+def api_country_mapping_update(mapping_id):
+    mapping = CountryMapping.query.get_or_404(mapping_id)
+    data = request.get_json()
+    if 'country' in data:
+        mapping.country = data['country'].strip()
+    if 'innenauftrag' in data:
+        mapping.innenauftrag = data['innenauftrag'].strip()
+    db.session.commit()
+    return jsonify(mapping.to_dict()), 200
+
+
+@app.route('/api/country-mappings/<int:mapping_id>', methods=['DELETE'])
+@admin_required
+def api_country_mapping_delete(mapping_id):
+    mapping = CountryMapping.query.get_or_404(mapping_id)
+    db.session.delete(mapping)
+    db.session.commit()
+    return jsonify({'message': 'Usunięto mapowanie.'}), 200
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  SEED DATA
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -873,8 +947,41 @@ DEFAULT_ACTIVITIES = [
 ]
 
 
+DEFAULT_COUNTRY_MAPPINGS = [
+    ('Schweiz', '91000741810'),
+    ('Italien', '91000741812'),
+    ('Rumänien', '91000741814'),
+    ('Vereinigtes Königreich', '91000741816'),
+    ('Frankreich', '91000741817'),
+    ('Croatia', '91000741820'),
+    ('Spanien Kanaren', 'ES01'),
+    ('Spanien', 'ES01'),
+    ('Portugal', '91000741824'),
+    ('Elfenbeinküste', '91000741828'),
+    ('Deutschland', 'Orsay DE'),
+    ('Kongo', 'IAM RCB'),
+    ('Senegal', 'IAM SN'),
+    ('Deutschland AMAZON', 'DE AMAZON'),
+    ('EDEKA', 'EDK1'),
+    ('Netherlands', 'NL01'),
+    ('Northern Ireland', 'IRL'),
+    ('ES', 'ES01'),
+    ('IT', '91000741812'),
+    ('CH', '91000741810'),
+    ('Slowakei', 'SLO'),
+    ('Tschechien', 'TSC'),
+    ('PL', 'PL'),
+    ('HU', 'HU'),
+    ('BE', 'BE'),
+    ('PT', 'PT'),
+    ('AT', 'AT'),
+    ('Deutschland C&A', 'DE'),
+    ('SI', 'SI'),
+]
+
+
 def seed_data():
-    """Seed default activities and admin user on first run."""
+    """Seed default activities, admin user and country mappings on first run."""
     if Activity.query.count() == 0:
         for i, name in enumerate(DEFAULT_ACTIVITIES):
             db.session.add(Activity(name=name, sort_order=i))
@@ -891,6 +998,12 @@ def seed_data():
         db.session.add(admin)
         db.session.commit()
         print("[SEED] Admin user created (login: admin / password: admin123)")
+
+    if CountryMapping.query.count() == 0:
+        for country, innenauftrag in DEFAULT_COUNTRY_MAPPINGS:
+            db.session.add(CountryMapping(country=country, innenauftrag=innenauftrag))
+        db.session.commit()
+        print("[SEED] Default country mappings created.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
