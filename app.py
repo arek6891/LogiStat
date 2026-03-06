@@ -508,8 +508,16 @@ def import_csv_page():
 @app.route('/general-stats')
 @admin_required
 def general_stats_page():
-    date_from_str = request.args.get('date_from', '')
-    date_to_str = request.args.get('date_to', '')
+    # If parameters not provided, use first and last day of current month
+    today = datetime.today()
+    default_from = today.replace(day=1).strftime('%Y-%m-%d')
+    # Calculate last day of month
+    import calendar
+    last_day = calendar.monthrange(today.year, today.month)[1]
+    default_to = today.replace(day=last_day).strftime('%Y-%m-%d')
+
+    date_from_str = request.args.get('date_from', default_from)
+    date_to_str = request.args.get('date_to', default_to)
     
     query = GeneralStat.query
     
@@ -538,8 +546,8 @@ def general_stats_page():
     
     return render_template('general_stats.html',
                            stats=stats,
-                           categories=STAT_CATEGORIES,
                            category_labels=STAT_CATEGORY_LABELS,
+                           categories=STAT_CATEGORIES,
                            date_from=date_from_str,
                            date_to=date_to_str,
                            rates_by_ym=rates_by_ym)
