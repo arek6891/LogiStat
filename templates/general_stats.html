@@ -71,10 +71,12 @@
                 <td>{{ s.country_ledger }}</td>
                 <td style="font-weight:600;" class="row-amounts" data-val="{{ s.amounts }}">{{ s.amounts }}</td>
                 {% set cd = s.get_category_data() %}
+                {% set row_total = namespace(val=0) %}
                 {% for cat in categories %}
                 {% set amt = cd.get(cat, {}).get('amount', 0) %}
                 {% set rate = rates.get(cat, 0.0) %}
                 {% set computed_cost = amt * rate %}
+                {% set row_total.val = row_total.val + computed_cost %}
                 <td>
                     <input type="number" class="inline-input cat-amount" data-cat="{{ cat }}" data-field="amount"
                         value="{{ amt }}" min="0" step="1" style="width:65px;">
@@ -86,7 +88,7 @@
                 </td>
                 {% endfor %}
                 <td class="total-cost" style="font-weight:700;color:var(--success,#22c55e);">
-                    {{ '%.2f'|format(s.total_cost()) }} €
+                    {{ '%.2f'|format(row_total.val) }} €
                 </td>
             </tr>
             {% endfor %}
