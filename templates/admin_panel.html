@@ -19,5 +19,16 @@
             </p>
         </div>
     </a>
+    <a href="{{ url_for('admin_cost_mapping') }}" class="card"
+        style="text-decoration:none;color:inherit;cursor:pointer;transition:transform 0.2s,box-shadow 0.2s;"
+        onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 8px 32px rgba(124,58,237,0.3)'"
+        onmouseout="this.style.transform='';this.style.boxShadow=''">
+        <div style="padding:32px;text-align:center;">
+            <div style="font-size:3rem;margin-bottom:16px;">💰</div>
+            <h3 style="margin:0 0 8px 0;font-size:1.2rem;">Cennik (Koszty Kategorii)</h3>
+            <p style="color:var(--text-muted);margin:0;font-size:0.9rem;">Zarządzaj mapowaniem stawek na miesiące i lata
+            </p>
+        </div>
+    </a>
 </div>
 {% endblock %}

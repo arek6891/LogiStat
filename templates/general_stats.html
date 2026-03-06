@@ -82,7 +82,7 @@
                 <td>
                     <input type="text" class="inline-input cat-cost" data-cat="{{ cat }}" data-field="cost"
                         value="{{ '%.2f'|format(computed_cost) }}" readonly tabindex="-1"
-                        style="width:75px; background:transparent; border-color:transparent; color:#cbd5e1;">
+                        style="width:75px; background:rgba(255,255,255,0.08); border-color:transparent; color:#cbd5e1; border-radius:4px;">
                 </td>
                 {% endfor %}
                 <td class="total-cost" style="font-weight:700;color:var(--success,#22c55e);">

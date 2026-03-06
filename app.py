@@ -285,6 +285,22 @@ class GeneralStat(db.Model):
 
     def to_dict(self):
         cd = self.get_category_data()
+        
+        # When serializing, we also calculate the actual cost based on mapped rates for that month/year
+        ym = (self.loading_date.year, self.loading_date.month)
+        # We need the global rates dictionary or fetch it. To be efficient, we can fetch the mapping here
+        # or rely on the frontend multiplying. The prompt said backend should trust the relational calculation,
+        # but the frontend doesn't save costs. We will fetch the mapping for this month.
+        mapping = CostMapping.query.filter_by(year=ym[0], month=ym[1]).first()
+        rates = mapping.get_rates_data() if mapping else {}
+
+        total_cost = 0.0
+        for cat, data in cd.items():
+            amt = data.get('amount', 0)
+            rate = rates.get(cat, 0.0)
+            data['computed_cost'] = amt * rate
+            total_cost += data['computed_cost']
+
         return {
             'id': self.id,
             'loading_date': self.loading_date.isoformat(),
@@ -294,7 +310,38 @@ class GeneralStat(db.Model):
             'country_ledger': self.country_ledger,
             'amounts': self.amounts,
             'category_data': cd,
-            'total_cost': self.total_cost()
+            'total_cost': total_cost
+        }
+
+
+class CostMapping(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    year = db.Column(db.Integer, nullable=False)
+    month = db.Column(db.Integer, nullable=False)
+    rates_data = db.Column(db.Text, default='{}')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=True)
+    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+    __table_args__ = (
+        db.UniqueConstraint('year', 'month', name='uq_cost_mapping_ym'),
+    )
+
+    def get_rates_data(self):
+        try:
+            return json.loads(self.rates_data) if self.rates_data else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+
+    def set_rates_data(self, data):
+        self.rates_data = json.dumps(data)
+        
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'year': self.year,
+            'month': self.month,
+            'rates_data': self.get_rates_data()
         }
 
 
@@ -446,6 +493,12 @@ def admin_country_mapping():
     return render_template('admin_country_mapping.html', mappings=mappings)
 
 
+@app.route('/admin/cost-mapping')
+@admin_required
+def admin_cost_mapping():
+    return render_template('admin_cost_mapping.html', categories=STAT_CATEGORIES, category_labels=STAT_CATEGORY_LABELS)
+
+
 @app.route('/import-csv')
 @admin_required
 def import_csv_page():
@@ -479,12 +532,17 @@ def general_stats_page():
 
     stats = query.order_by(GeneralStat.loading_date.desc()).all()
     
+    # Przekazanie do szablonu wszystkich mapowań kosztów aby JS miał do nich dostęp przy edycji
+    cost_mappings = CostMapping.query.all()
+    rates_by_ym = {f"{cm.year}-{cm.month:02d}": cm.get_rates_data() for cm in cost_mappings}
+    
     return render_template('general_stats.html',
                            stats=stats,
                            categories=STAT_CATEGORIES,
                            category_labels=STAT_CATEGORY_LABELS,
                            date_from=date_from_str,
-                           date_to=date_to_str)
+                           date_to=date_to_str,
+                           rates_by_ym=rates_by_ym)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1260,6 +1318,39 @@ def api_general_stat_update(stat_id):
 
     db.session.commit()
     return jsonify(stat.to_dict()), 200
+
+
+@app.route('/api/cost-mapping/<int:year>/<int:month>', methods=['GET'])
+@admin_required
+def api_cost_mapping_get(year, month):
+    mapping = CostMapping.query.filter_by(year=year, month=month).first()
+    if mapping:
+        return jsonify(mapping.get_rates_data()), 200
+    return jsonify({}), 200
+
+
+@app.route('/api/cost-mapping/<int:year>/<int:month>', methods=['PUT', 'POST'])
+@admin_required
+def api_cost_mapping_save(year, month):
+    data = request.get_json()
+    rates = data.get('rates', {})
+
+    mapping = CostMapping.query.filter_by(year=year, month=month).first()
+    if mapping:
+        mapping.set_rates_data(rates)
+        mapping.updated_at = datetime.utcnow()
+        mapping.updated_by = current_user.id
+    else:
+        mapping = CostMapping(
+            year=year,
+            month=month,
+            updated_by=current_user.id
+        )
+        mapping.set_rates_data(rates)
+        db.session.add(mapping)
+
+    db.session.commit()
+    return jsonify({'success': True, 'mapping': mapping.to_dict()}), 200
 
 
 # ══════════════════════════════════════════════════════════════════════════════
