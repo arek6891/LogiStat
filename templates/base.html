@@ -52,6 +52,10 @@
                         class="{% if request.endpoint == 'import_csv_page' %}active{% endif %}">
                         <span class="icon">📥</span> Import CSV
                     </a></li>
+                <li><a href="{{ url_for('paczki_view') }}"
+                        class="{% if request.endpoint == 'paczki_view' %}active{% endif %}">
+                        <span class="icon">📦</span> Paczki
+                    </a></li>
                 <li><a href="{{ url_for('general_stats_page') }}"
                         class="{% if request.endpoint == 'general_stats_page' %}active{% endif %}">
                         <span class="icon">📊</span> Statystyki ogólne

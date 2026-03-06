@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Paczki (Dane CSV) — LogiStat{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <div>
+        <h1>📦 Paczki (Dane CSV)</h1>
+        <p style="color:var(--text-muted);">Surowe dane paczek zaimportowane ze wszystkich plików CSV w systemie.</p>
+    </div>
+    <div>
+        <form method="GET" style="display:flex;gap:.5rem;align-items:center;">
+            <input type="date" name="date_from" value="{{ date_from }}" class="form-control" style="width:130px;"
+                placeholder="Od (Ziel-Datum)">
+            <span style="color:var(--text-muted);">—</span>
+            <input type="date" name="date_to" value="{{ date_to }}" class="form-control" style="width:130px;"
+                placeholder="Do (Ziel-Datum)">
+
+            <input type="text" name="barcode" value="{{ barcode }}" class="form-control" style="width:150px;"
+                placeholder="Barcode">
+            <input type="text" name="land" value="{{ land }}" class="form-control" style="width:100px;"
+                placeholder="Land">
+
+            <button type="submit" class="btn btn-primary">Filtruj</button>
+            <a href="{{ url_for('paczki_view') }}" class="btn btn-secondary" style="padding:0.5rem;"
+                title="Wyczyść">✖</a>
+        </form>
+    </div>
+</div>
+
+<div style="overflow-x:auto;">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Barcode</th>
+                <th>Land</th>
+                <th style="text-align:right;">Stückzahl</th>
+                <th>Kategorie</th>
+                <th>Ziel-Datum</th>
+                <th>Übergabe Nr.</th>
+                <th>Data importu</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr>
+                <td style="font-family:monospace; color:var(--accent);">{{ item.barcode }}</td>
+                <td>{{ item.land or '—' }}</td>
+                <td style="text-align:right; font-weight:bold;">{{ item.stueckzahl }}</td>
+                <td>{{ item.kategorie or '—' }}</td>
+                <td>{{ item.ziel_datum.strftime('%d.%m.%Y') if item.ziel_datum else '—' }}</td>
+                <td>{{ item.uebergabe_nr or '—' }}</td>
+                <td style="color:var(--text-muted);">{{ item.imported_at.strftime('%d.%m.%Y %H:%M') if item.imported_at
+                    else '—' }}</td>
+            </tr>
+            {% endfor %}
+            {% if not items %}
+            <tr>
+                <td colspan="7" style="text-align:center;padding:3rem;color:var(--text-muted);">
+                    Brak paczek spełniających kryteria.
+                </td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+
+{% if pagination and pagination.pages > 1 %}
+<div style="margin-top: 1.5rem; display: flex; justify-content: center; gap: .5rem;">
+    {% if pagination.has_prev %}
+    <a href="{{ url_for('paczki_view', page=pagination.prev_num, date_from=date_from, date_to=date_to, barcode=barcode, land=land) }}"
+        class="btn btn-secondary">« Poprzednia</a>
+    {% endif %}
+
+    <span style="display:flex; align-items:center; padding: 0 1rem; color: var(--text-muted);">Strona {{ pagination.page
+        }} z {{ pagination.pages }}</span>
+
+    {% if pagination.has_next %}
+    <a href="{{ url_for('paczki_view', page=pagination.next_num, date_from=date_from, date_to=date_to, barcode=barcode, land=land) }}"
+        class="btn btn-secondary">Następna »</a>
+    {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

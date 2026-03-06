@@ -504,6 +504,47 @@ def admin_cost_mapping():
 def import_csv_page():
     return render_template('import_csv.html')
 
+@app.route('/paczki')
+@admin_required
+def paczki_view():
+    date_from_str = request.args.get('date_from', '')
+    date_to_str = request.args.get('date_to', '')
+    barcode = request.args.get('barcode', '').strip()
+    land = request.args.get('land', '').strip()
+    page = request.args.get('page', 1, type=int)
+    
+    query = ImportedCarton.query
+    
+    if date_from_str:
+        try:
+            date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date()
+            query = query.filter(ImportedCarton.ziel_datum >= date_from)
+        except ValueError:
+            pass
+            
+    if date_to_str:
+        try:
+            date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date()
+            query = query.filter(ImportedCarton.ziel_datum <= date_to)
+        except ValueError:
+            pass
+            
+    if barcode:
+        query = query.filter(ImportedCarton.barcode.ilike(f'%{barcode}%'))
+        
+    if land:
+        query = query.filter(ImportedCarton.land.ilike(f'%{land}%'))
+
+    pagination = query.order_by(ImportedCarton.imported_at.desc()).paginate(page=page, per_page=100, error_out=False)
+    
+    return render_template('paczki.html', 
+                           pagination=pagination, 
+                           items=pagination.items,
+                           date_from=date_from_str,
+                           date_to=date_to_str,
+                           barcode=barcode,
+                           land=land)
+
 
 @app.route('/general-stats')
 @admin_required
