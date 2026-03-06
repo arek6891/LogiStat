@@ -1,0 +1,228 @@
+{% extends 'base.html' %}
+{% block title %}LogiStat — Cennik (Koszty){% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>💰 Cennik (Koszty Kategorii)</h2>
+    <p class="subtitle">Zarządzaj stawkami dla poszczególnych akcji w danym miesiącu i roku.</p>
+</div>
+
+<div class="card" style="max-width:800px; margin:0 auto;">
+    <div class="card-header" style="flex-direction:column; align-items:flex-start; gap:1rem;">
+        <h3 style="margin-bottom:0;">Wybierz okres</h3>
+        <div style="display:flex; gap:1rem; width:100%;">
+            <div style="flex:1;">
+                <label style="display:block; margin-bottom:4px; font-size:0.85rem; color:var(--text-muted);">Rok</label>
+                <input type="number" id="yearSelect" class="form-control" value="2026" style="width:100%;">
+            </div>
+            <div style="flex:1;">
+                <label
+                    style="display:block; margin-bottom:4px; font-size:0.85rem; color:var(--text-muted);">Miesiąc</label>
+                <select id="monthSelect" class="form-control" style="width:100%;">
+                    <option value="1">Styczeń</option>
+                    <option value="2">Luty</option>
+                    <option value="3" selected>Marzec</option>
+                    <option value="4">Kwiecień</option>
+                    <option value="5">Maj</option>
+                    <option value="6">Czerwiec</option>
+                    <option value="7">Lipiec</option>
+                    <option value="8">Sierpień</option>
+                    <option value="9">Wrzesień</option>
+                    <option value="10">Październik</option>
+                    <option value="11">Listopad</option>
+                    <option value="12">Grudzień</option>
+                </select>
+            </div>
+            <div style="display:flex; align-items:flex-end;">
+                <button class="btn btn-secondary" onclick="loadRates()">Pokaż stawki</button>
+            </div>
+        </div>
+    </div>
+
+    <div style="padding:1.5rem;" id="ratesContainer">
+        <p style="color:var(--text-muted); text-align:center; padding:2rem 0;">Wybierz rok i miesiąc, aby wczytać
+            stawki.</p>
+    </div>
+
+    <div class="card-footer"
+        style="display:none; justify-content:space-between; padding:1rem 1.5rem; background:rgba(99,102,241,0.03); border-top:1px solid var(--border);"
+        id="ratesFooter">
+        <button class="btn btn-ghost" onclick="copyFromPreviousMonth()">📄 Skopiuj z poprzedniego miesiąca</button>
+        <button class="btn btn-primary" onclick="saveRates()">Zapisz stawki do bazy</button>
+    </div>
+</div>
+
+<div style="margin-top:16px; text-align:center;">
+    <a href="{{ url_for('admin_panel') }}" class="btn btn-ghost btn-sm">← Powrót do Panelu Admina</a>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const categoryLabels = JSON.parse('{{ category_labels|tojson|safe }}');
+    const categories = JSON.parse('{{ categories|tojson|safe }}');
+
+    // Ustaw dzisiejszy rok i miesiąc
+    const today = new Date();
+    document.getElementById('yearSelect').value = today.getFullYear();
+    document.getElementById('monthSelect').value = today.getMonth() + 1;
+
+    // Automatycznie załaduj po wejściu na stronę
+    loadRates();
+
+    async function loadRates() {
+        const year = document.getElementById('yearSelect').value;
+        const month = document.getElementById('monthSelect').value;
+        if (!year || !month) return;
+
+        const container = document.getElementById('ratesContainer');
+        container.innerHTML = '<p style="text-align:center; color:var(--text-muted);">Wczytywanie stawek...</p>';
+        document.getElementById('ratesFooter').style.display = 'none';
+
+        try {
+            const res = await fetch(`/api/cost-mapping/${year}/${month}`);
+            const rates = res.ok ? await res.json() : {};
+
+            renderRatesForm(rates);
+            document.getElementById('ratesFooter').style.display = 'flex';
+        } catch (err) {
+            container.innerHTML = '<p style="text-align:center; color:var(--danger);">Błąd połączenia. Nie można pobrać stawek.</p>';
+        }
+    }
+
+    function renderRatesForm(rates) {
+        const container = document.getElementById('ratesContainer');
+        let html = '<table style="width:100%; border-collapse:collapse;">';
+        html += `
+            <thead>
+                <tr style="border-bottom:2px solid var(--border);">
+                    <th style="text-align:left; padding:8px 0; color:var(--text-muted); font-size:0.85rem; text-transform:uppercase;">Kategoria / Akcja</th>
+                    <th style="text-align:right; padding:8px 0; color:var(--text-muted); font-size:0.85rem; text-transform:uppercase;">Stawka Cost (EUR)</th>
+                </tr>
+            </thead>
+            <tbody>
+        `;
+
+        categories.forEach(cat => {
+            const val = rates[cat] || 0.0;
+            const label = categoryLabels[cat] || cat;
+
+            html += `
+                <tr style="border-bottom:1px solid var(--border);">
+                    <td style="padding:12px 0; font-weight:500;">${label}</td>
+                    <td style="padding:12px 0; text-align:right;">
+                        <input type="number" class="form-control rate-input" data-cat="${cat}" value="${parseFloat(val).toFixed(2)}" min="0" step="0.01" style="width:100px; text-align:right; display:inline-block;">
+                    </td>
+                </tr>
+            `;
+        });
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+
+        // Setup highlighting on change
+        document.querySelectorAll('.rate-input').forEach(input => {
+            input.dataset.original = input.value;
+            input.addEventListener('input', function () {
+                if (this.value !== this.dataset.original) {
+                    this.style.borderColor = '#fbbf24';
+                    this.style.backgroundColor = 'rgba(251,191,36,0.1)';
+                } else {
+                    this.style.borderColor = '';
+                    this.style.backgroundColor = '';
+                }
+            });
+        });
+    }
+
+    async function saveRates() {
+        const year = document.getElementById('yearSelect').value;
+        const month = document.getElementById('monthSelect').value;
+        if (!year || !month) return;
+
+        const newRates = {};
+        document.querySelectorAll('.rate-input').forEach(input => {
+            const cat = input.dataset.cat;
+            newRates[cat] = parseFloat(input.value) || 0.0;
+        });
+
+        try {
+            const res = await fetch(`/api/cost-mapping/${year}/${month}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rates: newRates })
+            });
+
+            if (res.ok) {
+                showToast('Stawki zapisano pomyślnie!', 'success');
+                // Reset styling
+                document.querySelectorAll('.rate-input').forEach(input => {
+                    input.dataset.original = input.value;
+                    input.style.borderColor = '';
+                    input.style.backgroundColor = '';
+                });
+            } else {
+                showToast('Błąd zapisu stawek.', 'error');
+            }
+        } catch (err) {
+            showToast('Błąd połączenia. Nie zapisano stawek.', 'error');
+        }
+    }
+
+    async function copyFromPreviousMonth() {
+        let year = parseInt(document.getElementById('yearSelect').value);
+        let month = parseInt(document.getElementById('monthSelect').value);
+
+        if (!year || !month) return;
+
+        let prevMonth = month - 1;
+        let prevYear = year;
+        if (prevMonth === 0) {
+            prevMonth = 12;
+            prevYear -= 1;
+        }
+
+        try {
+            const res = await fetch(`/api/cost-mapping/${prevYear}/${prevMonth}`);
+            if (res.ok) {
+                const prevRates = await res.json();
+                if (Object.keys(prevRates).length === 0) {
+                    showToast('Brak skonfigurowanych stawek dla poprzedniego miesiąca.', 'warning');
+                    return;
+                }
+
+                let copied = false;
+                document.querySelectorAll('.rate-input').forEach(input => {
+                    const cat = input.dataset.cat;
+                    const prevVal = prevRates[cat] || 0.0;
+                    const formattedPrev = parseFloat(prevVal).toFixed(2);
+
+                    if (input.value !== formattedPrev) {
+                        input.value = formattedPrev;
+                        // Trigger highlight indicating unsaved changes
+                        if (input.value !== input.dataset.original) {
+                            input.style.borderColor = '#fbbf24';
+                            input.style.backgroundColor = 'rgba(251,191,36,0.1)';
+                        } else {
+                            input.style.borderColor = '';
+                            input.style.backgroundColor = '';
+                        }
+                        copied = true;
+                    }
+                });
+
+                if (copied) {
+                    showToast(`Skopiowano stawki z ${prevMonth}/${prevYear}. Pamiętaj, aby kliknąć Zapisz.`, 'info');
+                } else {
+                    showToast('Stawki w poprzednim miesiącu są identyczne jak obecnie wpisane.', 'info');
+                }
+            } else {
+                showToast('Wystąpił błąd podczas pobierania stawek.', 'error');
+            }
+        } catch (err) {
+            showToast('Błąd połączenia z serwerem.', 'error');
+        }
+    }
+</script>
+{% endblock %}
