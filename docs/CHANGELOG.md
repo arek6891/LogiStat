@@ -1,5 +1,22 @@
 # LogiStat — Changelog
 
+## [1.3.0] — 2026-03-06
+
+### Rozszerzenie Statystyk i Moduł Paczki
+
+#### Backend
+- Nowy model `CostMapping` z cennikiem kosztów per `year` i `month`.
+- Endpoint docelowy `/admin/cost-mapping` do zarządzania stawkami w Panelu Admina.
+- Moduł `Paczki` (raw view) i endpoint `GET /paczki` obsługujący paginację oraz zaawansowane filtry `date_from, date_to, barcode, land`.
+- Automatyczne wyznaczanie domyślnego zakresu filtrowania od pierwszego do ostatniego dnia obecnego miesiąca w `General Stats`.
+
+#### Frontend
+- Widok edycji stawek w `admin_cost_mapping.html` dla 10 kategorii wraz z opcją szybkiego kopiowania stawek z poprzedniego miesiąca.
+- W `general_stats.html` całkowite usunięcie masowego modyfikowania stawek kosztów. Zamiast tego zaimplementowano readonly inputy dla kosztów autowyliczane na bieżąco za pomocą przemnożenia zsumowanych kategorii przez stawki przypisane do odpowiedniego miesiąca i roku.
+- W formularzu "Statystyki ogólne" dodanie dynamicznej kolumny *Total Amount*. Zlicza na bieżąco ilości i ich aktualny stan względem importowanych statystyk.
+- Poprawiony, wyrazisty design kolorystyczny dla kolumn kwot, ilości i łącznych zysków.
+- Nowa przeglądarka `paczki.html` (widok surowych zaimportowanych paczek CSV z nowymi filtrami). Przypięto w sidebarze do sekcji Admina (`📦 Paczki`).
+
 ## [1.2.0] — 2026-03-05
 
 ### Import CSV i Statystyki Ogólne

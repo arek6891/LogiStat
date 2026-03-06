@@ -42,7 +42,11 @@
 - [x] Panel Admina z przyciskiem w sidebarze (admin only)
 - [x] Mapowanie krajów i zleceń (Country → Innenauftrag) — CRUD + seed 29 mapowań
 - [x] Import CSV z automatyczną deduplikacją po `barcode`
-- [x] Tabela statystyk ogólnych (General Stats) z inline edycją kosztów
+- [x] Tabela statystyk ogólnych (General Stats) z podsumowaniami per List-ID
+- [x] Kategorie (10) w ujęciu ilościowym z autowyliczaniem kosztów względem narzuconych stawek.
+- [x] Centralne zestawienie Cennika (Koszty Kategorii) i zarządzanie stawkami `Cost / month + rok`.
+- [x] Dodana kolumna Total Amount i poprawa zliczania i stylów wyliczeń kosztowych.
+- [x] Paging & Filtering dat, kodów i krajów na nowym podglądzie "Paczki (Dane CSV)" dla sprawdzania historii surowych wsadów.
 
 ---
 
