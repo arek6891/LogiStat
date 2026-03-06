@@ -32,6 +32,7 @@
                 <th rowspan="2" style="min-width:120px;">Country of destination</th>
                 <th rowspan="2" style="min-width:120px;">Country ledger</th>
                 <th rowspan="2" style="min-width:70px;">Amounts</th>
+                <th rowspan="2" style="min-width:70px;background:rgba(96,165,250,.08);color:#60a5fa;">Total Amount</th>
                 {% for cat in categories %}
                 <th colspan="2"
                     style="text-align:center;background:rgba(99,102,241,.08);border-bottom:2px solid var(--accent);min-width:160px;">
@@ -53,6 +54,7 @@
             <tr style="background: var(--surface); border-bottom: 2px solid var(--border); font-weight: bold;">
                 <td colspan="5" style="text-align:right; padding-right:1rem;">SUMA DLA WIDOCZNYCH ZAKRESÓW:</td>
                 <td id="sumAmounts" style="color:var(--accent);">0</td>
+                <td id="sumTotalAmounts" style="color:#60a5fa; font-weight:bold;">0</td>
                 {% for cat in categories %}
                 <td id="sum-{{ cat }}-amount" style="text-align:right; font-size:.85rem; color:#60a5fa;">0</td>
                 <td id="sum-{{ cat }}-cost" style="text-align:right; font-size:.85rem; color:#4ade80;">0.00 €
@@ -72,11 +74,21 @@
                 <td style="font-weight:600;" class="row-amounts" data-val="{{ s.amounts }}">{{ s.amounts }}</td>
                 {% set cd = s.get_category_data() %}
                 {% set row_total = namespace(val=0) %}
+                {% set row_total_amount = namespace(val=0) %}
                 {% for cat in categories %}
                 {% set amt = cd.get(cat, {}).get('amount', 0) %}
                 {% set rate = rates.get(cat, 0.0) %}
                 {% set computed_cost = amt * rate %}
                 {% set row_total.val = row_total.val + computed_cost %}
+                {% set row_total_amount.val = row_total_amount.val + amt %}
+                {% endfor %}
+                <td class="row-total-amount" style="font-weight:700; color:#60a5fa;"
+                    data-val="{{ row_total_amount.val }}">{{ row_total_amount.val }}</td>
+
+                {% for cat in categories %}
+                {% set amt = cd.get(cat, {}).get('amount', 0) %}
+                {% set rate = rates.get(cat, 0.0) %}
+                {% set computed_cost = amt * rate %}
                 <td>
                     <input type="number" class="inline-input cat-amount" data-cat="{{ cat }}" data-field="amount"
                         value="{{ amt }}" min="0" step="1" style="width:65px;">
@@ -94,7 +106,7 @@
             {% endfor %}
             {% if not stats %}
             <tr>
-                <td colspan="{{ 6 + categories|length * 2 + 1 }}"
+                <td colspan="{{ 7 + categories|length * 2 + 1 }}"
                     style="text-align:center;padding:3rem;color:var(--text-muted);">
                     Brak danych. Wrzuć plik CSV aby wygenerować statystyki.
                 </td>
@@ -158,6 +170,7 @@
 
     function updateRowTotal(row) {
         let total = 0;
+        let totalAmount = 0;
         const categories = JSON.parse('{{ categories|tojson|safe }}');
         const ym = row.dataset.ym;
         const rates = ratesByYm[ym] || {};
@@ -168,6 +181,7 @@
             if (amountInput && costInput) {
                 const amt = parseInt(amountInput.value) || 0;
                 const rate = parseFloat(rates[cat]) || 0.0;
+                totalAmount += amt;
                 const cst = amt * rate;
                 costInput.value = cst.toFixed(2);
                 total += cst;
@@ -179,6 +193,12 @@
             totalCell.textContent = total.toFixed(2) + ' €';
             totalCell.dataset.val = total;
         }
+
+        const totalAmountCell = row.querySelector('.row-total-amount');
+        if (totalAmountCell) {
+            totalAmountCell.textContent = totalAmount;
+            totalAmountCell.dataset.val = totalAmount;
+        }
     }
 
     function updateGlobalSums() {
@@ -188,6 +208,15 @@
             sumAmounts += parseInt(td.dataset.val) || 0;
         });
         document.getElementById('sumAmounts').textContent = sumAmounts;
+
+        let sumTotalAmounts = 0;
+        document.querySelectorAll('.row-total-amount').forEach(td => {
+            let rowAmt = parseInt(td.dataset.val);
+            if (isNaN(rowAmt)) rowAmt = parseInt(td.textContent) || 0;
+            sumTotalAmounts += rowAmt;
+        });
+        const sumTotAmtEl = document.getElementById('sumTotalAmounts');
+        if (sumTotAmtEl) sumTotAmtEl.textContent = sumTotalAmounts;
 
         // Category Amounts and Costs
         const categories = JSON.parse('{{ categories|tojson|safe }}');
