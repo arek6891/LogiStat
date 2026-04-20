@@ -18,6 +18,10 @@
                 <div class="subtitle">Workforce Management</div>
             </div>
             <ul class="sidebar-nav">
+                <li><a href="{{ url_for('dashboard') }}"
+                        class="{% if request.endpoint == 'dashboard' %}active{% endif %}">
+                        <span class="icon">📊</span> Dashboard
+                    </a></li>
                 <li><a href="{{ url_for('scanner', shift_number=1) }}"
                         class="{% if request.endpoint == 'scanner' %}active{% endif %}">
                         <span class="icon">📷</span> Skaner zmian
@@ -32,6 +36,22 @@
                     </a></li>
                 <li><a href="{{ url_for('stats') }}" class="{% if request.endpoint == 'stats' %}active{% endif %}">
                         <span class="icon">📊</span> Statystyki
+                    </a></li>
+                <li><a href="{{ url_for('scan_package') }}"
+                        class="{% if request.endpoint == 'scan_package' %}active{% endif %}">
+                        <span class="icon">📦</span> Skan paczek
+                    </a></li>
+                <li><a href="{{ url_for('time_tracking') }}"
+                        class="{% if request.endpoint == 'time_tracking' %}active{% endif %}">
+                        <span class="icon">⏱</span> Czas pracy
+                    </a></li>
+                <li><a href="{{ url_for('worker_times') }}"
+                        class="{% if request.endpoint == 'worker_times' %}active{% endif %}">
+                        <span class="icon">🕐</span> Czasy pracowników
+                    </a></li>
+                <li><a href="{{ url_for('paczki_view') }}"
+                        class="{% if request.endpoint == 'paczki_view' %}active{% endif %}">
+                        <span class="icon">📦</span> Paczki
                     </a></li>
                 {% if current_user.role == 'admin' %}
                 <li><a href="{{ url_for('admin_activities') }}"
@@ -51,10 +71,6 @@
                 <li><a href="{{ url_for('import_csv_page') }}"
                         class="{% if request.endpoint == 'import_csv_page' %}active{% endif %}">
                         <span class="icon">📥</span> Import CSV
-                    </a></li>
-                <li><a href="{{ url_for('paczki_view') }}"
-                        class="{% if request.endpoint == 'paczki_view' %}active{% endif %}">
-                        <span class="icon">📦</span> Paczki
                     </a></li>
                 <li><a href="{{ url_for('general_stats_page') }}"
                         class="{% if request.endpoint == 'general_stats_page' %}active{% endif %}">

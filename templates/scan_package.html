@@ -1,0 +1,189 @@
+{% extends 'base.html' %}
+{% block title %}LogiStat — Skanowanie paczek{% endblock %}
+
+{% block content %}
+<div class="scanner-page">
+    <div class="page-header" style="text-align:center;">
+        <h1>📦 Skanowanie paczek</h1>
+        <p style="color:var(--text-muted);" id="pageSubtitle">Zeskanuj kod pracownika, następnie kod paczki — i tak w kółko.</p>
+    </div>
+
+    <!-- Pasek stanu -->
+    <div style="display:flex;justify-content:center;gap:1rem;margin-bottom:1.5rem;">
+        <div id="stepBadgeEmployee" class="scanner-shift-badge" style="opacity:1;transition:opacity .2s;">
+            👤 Pracownik
+        </div>
+        <div style="display:flex;align-items:center;color:var(--text-muted);">→</div>
+        <div id="stepBadgePackage" class="scanner-shift-badge" style="opacity:0.3;transition:opacity .2s;">
+            📦 Paczka
+        </div>
+    </div>
+
+    <!-- Jeden input -->
+    <div class="scanner-input-area">
+        <div class="scanner-subtitle" id="scanLabel">Zeskanuj kod pracownika</div>
+        <input type="text" id="scanInput" class="scanner-input" placeholder="Skanuj..." autofocus autocomplete="off">
+    </div>
+
+    <!-- Aktualny pracownik (po pierwszym skanie) -->
+    <div id="currentEmployee" style="display:none;margin:1rem 0;text-align:center;">
+        <div style="display:inline-flex;align-items:center;gap:.75rem;background:var(--surface);
+                    border:2px solid var(--accent);border-radius:10px;padding:.75rem 1.5rem;">
+            <div class="user-avatar" id="empAvatar" style="width:40px;height:40px;font-size:1.2rem;"></div>
+            <span style="font-weight:700;" id="empName"></span>
+            <span style="color:var(--text-muted);font-size:.8rem;" id="empPackageCount"></span>
+        </div>
+    </div>
+
+    <!-- Lista skanowań -->
+    <div style="margin-top:1.5rem;">
+        <div class="scanned-count" id="totalCount" style="display:none;">
+            Łącznie: <strong id="scanCount">0</strong> paczek
+        </div>
+        <div class="scanned-list" id="scannedList"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Stan: 'employee' lub 'package'
+    let state = 'employee';
+    let currentEmployee = null;
+    let sessionCount = 0;
+    let employeePackageCount = 0;
+    let scanTimer = null;
+
+    const scanInput = document.getElementById('scanInput');
+    const scanLabel = document.getElementById('scanLabel');
+    const stepEmployee = document.getElementById('stepBadgeEmployee');
+    const stepPackage = document.getElementById('stepBadgePackage');
+
+    scanInput.addEventListener('input', () => {
+        clearTimeout(scanTimer);
+        if (scanInput.value.length > 0) {
+            scanInput.classList.add('scanning');
+            scanTimer = setTimeout(() => {
+                const barcode = scanInput.value.trim();
+                scanInput.value = '';
+                scanInput.classList.remove('scanning');
+                if (barcode.length >= 3) handleScan(barcode);
+            }, 300);
+        }
+    });
+
+    scanInput.addEventListener('blur', () => {
+        setTimeout(() => scanInput.focus(), 100);
+    });
+
+    async function handleScan(barcode) {
+        if (state === 'employee') {
+            await doScanEmployee(barcode);
+        } else {
+            await doScanPackage(barcode);
+        }
+    }
+
+    async function doScanEmployee(barcode) {
+        try {
+            const res = await fetch('/api/scan-employee', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ barcode })
+            });
+            const data = await res.json();
+            if (!res.ok) { showToast(data.error, 'error'); return; }
+
+            currentEmployee = data.user;
+            employeePackageCount = 0;
+            document.getElementById('empAvatar').textContent = data.user.display_name[0];
+            document.getElementById('empName').textContent = data.user.display_name;
+            document.getElementById('empPackageCount').textContent = '';
+            document.getElementById('currentEmployee').style.display = '';
+            setState('package');
+        } catch {
+            showToast('Błąd połączenia.', 'error');
+        }
+    }
+
+    async function doScanPackage(barcode) {
+        try {
+            const res = await fetch('/api/scan-package', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    employee_barcode: currentEmployee.barcode_id,
+                    package_barcode: barcode
+                })
+            });
+            const data = await res.json();
+
+            if (!res.ok) {
+                showToast(data.error, 'error');
+                addResultCard(null, barcode, data.error, data.existing_worker || null);
+                // Wróć do skanowania pracownika po błędzie duplikatu
+                setState('employee');
+                return;
+            }
+
+            showToast(data.message, 'success');
+            sessionCount++;
+            employeePackageCount++;
+            document.getElementById('empPackageCount').textContent = `(${employeePackageCount} paczek)`;
+            document.getElementById('scanCount').textContent = sessionCount;
+            document.getElementById('totalCount').style.display = '';
+            addResultCard(data.carton, barcode, null, null);
+
+            // Po każdej paczce wróć do skanowania pracownika
+            setState('employee');
+        } catch {
+            showToast('Błąd połączenia.', 'error');
+        }
+    }
+
+    function setState(s) {
+        state = s;
+        if (s === 'employee') {
+            scanLabel.textContent = 'Zeskanuj kod pracownika';
+            stepEmployee.style.opacity = '1';
+            stepPackage.style.opacity = '0.3';
+        } else {
+            scanLabel.textContent = `Zeskanuj kod paczki → ${currentEmployee.display_name}`;
+            stepEmployee.style.opacity = '0.3';
+            stepPackage.style.opacity = '1';
+        }
+    }
+
+    function addResultCard(carton, barcode, errorMsg, existingWorker) {
+        const list = document.getElementById('scannedList');
+        const card = document.createElement('div');
+        card.className = 'scanned-card';
+
+        if (errorMsg) {
+            const detail = existingWorker
+                ? `Już przypisana do: <strong>${existingWorker}</strong>`
+                : errorMsg;
+            card.style.borderLeft = '3px solid var(--danger, #ef4444)';
+            card.innerHTML = `
+                <div class="user-avatar" style="background:var(--danger,#ef4444);font-size:1.1rem;">✕</div>
+                <div class="user-info">
+                    <div class="user-name" style="font-family:monospace;color:var(--danger,#ef4444);">${barcode}</div>
+                    <div class="user-time">${detail}</div>
+                </div>`;
+        } else {
+            const time = new Date(carton.processed_at).toLocaleTimeString('pl');
+            card.style.borderLeft = '3px solid var(--accent)';
+            card.innerHTML = `
+                <div class="user-avatar" style="background:var(--accent);font-size:1.1rem;">📦</div>
+                <div class="user-info">
+                    <div class="user-name" style="font-family:monospace;">${carton.barcode}</div>
+                    <div class="user-time">
+                        <strong>${currentEmployee.display_name}</strong>
+                        · ${carton.land || '—'} · ${carton.stueckzahl} szt. · ${time}
+                    </div>
+                </div>`;
+        }
+        list.prepend(card);
+    }
+</script>
+{% endblock %}

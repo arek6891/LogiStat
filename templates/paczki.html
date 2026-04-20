@@ -36,6 +36,7 @@
                 <th>Kategorie</th>
                 <th>Ziel-Datum</th>
                 <th>Übergabe Nr.</th>
+                <th>Pracownik</th>
                 <th>Data importu</th>
             </tr>
         </thead>
@@ -48,13 +49,23 @@
                 <td>{{ item.kategorie or '—' }}</td>
                 <td>{{ item.ziel_datum.strftime('%d.%m.%Y') if item.ziel_datum else '—' }}</td>
                 <td>{{ item.uebergabe_nr or '—' }}</td>
+                <td>
+                    {% if item.processed_by_user %}
+                    <span style="color:var(--accent);">{{ item.processed_by_user.display_name }}</span>
+                    {% else %}
+                    <span style="color:var(--text-muted);">—</span>
+                    {% endif %}
+                    <button class="btn btn-ghost btn-sm" style="margin-left:.5rem;padding:2px 6px;font-size:.75rem;"
+                        onclick="openReassign({{ item.id }}, '{{ item.barcode }}', {{ item.processed_by or 'null' }})"
+                        title="Przepisz pracownika">✎</button>
+                </td>
                 <td style="color:var(--text-muted);">{{ item.imported_at.strftime('%d.%m.%Y %H:%M') if item.imported_at
                     else '—' }}</td>
             </tr>
             {% endfor %}
             {% if not items %}
             <tr>
-                <td colspan="7" style="text-align:center;padding:3rem;color:var(--text-muted);">
+                <td colspan="8" style="text-align:center;padding:3rem;color:var(--text-muted);">
                     Brak paczek spełniających kryteria.
                 </td>
             </tr>
@@ -80,4 +91,65 @@
 </div>
 {% endif %}
 
+<!-- Modal przepisania -->
+<div id="reassignModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;
+     align-items:center;justify-content:center;">
+    <div style="background:var(--surface);border-radius:12px;padding:2rem;min-width:340px;max-width:480px;width:90%;">
+        <h3 style="margin-top:0;">✎ Przepisz pracownika</h3>
+        <p style="color:var(--text-muted);font-size:.9rem;">Paczka: <code id="reassignBarcode"></code></p>
+        <label style="display:block;margin-bottom:.5rem;font-weight:600;">Nowy pracownik</label>
+        <select id="reassignUser" class="form-control" style="width:100%;margin-bottom:1.5rem;">
+            <option value="">— brak przypisania —</option>
+            {% for u in users %}
+            <option value="{{ u.id }}">{{ u.display_name }}</option>
+            {% endfor %}
+        </select>
+        <div style="display:flex;gap:.75rem;justify-content:flex-end;">
+            <button class="btn btn-secondary" onclick="closeReassign()">Anuluj</button>
+            <button class="btn btn-primary" onclick="confirmReassign()">Zapisz</button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let reassignCartonId = null;
+
+    function openReassign(cartonId, barcode, currentUserId) {
+        reassignCartonId = cartonId;
+        document.getElementById('reassignBarcode').textContent = barcode;
+        const sel = document.getElementById('reassignUser');
+        sel.value = currentUserId || '';
+        document.getElementById('reassignModal').style.display = 'flex';
+    }
+
+    function closeReassign() {
+        document.getElementById('reassignModal').style.display = 'none';
+        reassignCartonId = null;
+    }
+
+    async function confirmReassign() {
+        if (!reassignCartonId) return;
+        const userId = document.getElementById('reassignUser').value;
+        try {
+            const res = await fetch(`/api/packages/${reassignCartonId}/assign`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userId ? parseInt(userId) : null })
+            });
+            if (!res.ok) { showToast('Błąd zapisu.', 'error'); return; }
+            showToast('Przepisano pomyślnie.', 'success');
+            closeReassign();
+            setTimeout(() => location.reload(), 800);
+        } catch {
+            showToast('Błąd połączenia.', 'error');
+        }
+    }
+
+    document.getElementById('reassignModal').addEventListener('click', function(e) {
+        if (e.target === this) closeReassign();
+    });
+</script>
 {% endblock %}

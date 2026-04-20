@@ -1,5 +1,40 @@
 # LogiStat — Changelog
 
+## [1.4.0] — 2026-04-20
+
+### Skanowanie paczek, Dashboard dzienny, Czas pracy
+
+#### Backend — nowe modele
+- `ImportedCarton.processed_by` + `processed_at` — przypisanie pracownika do paczki
+- `GeneralStat.double_rate` — flaga podwójnej stawki per wiersz
+- `WorkerTimeEvent` — rejestracja czasu pracy: `break_start`, `break_end`, `work_end`
+- Automatyczna migracja kolumn (`migrate_columns()`) — nowe kolumny dodawane bez kasowania bazy
+- `db.create_all()` + `seed_data()` przeniesione na poziom modułu (działa z Gunicorn)
+
+#### Backend — nowe endpointy
+- `POST /api/scan-package` — przypisanie paczki do pracownika (błąd 409 jeśli już przypisana)
+- `POST /api/scan-employee` — weryfikacja kodu pracownika
+- `PUT /api/packages/<id>/assign` — przepisanie paczki przez lidera
+- `GET /api/dashboard` — dane dziennego dashboardu (paczki, czynności, per pracownik)
+- `GET /general-stats/export` — eksport statystyk ogólnych do pliku `.xlsx` (openpyxl)
+- `POST /api/time/scan` — skanowanie przerwy / końca pracy
+- `GET /api/worker-times` — zestawienie czasów per pracownik dla wybranej daty
+- `POST/PUT/DELETE /api/worker-times/event` — ręczne korekty zdarzeń przez lidera
+
+#### Frontend — nowe ekrany
+- `/scan-package` — naprzemienne skanowanie: pracownik → paczka → pracownik → paczka
+- `/dashboard` — dzienny dashboard z zakładkami: Podsumowanie + Per pracownik
+- `/time-tracking` — skanowanie przerw i końca pracy (zakładki ☕ / 🏁)
+- `/worker-times` — moduł liderski: przegląd i korekta czasów pracy
+
+#### Frontend — zmiany w istniejących ekranach
+- `paczki.html` — kolumna Pracownik + przycisk ✎ do przepisania (modal z dropdownem)
+- `paczki.html` — dostępna teraz dla liderów (poprzednio tylko admin)
+- `general_stats.html` — kolumna Double Rate (checkbox, natychmiastowy zapis, tło ×2)
+- `general_stats.html` — przycisk ⬇ Excel eksportujący aktualnie odfiltrowany zakres
+- `worker_times.html` — wiersze z przerwą >30 min podświetlone na czerwono
+- `base.html` — nowe pozycje w sidebarze: Dashboard, Paczki (dla liderów), Skan paczek, Czas pracy, Czasy pracowników
+
 ## [1.3.0] — 2026-03-06
 
 ### Rozszerzenie Statystyk i Moduł Paczki

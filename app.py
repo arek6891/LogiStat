@@ -236,8 +236,11 @@ class ImportedCarton(db.Model):
     country_mapping_id = db.Column(db.Integer, db.ForeignKey('country_mapping.id'), nullable=True)
     imported_at = db.Column(db.DateTime, default=datetime.utcnow)
     imported_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    processed_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    processed_at = db.Column(db.DateTime, nullable=True)
 
     country_mapping = db.relationship('CountryMapping', backref=db.backref('cartons', lazy=True))
+    processed_by_user = db.relationship('User', foreign_keys=[processed_by])
 
     def to_dict(self):
         return {
@@ -248,7 +251,10 @@ class ImportedCarton(db.Model):
             'kategorie': self.kategorie,
             'ziel_datum': self.ziel_datum.isoformat() if self.ziel_datum else None,
             'uebergabe_nr': self.uebergabe_nr,
-            'country_mapping_id': self.country_mapping_id
+            'country_mapping_id': self.country_mapping_id,
+            'processed_by': self.processed_by,
+            'processed_by_name': self.processed_by_user.display_name if self.processed_by_user else None,
+            'processed_at': self.processed_at.isoformat() if self.processed_at else None,
         }
 
 
@@ -261,6 +267,7 @@ class GeneralStat(db.Model):
     country_ledger = db.Column(db.String(150), nullable=False)
     amounts = db.Column(db.Integer, default=0)
     category_data = db.Column(db.Text, default='{}')
+    double_rate = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=True)
     updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
@@ -294,11 +301,12 @@ class GeneralStat(db.Model):
         mapping = CostMapping.query.filter_by(year=ym[0], month=ym[1]).first()
         rates = mapping.get_rates_data() if mapping else {}
 
+        multiplier = 2.0 if self.double_rate else 1.0
         total_cost = 0.0
         for cat, data in cd.items():
             amt = data.get('amount', 0)
             rate = rates.get(cat, 0.0)
-            data['computed_cost'] = amt * rate
+            data['computed_cost'] = amt * rate * multiplier
             total_cost += data['computed_cost']
 
         return {
@@ -310,6 +318,7 @@ class GeneralStat(db.Model):
             'country_ledger': self.country_ledger,
             'amounts': self.amounts,
             'category_data': cd,
+            'double_rate': self.double_rate or False,
             'total_cost': total_cost
         }
 
@@ -342,6 +351,35 @@ class CostMapping(db.Model):
             'year': self.year,
             'month': self.month,
             'rates_data': self.get_rates_data()
+        }
+
+
+class WorkerTimeEvent(db.Model):
+    id           = db.Column(db.Integer, primary_key=True)
+    user_id      = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    shift_id     = db.Column(db.Integer, db.ForeignKey('shift.id'), nullable=False)
+    event_type   = db.Column(db.String(20), nullable=False)  # break_start | break_end | work_end
+    timestamp    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    recorded_by  = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    is_manual    = db.Column(db.Boolean, default=False)
+    note         = db.Column(db.String(300), nullable=True)
+
+    user     = db.relationship('User', foreign_keys=[user_id],
+                               backref=db.backref('time_events', lazy=True))
+    shift    = db.relationship('Shift', backref=db.backref('time_events', lazy=True))
+    recorder = db.relationship('User', foreign_keys=[recorded_by])
+
+    def to_dict(self):
+        return {
+            'id':             self.id,
+            'user_id':        self.user_id,
+            'user_name':      self.user.display_name,
+            'shift_id':       self.shift_id,
+            'event_type':     self.event_type,
+            'timestamp':      self.timestamp.isoformat(),
+            'is_manual':      self.is_manual,
+            'note':           self.note or '',
+            'recorded_by_name': self.recorder.display_name if self.recorder else None,
         }
 
 
@@ -505,7 +543,7 @@ def import_csv_page():
     return render_template('import_csv.html')
 
 @app.route('/paczki')
-@admin_required
+@leader_required
 def paczki_view():
     date_from_str = request.args.get('date_from', '')
     date_to_str = request.args.get('date_to', '')
@@ -536,14 +574,177 @@ def paczki_view():
         query = query.filter(ImportedCarton.land.ilike(f'%{land}%'))
 
     pagination = query.order_by(ImportedCarton.imported_at.desc()).paginate(page=page, per_page=100, error_out=False)
-    
-    return render_template('paczki.html', 
-                           pagination=pagination, 
+    users = User.query.filter_by(is_active_user=True).order_by(User.display_name).all()
+
+    return render_template('paczki.html',
+                           pagination=pagination,
                            items=pagination.items,
                            date_from=date_from_str,
                            date_to=date_to_str,
                            barcode=barcode,
-                           land=land)
+                           land=land,
+                           users=users)
+
+
+@app.route('/general-stats/export')
+@admin_required
+def general_stats_export():
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from flask import make_response
+
+    date_from_str = request.args.get('date_from', '')
+    date_to_str = request.args.get('date_to', '')
+
+    query = GeneralStat.query
+    if date_from_str:
+        try:
+            query = query.filter(GeneralStat.loading_date >= datetime.strptime(date_from_str, '%Y-%m-%d').date())
+        except ValueError:
+            pass
+    if date_to_str:
+        try:
+            query = query.filter(GeneralStat.loading_date <= datetime.strptime(date_to_str, '%Y-%m-%d').date())
+        except ValueError:
+            pass
+    stats = query.order_by(GeneralStat.loading_date.asc()).all()
+
+    cost_mappings = CostMapping.query.all()
+    rates_by_ym = {(cm.year, cm.month): cm.get_rates_data() for cm in cost_mappings}
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Statystyki ogólne'
+
+    # Styles
+    header_font = Font(bold=True, color='FFFFFF', size=10)
+    header_fill_main = PatternFill('solid', fgColor='3B4A6B')
+    header_fill_cat  = PatternFill('solid', fgColor='4F46E5')
+    header_fill_dr   = PatternFill('solid', fgColor='C2410C')
+    header_fill_tot  = PatternFill('solid', fgColor='166534')
+    center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    thin = Border(
+        left=Side(style='thin', color='555555'),
+        right=Side(style='thin', color='555555'),
+        top=Side(style='thin', color='555555'),
+        bottom=Side(style='thin', color='555555'),
+    )
+    dr_fill_row = PatternFill('solid', fgColor='FFF3E0')
+
+    # Row 1: main headers
+    base_headers = ['Loading date', 'Double Rate', 'Week', 'List-ID',
+                    'Country of destination', 'Country ledger', 'Amounts', 'Total Amount']
+    cat_cols_start = len(base_headers) + 1
+
+    for ci, h in enumerate(base_headers, 1):
+        cell = ws.cell(row=1, column=ci, value=h)
+        cell.font = header_font
+        cell.fill = header_fill_dr if h == 'Double Rate' else header_fill_main
+        cell.alignment = center
+        cell.border = thin
+        ws.merge_cells(start_row=1, start_column=ci, end_row=2, end_column=ci)
+
+    for i, cat in enumerate(STAT_CATEGORIES):
+        col = cat_cols_start + i * 2
+        label = STAT_CATEGORY_LABELS[cat]
+        c = ws.cell(row=1, column=col, value=label)
+        c.font = header_font
+        c.fill = header_fill_cat
+        c.alignment = center
+        c.border = thin
+        ws.merge_cells(start_row=1, start_column=col, end_row=1, end_column=col + 1)
+
+    total_col = cat_cols_start + len(STAT_CATEGORIES) * 2
+    tc = ws.cell(row=1, column=total_col, value='Total cost (EUR)')
+    tc.font = header_font
+    tc.fill = header_fill_tot
+    tc.alignment = center
+    tc.border = thin
+    ws.merge_cells(start_row=1, start_column=total_col, end_row=2, end_column=total_col)
+
+    # Row 2: sub-headers for categories
+    for i, cat in enumerate(STAT_CATEGORIES):
+        col = cat_cols_start + i * 2
+        for offset, sub in enumerate(['Amount', 'Cost (EUR)']):
+            c = ws.cell(row=2, column=col + offset, value=sub)
+            c.font = Font(bold=True, color='FFFFFF', size=9)
+            c.fill = header_fill_cat
+            c.alignment = center
+            c.border = thin
+
+    ws.row_dimensions[1].height = 28
+    ws.row_dimensions[2].height = 18
+
+    # Data rows
+    for ri, s in enumerate(stats, 3):
+        ym = (s.loading_date.year, s.loading_date.month)
+        rates = rates_by_ym.get(ym, {})
+        multiplier = 2.0 if s.double_rate else 1.0
+        cd = s.get_category_data()
+
+        total_amount = sum(cd.get(cat, {}).get('amount', 0) for cat in STAT_CATEGORIES)
+        total_cost = sum(cd.get(cat, {}).get('amount', 0) * rates.get(cat, 0.0) * multiplier
+                        for cat in STAT_CATEGORIES)
+
+        row_fill = dr_fill_row if s.double_rate else None
+
+        row_data = [
+            s.loading_date.strftime('%d.%m.%Y'),
+            'TAK' if s.double_rate else '',
+            s.week_number,
+            s.list_id,
+            s.country_of_destination or '',
+            s.country_ledger,
+            s.amounts,
+            total_amount,
+        ]
+
+        for ci, val in enumerate(row_data, 1):
+            c = ws.cell(row=ri, column=ci, value=val)
+            c.border = thin
+            c.alignment = Alignment(horizontal='center' if ci in (1, 2, 3, 7, 8) else 'left')
+            if row_fill:
+                c.fill = row_fill
+            if ci == 2 and s.double_rate:
+                c.font = Font(bold=True, color='C2410C')
+
+        for i, cat in enumerate(STAT_CATEGORIES):
+            col = cat_cols_start + i * 2
+            amt = cd.get(cat, {}).get('amount', 0)
+            cost = amt * rates.get(cat, 0.0) * multiplier
+            for offset, val in enumerate([amt, round(cost, 2)]):
+                c = ws.cell(row=ri, column=col + offset, value=val)
+                c.border = thin
+                c.alignment = Alignment(horizontal='right')
+                if row_fill:
+                    c.fill = row_fill
+
+        tc = ws.cell(row=ri, column=total_col, value=round(total_cost, 2))
+        tc.border = thin
+        tc.alignment = Alignment(horizontal='right')
+        tc.font = Font(bold=True)
+        if row_fill:
+            tc.fill = row_fill
+
+    # Column widths
+    col_widths = [12, 10, 6, 14, 22, 18, 9, 12]
+    for i, w in enumerate(col_widths, 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+    for i in range(len(STAT_CATEGORIES) * 2):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(cat_cols_start + i)].width = 9
+    ws.column_dimensions[openpyxl.utils.get_column_letter(total_col)].width = 14
+
+    ws.freeze_panes = 'A3'
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    fname = f"statystyki_{date_from_str or 'all'}_{date_to_str or 'all'}.xlsx"
+    response = make_response(output.read())
+    response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    response.headers['Content-Disposition'] = f'attachment; filename="{fname}"'
+    return response
 
 
 @app.route('/general-stats')
@@ -1362,6 +1563,8 @@ def api_general_stat_update(stat_id):
 
     if 'category_data' in data:
         stat.set_category_data(data['category_data'])
+    if 'double_rate' in data:
+        stat.double_rate = bool(data['double_rate'])
     stat.updated_at = datetime.utcnow()
     stat.updated_by = current_user.id
 
@@ -1376,6 +1579,185 @@ def api_cost_mapping_get(year, month):
     if mapping:
         return jsonify(mapping.get_rates_data()), 200
     return jsonify({}), 200
+
+
+@app.route('/dashboard')
+@leader_required
+def dashboard():
+    return render_template('dashboard.html')
+
+
+@app.route('/api/dashboard')
+@leader_required
+def api_dashboard():
+    today = date.today()
+    today_start = datetime.combine(today, datetime.min.time())
+
+    # Paczki — ogólne
+    total_cartons = ImportedCarton.query.count()
+    done_cartons = ImportedCarton.query.filter(ImportedCarton.processed_by.isnot(None)).count()
+    remaining_cartons = total_cartons - done_cartons
+
+    # Paczki zrobione dziś
+    done_today_q = ImportedCarton.query.filter(ImportedCarton.processed_at >= today_start)
+    done_today = done_today_q.count()
+    pieces_today = db.session.query(func.sum(ImportedCarton.stueckzahl))\
+        .filter(ImportedCarton.processed_at >= today_start).scalar() or 0
+
+    # Breakdown per pracownik — dziś
+    worker_rows = db.session.query(
+        User.id.label('user_id'), User.display_name,
+        func.count(ImportedCarton.id).label('packages'),
+        func.sum(ImportedCarton.stueckzahl).label('pieces')
+    ).join(ImportedCarton, ImportedCarton.processed_by == User.id)\
+     .filter(ImportedCarton.processed_at >= today_start)\
+     .group_by(User.id, User.display_name)\
+     .order_by(func.count(ImportedCarton.id).desc()).all()
+
+    workers_today = [
+        {'name': r.display_name, 'packages': r.packages, 'pieces': int(r.pieces or 0)}
+        for r in worker_rows
+    ]
+
+    # Obecni na zmianach dziś
+    shift1 = Shift.query.filter_by(date=today, shift_number=1).first()
+    shift2 = Shift.query.filter_by(date=today, shift_number=2).first()
+    present_ids = set()
+    if shift1:
+        present_ids |= {a.user_id for a in ShiftAttendance.query.filter_by(shift_id=shift1.id).all()}
+    if shift2:
+        present_ids |= {a.user_id for a in ShiftAttendance.query.filter_by(shift_id=shift2.id).all()}
+
+    # DailyStat dziś — per czynność (sumy)
+    daily_rows = db.session.query(
+        DailyStat.activity_id,
+        func.sum(DailyStat.quantity).label('total_qty'),
+    ).join(Shift).filter(Shift.date == today).group_by(DailyStat.activity_id).all()
+
+    act_map = {a.id: a.name for a in Activity.query.all()}
+    activities_today = [
+        {'activity': act_map.get(r.activity_id, '?'), 'total_qty': int(r.total_qty or 0)}
+        for r in sorted(daily_rows, key=lambda r: r.total_qty or 0, reverse=True)
+    ]
+
+    # Per pracownik na zmianie — paczki + DailyStat
+    pkg_by_user = {r.user_id: {'packages': r.packages, 'pieces': int(r.pieces or 0)}
+                   for r in worker_rows}
+
+    daily_per_user = db.session.query(
+        DailyStat.user_id,
+        DailyStat.activity_id,
+        func.sum(DailyStat.quantity).label('qty'),
+    ).join(Shift).filter(Shift.date == today).group_by(DailyStat.user_id, DailyStat.activity_id).all()
+
+    stat_by_user = {}
+    for r in daily_per_user:
+        stat_by_user.setdefault(r.user_id, []).append(
+            {'activity': act_map.get(r.activity_id, '?'), 'qty': int(r.qty or 0)}
+        )
+
+    present_users = User.query.filter(User.id.in_(present_ids)).order_by(User.display_name).all() \
+        if present_ids else []
+
+    per_worker = []
+    for u in present_users:
+        pkg = pkg_by_user.get(u.id, {'packages': 0, 'pieces': 0})
+        per_worker.append({
+            'id': u.id,
+            'name': u.display_name,
+            'packages_today': pkg['packages'],
+            'pieces_today': pkg['pieces'],
+            'activities': sorted(stat_by_user.get(u.id, []), key=lambda x: x['qty'], reverse=True),
+        })
+
+    progress_pct = round(done_cartons / total_cartons * 100, 1) if total_cartons else 0
+
+    return jsonify({
+        'total_cartons': total_cartons,
+        'done_cartons': done_cartons,
+        'remaining_cartons': remaining_cartons,
+        'done_today': done_today,
+        'pieces_today': int(pieces_today),
+        'progress_pct': progress_pct,
+        'present_count': len(present_ids),
+        'workers_today': workers_today,
+        'activities_today': activities_today,
+        'per_worker': per_worker,
+        'as_of': datetime.utcnow().strftime('%H:%M:%S'),
+    })
+
+
+@app.route('/scan-package')
+@leader_required
+def scan_package():
+    return render_template('scan_package.html')
+
+
+@app.route('/api/scan-package', methods=['POST'])
+@leader_required
+def api_scan_package():
+    data = request.get_json()
+    employee_barcode = (data.get('employee_barcode') or '').strip()
+    package_barcode = (data.get('package_barcode') or '').strip()
+
+    if not employee_barcode:
+        return jsonify({'error': 'Brak kodu pracownika.'}), 400
+    if not package_barcode:
+        return jsonify({'error': 'Brak kodu paczki.'}), 400
+
+    user = User.query.filter_by(barcode_id=employee_barcode, is_active_user=True).first()
+    if not user:
+        return jsonify({'error': 'Nieznany kod pracownika.'}), 404
+
+    carton = ImportedCarton.query.filter_by(barcode=package_barcode).first()
+    if not carton:
+        return jsonify({'error': 'Nieznany kod paczki. Upewnij się, że paczka została zaimportowana.'}), 404
+
+    if carton.processed_by:
+        existing = carton.processed_by_user
+        return jsonify({
+            'error': f'Paczka już zeskanowana!',
+            'existing_worker': existing.display_name if existing else '—'
+        }), 409
+
+    carton.processed_by = user.id
+    carton.processed_at = datetime.utcnow()
+    db.session.commit()
+
+    return jsonify({
+        'message': f'Paczka {package_barcode} przypisana do {user.display_name}.',
+        'carton': carton.to_dict()
+    }), 200
+
+
+@app.route('/api/scan-employee', methods=['POST'])
+@leader_required
+def api_scan_employee():
+    data = request.get_json()
+    barcode = (data.get('barcode') or '').strip()
+    if not barcode:
+        return jsonify({'error': 'Brak kodu.'}), 400
+    user = User.query.filter_by(barcode_id=barcode, is_active_user=True).first()
+    if not user:
+        return jsonify({'error': 'Nieznany kod pracownika.'}), 404
+    return jsonify({'user': user.to_dict()}), 200
+
+
+@app.route('/api/packages/<int:carton_id>/assign', methods=['PUT'])
+@leader_required
+def api_package_reassign(carton_id):
+    carton = ImportedCarton.query.get_or_404(carton_id)
+    data = request.get_json()
+    user_id = data.get('user_id')
+    if user_id is None:
+        carton.processed_by = None
+        carton.processed_at = None
+    else:
+        user = User.query.get_or_404(user_id)
+        carton.processed_by = user.id
+        carton.processed_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'carton': carton.to_dict()}), 200
 
 
 @app.route('/api/cost-mapping/<int:year>/<int:month>', methods=['PUT', 'POST'])
@@ -1400,6 +1782,235 @@ def api_cost_mapping_save(year, month):
 
     db.session.commit()
     return jsonify({'success': True, 'mapping': mapping.to_dict()}), 200
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  TIME TRACKING
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _compute_worker_times(uid, shift, attendance_time):
+    """Return break/work summary for one worker-shift pair."""
+    events = WorkerTimeEvent.query.filter_by(
+        user_id=uid, shift_id=shift.id
+    ).order_by(WorkerTimeEvent.timestamp).all()
+
+    break_secs = 0
+    open_break = None
+    work_end_ts = None
+    breaks = []
+
+    for e in events:
+        if e.event_type == 'break_start':
+            open_break = e.timestamp
+        elif e.event_type == 'break_end' and open_break:
+            secs = (e.timestamp - open_break).total_seconds()
+            breaks.append({'start': open_break.isoformat(), 'end': e.timestamp.isoformat(),
+                           'minutes': int(secs / 60)})
+            break_secs += secs
+            open_break = None
+        elif e.event_type == 'work_end':
+            work_end_ts = e.timestamp
+
+    if open_break:
+        breaks.append({'start': open_break.isoformat(), 'end': None, 'minutes': None})
+
+    end_ref = work_end_ts or datetime.utcnow()
+    work_secs = max(0, (end_ref - attendance_time).total_seconds() - break_secs)
+
+    return {
+        'work_end':      work_end_ts.isoformat() if work_end_ts else None,
+        'break_minutes': int(break_secs / 60),
+        'work_minutes':  int(work_secs / 60),
+        'breaks':        breaks,
+        'on_break':      open_break is not None,
+        'work_ended':    work_end_ts is not None,
+        'events':        [e.to_dict() for e in events],
+    }
+
+
+@app.route('/time-tracking')
+@leader_required
+def time_tracking():
+    return render_template('time_tracking.html')
+
+
+@app.route('/worker-times')
+@leader_required
+def worker_times():
+    return render_template('worker_times.html')
+
+
+@app.route('/api/time/scan', methods=['POST'])
+@leader_required
+def api_time_scan():
+    data = request.get_json()
+    barcode = (data.get('barcode') or '').strip()
+    mode    = data.get('mode', 'break')   # 'break' | 'work_end'
+
+    if not barcode:
+        return jsonify({'error': 'Brak kodu.'}), 400
+
+    user = User.query.filter_by(barcode_id=barcode, is_active_user=True).first()
+    if not user:
+        return jsonify({'error': 'Nieznany kod pracownika.'}), 404
+
+    # Najnowsza obecność dziś
+    today = date.today()
+    attendance = ShiftAttendance.query.join(Shift).filter(
+        ShiftAttendance.user_id == user.id,
+        Shift.date == today
+    ).order_by(ShiftAttendance.scanned_at.desc()).first()
+
+    if not attendance:
+        return jsonify({'error': f'{user.display_name} nie jest zeskanowany/a na zmianę dziś.'}), 400
+
+    shift = attendance.shift
+    events = WorkerTimeEvent.query.filter_by(
+        user_id=user.id, shift_id=shift.id
+    ).order_by(WorkerTimeEvent.timestamp).all()
+
+    work_ended = any(e.event_type == 'work_end' for e in events)
+    now = datetime.utcnow()
+
+    if mode == 'work_end':
+        if work_ended:
+            return jsonify({'error': f'{user.display_name} już zakończył/a pracę na tej zmianie.'}), 409
+
+        break_starts = sum(1 for e in events if e.event_type == 'break_start')
+        break_ends   = sum(1 for e in events if e.event_type == 'break_end')
+        if break_starts > break_ends:
+            db.session.add(WorkerTimeEvent(
+                user_id=user.id, shift_id=shift.id, event_type='break_end',
+                timestamp=now, recorded_by=current_user.id, is_manual=False,
+                note='Auto-zamknięcie przerwy przy końcu pracy'
+            ))
+
+        db.session.add(WorkerTimeEvent(
+            user_id=user.id, shift_id=shift.id, event_type='work_end',
+            timestamp=now, recorded_by=None, is_manual=False
+        ))
+        db.session.commit()
+        return jsonify({'message': f'{user.display_name} — koniec pracy zarejestrowany.',
+                        'event_type': 'work_end', 'user': user.to_dict()}), 200
+
+    else:  # break
+        if work_ended:
+            return jsonify({'error': f'{user.display_name} już zakończył/a pracę.'}), 409
+
+        break_starts = sum(1 for e in events if e.event_type == 'break_start')
+        break_ends   = sum(1 for e in events if e.event_type == 'break_end')
+        on_break     = break_starts > break_ends
+        event_type   = 'break_end' if on_break else 'break_start'
+
+        db.session.add(WorkerTimeEvent(
+            user_id=user.id, shift_id=shift.id, event_type=event_type,
+            timestamp=now, recorded_by=None, is_manual=False
+        ))
+        db.session.commit()
+
+        label = 'wrócił/wróciła z przerwy ✅' if event_type == 'break_end' else 'poszedł/poszła na przerwę ☕'
+        return jsonify({'message': f'{user.display_name} — {label}',
+                        'event_type': event_type, 'user': user.to_dict()}), 200
+
+
+@app.route('/api/worker-times')
+@leader_required
+def api_worker_times():
+    date_str = request.args.get('date', date.today().isoformat())
+    try:
+        query_date = date.fromisoformat(date_str)
+    except ValueError:
+        query_date = date.today()
+
+    shifts = Shift.query.filter_by(date=query_date).all()
+    if not shifts:
+        return jsonify({'workers': [], 'date': date_str}), 200
+
+    shift_ids = [s.id for s in shifts]
+    attendances = ShiftAttendance.query.filter(
+        ShiftAttendance.shift_id.in_(shift_ids)
+    ).all()
+
+    # One entry per user — earliest attendance_in
+    by_user = {}
+    for att in attendances:
+        uid = att.user_id
+        if uid not in by_user or att.scanned_at < by_user[uid].scanned_at:
+            by_user[uid] = att
+
+    result = []
+    for uid, att in by_user.items():
+        summary = _compute_worker_times(uid, att.shift, att.scanned_at)
+        summary.update({
+            'user_id':      uid,
+            'user_name':    att.user.display_name,
+            'shift_id':     att.shift_id,
+            'shift_number': att.shift.shift_number,
+            'shift_in':     att.scanned_at.isoformat(),
+        })
+        result.append(summary)
+
+    result.sort(key=lambda x: x['user_name'])
+    return jsonify({'workers': result, 'date': date_str}), 200
+
+
+@app.route('/api/worker-times/event', methods=['POST'])
+@leader_required
+def api_time_event_create():
+    data = request.get_json()
+    user_id    = data.get('user_id')
+    shift_id   = data.get('shift_id')
+    event_type = data.get('event_type')
+    ts_str     = data.get('timestamp', '')
+    note       = (data.get('note') or '').strip()
+
+    if not all([user_id, shift_id, event_type, ts_str]):
+        return jsonify({'error': 'Brakuje wymaganych pól.'}), 400
+    if event_type not in ('break_start', 'break_end', 'work_end'):
+        return jsonify({'error': 'Nieprawidłowy typ zdarzenia.'}), 400
+    try:
+        ts = datetime.fromisoformat(ts_str)
+    except ValueError:
+        return jsonify({'error': 'Nieprawidłowy format czasu.'}), 400
+
+    event = WorkerTimeEvent(
+        user_id=user_id, shift_id=shift_id, event_type=event_type,
+        timestamp=ts, recorded_by=current_user.id, is_manual=True, note=note
+    )
+    db.session.add(event)
+    db.session.commit()
+    return jsonify(event.to_dict()), 201
+
+
+@app.route('/api/worker-times/event/<int:event_id>', methods=['PUT'])
+@leader_required
+def api_time_event_update(event_id):
+    event = WorkerTimeEvent.query.get_or_404(event_id)
+    data  = request.get_json()
+    if 'event_type' in data:
+        if data['event_type'] not in ('break_start', 'break_end', 'work_end'):
+            return jsonify({'error': 'Nieprawidłowy typ.'}), 400
+        event.event_type = data['event_type']
+    if 'timestamp' in data:
+        try:
+            event.timestamp = datetime.fromisoformat(data['timestamp'])
+        except ValueError:
+            return jsonify({'error': 'Nieprawidłowy format czasu.'}), 400
+    if 'note' in data:
+        event.note = data['note']
+    event.recorded_by = current_user.id
+    event.is_manual   = True
+    db.session.commit()
+    return jsonify(event.to_dict()), 200
+
+
+@app.route('/api/worker-times/event/<int:event_id>', methods=['DELETE'])
+@leader_required
+def api_time_event_delete(event_id):
+    event = WorkerTimeEvent.query.get_or_404(event_id)
+    db.session.delete(event)
+    db.session.commit()
+    return jsonify({'message': 'Usunięto.'}), 200
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1482,8 +2093,26 @@ def seed_data():
 #  MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 
+def migrate_columns():
+    """Add missing columns to existing tables without dropping data."""
+    with db.engine.connect() as conn:
+        migrations = [
+            ("imported_carton", "processed_by",  "INTEGER REFERENCES user(id)"),
+            ("imported_carton", "processed_at",  "DATETIME"),
+            ("general_stat",    "double_rate",    "BOOLEAN DEFAULT 0"),
+        ]
+        for table, column, col_def in migrations:
+            try:
+                conn.execute(db.text(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}"))
+                conn.commit()
+            except Exception:
+                pass  # column already exists
+
+
+with app.app_context():
+    db.create_all()
+    migrate_columns()
+    seed_data()
+
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-        seed_data()
     app.run(debug=True, host='0.0.0.0', port=5001)

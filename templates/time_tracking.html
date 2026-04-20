@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Czas pracy — LogiStat{% endblock %}
+{% block content %}
+<div class="scanner-page">
+    <div class="page-header" style="text-align:center;">
+        <h1>⏱ Czas pracy</h1>
+        <p style="color:var(--text-muted);">Zeskanuj kod pracownika aby zarejestrować przerwę lub koniec pracy.</p>
+    </div>
+
+    <!-- Zakładki -->
+    <div style="display:inline-flex;gap:4px;background:var(--bg-secondary);border-radius:var(--radius-sm);
+                padding:4px;margin-bottom:2rem;">
+        <button class="shift-tab active" id="tab-break"    onclick="switchMode('break')">☕ Przerwa</button>
+        <button class="shift-tab"        id="tab-work-end" onclick="switchMode('work_end')">🏁 Koniec pracy</button>
+    </div>
+
+    <!-- Etykieta trybu -->
+    <div class="scanner-input-area">
+        <div class="scanner-shift-badge" id="modeBadge" style="font-size:2.2rem;">☕</div>
+        <div class="scanner-subtitle" id="modeLabel">Skanuj aby wejść / wyjść z przerwy</div>
+        <input type="text" id="scanInput" class="scanner-input"
+               placeholder="Skanuj kod pracownika..." autofocus autocomplete="off">
+    </div>
+
+    <!-- Licznik sesji -->
+    <div class="scanned-count" id="sessionCount" style="display:none;">
+        Zdarzeń dziś: <strong id="countVal">0</strong>
+    </div>
+
+    <!-- Lista ostatnich zdarzeń -->
+    <div class="scanned-list" id="eventList"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let mode = 'break';
+    let count = 0;
+    let scanTimer = null;
+
+    const scanInput = document.getElementById('scanInput');
+    const LABELS = {
+        break:    { badge: '☕', label: 'Skanuj aby wejść / wyjść z przerwy' },
+        work_end: { badge: '🏁', label: 'Skanuj aby zarejestrować koniec pracy' },
+    };
+    const EVENT_COLORS = {
+        break_start: 'var(--warning)',
+        break_end:   'var(--success)',
+        work_end:    'var(--danger)',
+    };
+    const EVENT_ICONS = { break_start: '☕', break_end: '✅', work_end: '🏁' };
+    const EVENT_LABELS = {
+        break_start: 'Wyjście na przerwę',
+        break_end:   'Powrót z przerwy',
+        work_end:    'Koniec pracy',
+    };
+
+    function switchMode(m) {
+        mode = m;
+        ['break','work_end'].forEach(t => {
+            document.getElementById('tab-' + t.replace('_','-')).classList.toggle('active', t === m);
+        });
+        document.getElementById('modeBadge').textContent = LABELS[m].badge;
+        document.getElementById('modeLabel').textContent  = LABELS[m].label;
+        scanInput.focus();
+    }
+
+    scanInput.addEventListener('input', () => {
+        clearTimeout(scanTimer);
+        if (!scanInput.value) return;
+        scanInput.classList.add('scanning');
+        scanTimer = setTimeout(() => {
+            const barcode = scanInput.value.trim();
+            scanInput.value = '';
+            scanInput.classList.remove('scanning');
+            if (barcode.length >= 3) doScan(barcode);
+        }, 300);
+    });
+
+    scanInput.addEventListener('blur', () => setTimeout(() => scanInput.focus(), 100));
+
+    async function doScan(barcode) {
+        try {
+            const res = await fetch('/api/time/scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ barcode, mode }),
+            });
+            const data = await res.json();
+
+            if (!res.ok) {
+                showToast(data.error, res.status === 409 ? 'warning' : 'error');
+                addCard(null, barcode, data.error, true);
+                return;
+            }
+
+            showToast(data.message, 'success');
+            count++;
+            document.getElementById('countVal').textContent = count;
+            document.getElementById('sessionCount').style.display = '';
+            addCard(data, barcode, null, false);
+        } catch {
+            showToast('Błąd połączenia.', 'error');
+        }
+    }
+
+    function addCard(data, barcode, errorMsg, isError) {
+        const list = document.getElementById('eventList');
+        const card = document.createElement('div');
+        card.className = 'scanned-card';
+        const time = new Date().toLocaleTimeString('pl');
+
+        if (isError) {
+            card.style.borderLeft = '3px solid var(--danger)';
+            card.innerHTML = `
+                <div class="user-avatar" style="background:var(--danger);">✕</div>
+                <div class="user-info">
+                    <div class="user-name" style="color:var(--danger);">${barcode}</div>
+                    <div class="user-time">${errorMsg}</div>
+                </div>`;
+        } else {
+            const et  = data.event_type;
+            const col = EVENT_COLORS[et] || 'var(--accent)';
+            card.style.borderLeft = `3px solid ${col}`;
+            card.innerHTML = `
+                <div class="user-avatar" style="background:${col};">${EVENT_ICONS[et]}</div>
+                <div class="user-info">
+                    <div class="user-name">${data.user.display_name}</div>
+                    <div class="user-time">${EVENT_LABELS[et]} · ${time}</div>
+                </div>`;
+        }
+        list.prepend(card);
+    }
+</script>
+{% endblock %}

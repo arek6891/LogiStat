@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+{% block title %}Czasy pracowników — LogiStat{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
+    <div>
+        <h1>⏱ Czasy pracowników</h1>
+        <p style="color:var(--text-muted);">Przegląd i korekta rejestracji czasu pracy.</p>
+    </div>
+    <div style="display:flex;gap:.5rem;align-items:center;">
+        <input type="date" id="dateFilter" class="form-control" style="width:160px;"
+               value="{{ '' }}">
+        <button class="btn btn-primary" onclick="loadData()">Pokaż</button>
+    </div>
+</div>
+
+<!-- Tabela -->
+<div id="tableWrap">
+    <div style="text-align:center;padding:3rem;color:var(--text-muted);">Wybierz datę i kliknij „Pokaż".</div>
+</div>
+
+<!-- Modal dodawania/edycji zdarzenia -->
+<div id="eventModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);
+     z-index:1000;align-items:center;justify-content:center;">
+    <div style="background:var(--bg-card-solid);border:1px solid var(--border);border-radius:var(--radius-lg);
+                padding:2rem;width:90%;max-width:440px;box-shadow:var(--shadow-lg);">
+        <h3 style="margin-top:0;" id="modalTitle">Dodaj zdarzenie</h3>
+        <input type="hidden" id="modalEventId">
+        <input type="hidden" id="modalUserId">
+        <input type="hidden" id="modalShiftId">
+
+        <div class="form-group">
+            <label>Pracownik</label>
+            <input type="text" id="modalUserName" class="form-control" readonly
+                   style="background:var(--bg-hover);cursor:default;">
+        </div>
+        <div class="form-group">
+            <label>Typ zdarzenia</label>
+            <select id="modalEventType" class="form-control">
+                <option value="break_start">☕ Wyjście na przerwę</option>
+                <option value="break_end">✅ Powrót z przerwy</option>
+                <option value="work_end">🏁 Koniec pracy</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Czas (lokalny)</label>
+            <input type="datetime-local" id="modalTimestamp" class="form-control">
+        </div>
+        <div class="form-group">
+            <label>Notatka (opcjonalna)</label>
+            <input type="text" id="modalNote" class="form-control" placeholder="Powód korekty...">
+        </div>
+        <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.5rem;">
+            <button class="btn btn-ghost" onclick="closeModal()">Anuluj</button>
+            <button class="btn btn-primary" onclick="saveEvent()">Zapisz</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Default: today
+    const today = new Date().toISOString().slice(0, 10);
+    document.getElementById('dateFilter').value = today;
+
+    const ET_LABEL = { break_start: '☕ Przerwa wyjście', break_end: '✅ Przerwa powrót', work_end: '🏁 Koniec pracy' };
+    const ET_COLOR = { break_start: 'var(--warning)', break_end: 'var(--success)', work_end: 'var(--danger)' };
+
+    function fmt(iso) {
+        if (!iso) return '—';
+        return new Date(iso).toLocaleTimeString('pl', { hour: '2-digit', minute: '2-digit' });
+    }
+    function fmtMins(m) {
+        if (m === null || m === undefined) return '—';
+        const h = Math.floor(m / 60), mn = m % 60;
+        return h > 0 ? `${h}h ${mn}min` : `${mn}min`;
+    }
+    function toLocalDT(iso) {
+        if (!iso) return '';
+        const d = new Date(iso);
+        const offset = d.getTimezoneOffset() * 60000;
+        return new Date(d - offset).toISOString().slice(0, 16);
+    }
+
+    async function loadData() {
+        const dateVal = document.getElementById('dateFilter').value;
+        if (!dateVal) return;
+        const res = await fetch(`/api/worker-times?date=${dateVal}`);
+        const data = await res.json();
+        renderTable(data.workers, dateVal);
+    }
+
+    function renderTable(workers, dateVal) {
+        const wrap = document.getElementById('tableWrap');
+        if (!workers.length) {
+            wrap.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted);">Brak pracowników na zmianie w tym dniu.</div>';
+            return;
+        }
+
+        let html = `<div style="overflow-x:auto;">
+        <table class="data-table">
+        <thead><tr>
+            <th>Pracownik</th>
+            <th>Zmiana</th>
+            <th>Wejście</th>
+            <th>Przerwy</th>
+            <th>Czas przerw</th>
+            <th>Koniec pracy</th>
+            <th>Czas pracy</th>
+            <th style="width:100px;"></th>
+        </tr></thead>
+        <tbody>`;
+
+        workers.forEach(w => {
+            const overBreak = w.break_minutes > 30;
+            const rowStyle  = overBreak
+                ? 'background:rgba(248,113,113,.10);border-left:3px solid var(--danger);'
+                : '';
+
+            const breaksSummary = w.breaks.map(b =>
+                `${fmt(b.start)}–${b.end ? fmt(b.end) : '<span style="color:var(--warning);">w trakcie</span>'}${b.minutes !== null ? ` (${b.minutes}min)` : ''}`
+            ).join('<br>') || '—';
+
+            html += `
+            <tr style="${rowStyle}">
+                <td>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <div style="width:30px;height:30px;border-radius:50%;flex-shrink:0;
+                            background:linear-gradient(135deg,var(--accent),#a78bfa);
+                            display:flex;align-items:center;justify-content:center;
+                            font-size:.8rem;font-weight:700;color:#fff;">${w.user_name[0]}</div>
+                        <span style="font-weight:600;">${w.user_name}</span>
+                        ${w.on_break ? '<span style="margin-left:4px;font-size:.75rem;background:var(--warning-bg);color:var(--warning);padding:2px 8px;border-radius:8px;">na przerwie</span>' : ''}
+                    </div>
+                </td>
+                <td>Zmiana ${w.shift_number}</td>
+                <td style="font-family:monospace;">${fmt(w.shift_in)}</td>
+                <td style="font-size:.82rem;line-height:1.6;">${breaksSummary}</td>
+                <td style="font-weight:700;color:${overBreak ? 'var(--danger)' : 'var(--warning)'};">
+                    ${fmtMins(w.break_minutes)}${overBreak ? ' ⚠️' : ''}
+                </td>
+                <td style="font-family:monospace;${w.work_end ? 'color:var(--danger);font-weight:600;' : 'color:var(--text-muted);'}">${fmt(w.work_end)}</td>
+                <td style="font-weight:700;color:var(--success);">${fmtMins(w.work_minutes)}</td>
+                <td>
+                    <button class="btn btn-ghost btn-sm"
+                        onclick='openAddModal(${w.user_id},"${w.user_name}",${w.shift_id})'>+ Dodaj</button>
+                </td>
+            </tr>
+            ${w.events.length ? `
+            <tr style="background:var(--bg-secondary);">
+                <td colspan="8" style="padding:0 0 0 48px;">
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;padding:10px 16px 10px 0;">
+                        ${w.events.map(e => `
+                        <div style="display:inline-flex;align-items:center;gap:6px;
+                            background:var(--bg-card-solid);border:1px solid var(--border);
+                            border-radius:8px;padding:5px 10px;font-size:.8rem;">
+                            <span style="color:${ET_COLOR[e.event_type]};">${ET_LABEL[e.event_type]}</span>
+                            <span style="font-family:monospace;color:var(--text-secondary);">${fmt(e.timestamp)}</span>
+                            ${e.is_manual ? '<span style="color:var(--warning);font-size:.7rem;">✎</span>' : ''}
+                            ${e.note ? `<span style="color:var(--text-muted);font-size:.72rem;" title="${e.note}">📝</span>` : ''}
+                            <button onclick="openEditModal(${JSON.stringify(e).replace(/"/g,'&quot;')})"
+                                style="background:none;border:none;cursor:pointer;color:var(--text-muted);padding:0 2px;"
+                                title="Edytuj">✎</button>
+                            <button onclick="deleteEvent(${e.id})"
+                                style="background:none;border:none;cursor:pointer;color:var(--danger);padding:0 2px;"
+                                title="Usuń">✕</button>
+                        </div>`).join('')}
+                    </div>
+                </td>
+            </tr>` : ''}`;
+        });
+
+        html += '</tbody></table></div>';
+        wrap.innerHTML = html;
+    }
+
+    // — Modal —
+    function openAddModal(userId, userName, shiftId) {
+        document.getElementById('modalTitle').textContent     = 'Dodaj zdarzenie';
+        document.getElementById('modalEventId').value         = '';
+        document.getElementById('modalUserId').value          = userId;
+        document.getElementById('modalShiftId').value         = shiftId;
+        document.getElementById('modalUserName').value        = userName;
+        document.getElementById('modalEventType').value       = 'break_start';
+        document.getElementById('modalTimestamp').value       = toLocalDT(new Date().toISOString());
+        document.getElementById('modalNote').value            = '';
+        document.getElementById('eventModal').style.display  = 'flex';
+    }
+
+    function openEditModal(e) {
+        document.getElementById('modalTitle').textContent     = 'Edytuj zdarzenie';
+        document.getElementById('modalEventId').value         = e.id;
+        document.getElementById('modalUserId').value          = e.user_id;
+        document.getElementById('modalShiftId').value         = e.shift_id;
+        document.getElementById('modalUserName').value        = e.user_name;
+        document.getElementById('modalEventType').value       = e.event_type;
+        document.getElementById('modalTimestamp').value       = toLocalDT(e.timestamp);
+        document.getElementById('modalNote').value            = e.note || '';
+        document.getElementById('eventModal').style.display  = 'flex';
+    }
+
+    function closeModal() {
+        document.getElementById('eventModal').style.display = 'none';
+    }
+
+    async function saveEvent() {
+        const id        = document.getElementById('modalEventId').value;
+        const userId    = parseInt(document.getElementById('modalUserId').value);
+        const shiftId   = parseInt(document.getElementById('modalShiftId').value);
+        const eventType = document.getElementById('modalEventType').value;
+        const note      = document.getElementById('modalNote').value;
+        // Convert local datetime-local to ISO
+        const localVal  = document.getElementById('modalTimestamp').value;
+        const ts        = new Date(localVal).toISOString().slice(0, 19);
+
+        const url    = id ? `/api/worker-times/event/${id}` : '/api/worker-times/event';
+        const method = id ? 'PUT' : 'POST';
+        const body   = id
+            ? { event_type: eventType, timestamp: ts, note }
+            : { user_id: userId, shift_id: shiftId, event_type: eventType, timestamp: ts, note };
+
+        try {
+            const res = await fetch(url, {
+                method, headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!res.ok) {
+                const d = await res.json();
+                showToast(d.error || 'Błąd zapisu.', 'error');
+                return;
+            }
+            showToast('Zapisano.', 'success');
+            closeModal();
+            loadData();
+        } catch { showToast('Błąd połączenia.', 'error'); }
+    }
+
+    async function deleteEvent(id) {
+        if (!confirm('Usunąć zdarzenie?')) return;
+        try {
+            const res = await fetch(`/api/worker-times/event/${id}`, { method: 'DELETE' });
+            if (res.ok) { showToast('Usunięto.', 'info'); loadData(); }
+        } catch { showToast('Błąd.', 'error'); }
+    }
+
+    document.getElementById('eventModal').addEventListener('click', e => {
+        if (e.target === document.getElementById('eventModal')) closeModal();
+    });
+
+    // Auto-load today on page open
+    loadData();
+</script>
+{% endblock %}

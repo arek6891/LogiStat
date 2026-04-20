@@ -7,27 +7,22 @@
   - Biblioteka `openpyxl` już zainstalowana w requirements.txt
   - Trzeba uzgodnić: jakie kolumny, jak mapować użytkowników, jak rozwiązywać konflikty
 
-- [ ] **Zmiana hasła admina** — brak ekranu do zmiany hasła
+- [ ] **Zmiana hasła admina/lidera** — brak ekranu do zmiany hasła
   - Dodać stronę `/profile` lub modal w sidebar z formularzem zmiany hasła
-
-- [ ] **Zmiana hasła liderów** — liderzy powinni móc zmieniać swoje hasło
 
 ## 🟡 Planowane usprawnienia
 
 - [ ] **Touch/tablet support** — drag & drop na tablecie wymaga touch events
   - Rozwiązanie: dodać `touchstart`, `touchmove`, `touchend` listenery
   - Albo użyć biblioteki jak Sortable.js / interact.js
-  
-- [ ] **Eksport statystyk do PDF/Excel** — do raportowania
-  - Możliwy do dodania na stronie statystyk
 
-- [ ] **Powiadomienia** — toast z dźwiękiem przy skanowaniu
+- [ ] **Eksport czasów pracowników do Excel** — raport dzienny/tygodniowy
+  - Wzorować na istniejącym eksporcie `general_stats_export`
+
+- [ ] **Powiadomienia dźwiękowe** — toast z dźwiękiem przy skanowaniu
   - `new Audio('/static/beep.mp3').play()` po udanym skanie
 
-- [ ] **Ciemny/jasny motyw** — toggle w sidebar
-
-- [ ] **Logowanie operacji** — pełny audit log (kto co kiedy zrobił)
-  - Osobna tabela `AuditLog` z typami zdarzeń
+- [ ] **Próg czasu przerwy konfigurowalny** — aktualnie hardcoded 30 min
 
 ## 🟢 Ukończone
 
@@ -43,10 +38,17 @@
 - [x] Mapowanie krajów i zleceń (Country → Innenauftrag) — CRUD + seed 29 mapowań
 - [x] Import CSV z automatyczną deduplikacją po `barcode`
 - [x] Tabela statystyk ogólnych (General Stats) z podsumowaniami per List-ID
-- [x] Kategorie (10) w ujęciu ilościowym z autowyliczaniem kosztów względem narzuconych stawek.
-- [x] Centralne zestawienie Cennika (Koszty Kategorii) i zarządzanie stawkami `Cost / month + rok`.
-- [x] Dodana kolumna Total Amount i poprawa zliczania i stylów wyliczeń kosztowych.
-- [x] Paging & Filtering dat, kodów i krajów na nowym podglądzie "Paczki (Dane CSV)" dla sprawdzania historii surowych wsadów.
+- [x] Kategorie (10) w ujęciu ilościowym z autowyliczaniem kosztów względem narzuconych stawek
+- [x] Centralne zestawienie Cennika (Koszty Kategorii) i zarządzanie stawkami per miesiąc/rok
+- [x] Kolumna Total Amount + poprawa stylów wyliczeń kosztowych
+- [x] Paging & Filtering w podglądzie "Paczki (Dane CSV)"
+- [x] Skanowanie paczek — naprzemienne skan pracownik → paczka z obsługą duplikatów
+- [x] Przepisanie paczki do innego pracownika przez lidera (ekran Paczki)
+- [x] Kolumna Double Rate w Statystykach ogólnych (×2 stawki, natychmiastowy zapis)
+- [x] Eksport Statystyk ogólnych do .xlsx z formatowaniem (openpyxl)
+- [x] Dashboard dzienny — karty, pasek postępu, per pracownik (2 zakładki)
+- [x] Czas pracy — skanowanie przerw i końca pracy (toggle break_start/break_end)
+- [x] Czasy pracowników — moduł liderski z korektami ręcznymi, podświetlenie >30 min przerwy
 
 ---
 
@@ -54,9 +56,15 @@
 
 ### Baza danych
 - SQLite plik: `instance/logistat.db`
-- Przy zmianach w modelach trzeba **usunąć bazę** i restartować (brak migracji)
-- Jeśli dodasz migracje, użyj `Flask-Migrate` (`flask db init/migrate/upgrade`)
+- Nowe kolumny do istniejących tabel: dodaj do `migrate_columns()` w `app.py`
+- Nowe tabele: `db.create_all()` tworzy automatycznie przy starcie
 - Backup: skopiuj plik `instance/logistat.db`
+
+### Czas pracy
+- Model `WorkerTimeEvent(user_id, shift_id, event_type, timestamp, recorded_by, is_manual, note)`
+- Stan przerwy: liczony jako `count(break_start) - count(break_end)` — nie ma flagi w User
+- Auto-zamknięcie przerwy przy `work_end` jeśli przerwa jest otwarta
+- Wszystkie czasy w UTC; frontend konwertuje do czasu lokalnego przez `new Date(iso).toLocaleTimeString('pl')`
 
 ### Skaner
 - EAN-128 skanery USB HID wysyłają znaki bez Entera
@@ -66,7 +74,6 @@
 ### Drag & Drop
 - Natywne HTML5 Drag & Drop API (nie wymaga bibliotek)
 - Multi-select: klik = zaznacz, drag = przeciągnij wszystkie zaznaczone
-- Dane przesyłane przez `e.dataTransfer.setData` jako JSON z listą user IDs
 - Przy przejściu na tablet: zamienić na touch events lub Sortable.js
 
 ### API
@@ -79,26 +86,7 @@
 - Volume: `./instance:/app/instance` — baza danych persystuje między restartami
 - Gunicorn z 2 workerami (wystarczające dla <50 użytkowników)
 
-### Typowe błędy
-- `User is not JSON serializable` → użyj `user.to_dict()|tojson` w szablonach
-- Port conflict → sprawdź `docker-compose.yml` i `app.py` (port 5001)
-- Brak migracji → przy zmianach modeli usuń `instance/logistat.db` i restartuj
-
-### Mapowanie krajów
-- Model `CountryMapping` — przechowuje pary Country → Innenauftrag
-- Dane seed: 29 domyślnych mapowań (np. Schweiz → 91000741810)
-- API: `/api/country-mappings` (GET/POST/PUT/DELETE), wymaga roli `admin`
-- Strony: `/admin/panel` (hub), `/admin/country-mapping` (tabela CRUD)
-- Przy dodawaniu nowego modelu — pamiętaj o seed w `seed_data()` i usunięciu bazy
-- Template wzorowany na `admin_activities.html` (modal add/edit, potwierdzenie delete)
-
-### Import CSV i Statystyki Ogólne
-- **Modele:** `ImportedCarton` reprezentuje surowy zrzucony wiersz CSV, `GeneralStat` agreguje te wiersze grupując je na podstawie daty (Loading date), kraju docelowego (Land + CountryMapping) oraz numeru listu (List-ID).
-- **Format danych CSV:** Kod operuje na niemieckojęzycznych nazwach kolumn (Stückzahl, Übergabe Nr. itd) dlatego ma wbudowane elastyczne formatowanie używając UTF-8 oraz Latin-1.
-- **Deduplikacja:** Numer `barcode` kartonu gra rolę unikalnego klucza (UNIQUE). Jeśli plik posiada powtarzające się kartony, skrypt automatycznie je `wyskipuje`.
-- **Kolumny kosztów:** Przechowywane są kompresją do JSON w obiekcie `category_data` w tabeli statystyk ogólnych, dla skalowalności. Total calculation obsługiwane jest przez metodę instancji `total_cost()`.
-
 ### Deployment
-- Taki sam flow jak Jewelry-Tracker: `docker-compose up --build -d`
+- `docker compose up --build -d`
 - Nginx reverse proxy: `/logistat/ → localhost:5001`
 - Pamiętaj o `SECRET_KEY` w zmiennych środowiskowych na produkcji!
