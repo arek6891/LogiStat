@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}LogiStat{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=5">
     {% block head %}{% endblock %}
 </head>
 
@@ -52,6 +52,14 @@
                 <li><a href="{{ url_for('paczki_view') }}"
                         class="{% if request.endpoint == 'paczki_view' %}active{% endif %}">
                         <span class="icon">📦</span> Paczki
+                    </a></li>
+                <li><a href="{{ url_for('forecast_page') }}"
+                        class="{% if request.endpoint == 'forecast_page' %}active{% endif %}">
+                        <span class="icon">📈</span> Forecast
+                    </a></li>
+                <li><a href="{{ url_for('scan_paczki') }}"
+                        class="{% if request.endpoint == 'scan_paczki' %}active{% endif %}">
+                        <span class="icon">⏱</span> Czasy paczek
                     </a></li>
                 {% if current_user.role == 'admin' %}
                 <li><a href="{{ url_for('admin_activities') }}"

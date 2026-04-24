@@ -2,6 +2,36 @@
 
 ## 🔴 Do zrobienia (priorytetowe)
 
+- [ ] **Zbudować bazę PostgreSQL na serwerze developerskim (10.153.1.32)**
+  - Baza: kontener `wave-planning-postgres-1`, host `127.0.0.1:5432`, user `app`, db `appdb`
+  - Uruchomić `docs/postgres_schema.sql` na bazie `appdb`
+  - Wygenerować hash hasła admina i wstawić do seeda
+  - Zmienić `SQLALCHEMY_DATABASE_URI` w `docker-compose.yml` na `postgresql://app:change_me@127.0.0.1:5432/appdb`
+  - Dodać `psycopg2-binary` do `requirements.txt`
+  - Usunąć `migrate_columns()` z `app.py` — niepotrzebna przy PostgreSQL
+  - Przetestować wszystkie moduły po migracji
+
+- [ ] **Nginx + domena: https://logistat.logwin-logistics.com/**
+  - [x] Nginx zainstalowany i działa
+  - [x] Config: `/etc/nginx/sites-available/logistat` (proxy → localhost:5001)
+  - [x] Tymczasowy HTTP działa — gotowy na DNS od IT
+  - [ ] IT: dodać rekord DNS `logistat.logwin-logistics.com → 10.153.1.32`
+  - [ ] IT: dostarczyć certyfikat SSL dla `logistat.logwin-logistics.com` (lub wildcard `*.logwin-logistics.com`)
+        — format PEM: plik `cert.crt` (certyfikat + łańcuch pośredni) i `cert.key` (klucz prywatny)
+        — przesłać bezpiecznym kanałem (nie email)
+        — jeśli dostarczą `.pfx`/`.p12` (format Windows) — trzeba przekonwertować (możemy to zrobić)
+  - [ ] Po otrzymaniu certyfikatów:
+        `sudo mkdir -p /etc/nginx/ssl/logistat`
+        `sudo cp cert.crt /etc/nginx/ssl/logistat/cert.crt`
+        `sudo cp cert.key /etc/nginx/ssl/logistat/cert.key`
+        `sudo chmod 600 /etc/nginx/ssl/logistat/cert.key`
+        następnie odkomentować blok HTTPS w `/etc/nginx/sites-available/logistat` i `sudo systemctl reload nginx`
+
+- [ ] **Double Rate — dokończyć implementację w module Paczki**
+  - UI usunięte z Paczek i Statystyk Ogólnych (backend i pole w bazie pozostały)
+  - Brakuje informacji: skąd pochodzi double rate? Z CSV? Ręcznie per lista? Per kraj/data?
+  - Gdy będą info: backend gotowy (`GeneralStat.double_rate` + API `/api/packages/uebergabe-double-rate`), dodać tylko UI
+
 - [ ] **Import danych z Excela** — format kolumn do ustalenia z użytkownikiem
   - Endpoint `/api/import/excel` jest zarezerwowany, ale jeszcze nieaktywny
   - Biblioteka `openpyxl` już zainstalowana w requirements.txt

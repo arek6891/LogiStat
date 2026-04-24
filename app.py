@@ -238,9 +238,28 @@ class ImportedCarton(db.Model):
     imported_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     processed_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     processed_at = db.Column(db.DateTime, nullable=True)
+    scan_start_at = db.Column(db.DateTime, nullable=True)
+    scan_start_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    scan_end_at = db.Column(db.DateTime, nullable=True)
+    scan_end_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+    __table_args__ = (
+        db.Index('ix_carton_ziel_datum',    'ziel_datum'),
+        db.Index('ix_carton_uebergabe_nr',  'uebergabe_nr'),
+        db.Index('ix_carton_processed_by',  'processed_by'),
+        db.Index('ix_carton_land',          'land'),
+        db.Index('ix_carton_imported_at',   'imported_at'),
+    )
 
     country_mapping = db.relationship('CountryMapping', backref=db.backref('cartons', lazy=True))
     processed_by_user = db.relationship('User', foreign_keys=[processed_by])
+    scan_start_by_user = db.relationship('User', foreign_keys=[scan_start_by])
+    scan_end_by_user = db.relationship('User', foreign_keys=[scan_end_by])
+
+    def processing_seconds(self):
+        if self.scan_start_at and self.scan_end_at:
+            return int((self.scan_end_at - self.scan_start_at).total_seconds())
+        return None
 
     def to_dict(self):
         return {
@@ -255,7 +274,26 @@ class ImportedCarton(db.Model):
             'processed_by': self.processed_by,
             'processed_by_name': self.processed_by_user.display_name if self.processed_by_user else None,
             'processed_at': self.processed_at.isoformat() if self.processed_at else None,
+            'scan_start_at': self.scan_start_at.isoformat() if self.scan_start_at else None,
+            'scan_start_by_name': self.scan_start_by_user.display_name if self.scan_start_by_user else None,
+            'scan_end_at': self.scan_end_at.isoformat() if self.scan_end_at else None,
+            'scan_end_by_name': self.scan_end_by_user.display_name if self.scan_end_by_user else None,
+            'processing_seconds': self.processing_seconds(),
         }
+
+
+class Forecast(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, nullable=False, unique=True)
+    quantity = db.Column(db.Integer, default=0)
+    notes = db.Column(db.String(500), nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=True)
+    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+    created_by_user = db.relationship('User', foreign_keys=[created_by])
+    updated_by_user = db.relationship('User', foreign_keys=[updated_by])
 
 
 class GeneralStat(db.Model):
@@ -275,6 +313,8 @@ class GeneralStat(db.Model):
     __table_args__ = (
         db.UniqueConstraint('list_id', 'country_ledger', 'loading_date',
                             name='uq_general_stat'),
+        db.Index('ix_gstat_loading_date', 'loading_date'),
+        db.Index('ix_gstat_list_id',      'list_id'),
     )
 
     def get_category_data(self):
@@ -363,6 +403,11 @@ class WorkerTimeEvent(db.Model):
     recorded_by  = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     is_manual    = db.Column(db.Boolean, default=False)
     note         = db.Column(db.String(300), nullable=True)
+
+    __table_args__ = (
+        db.Index('ix_wte_user_shift', 'user_id', 'shift_id'),
+        db.Index('ix_wte_shift_id',   'shift_id'),
+    )
 
     user     = db.relationship('User', foreign_keys=[user_id],
                                backref=db.backref('time_events', lazy=True))
@@ -576,6 +621,13 @@ def paczki_view():
     pagination = query.order_by(ImportedCarton.imported_at.desc()).paginate(page=page, per_page=100, error_out=False)
     users = User.query.filter_by(is_active_user=True).order_by(User.display_name).all()
 
+    # Double rate per uebergabe_nr — query GeneralStat for each distinct list_id
+    unr_set = set(i.uebergabe_nr for i in pagination.items if i.uebergabe_nr)
+    dr_map = {}
+    for unr in unr_set:
+        stat = GeneralStat.query.filter_by(list_id=unr).first()
+        dr_map[unr] = stat.double_rate if stat else False
+
     return render_template('paczki.html',
                            pagination=pagination,
                            items=pagination.items,
@@ -583,7 +635,8 @@ def paczki_view():
                            date_to=date_to_str,
                            barcode=barcode,
                            land=land,
-                           users=users)
+                           users=users,
+                           dr_map=dr_map)
 
 
 @app.route('/general-stats/export')
@@ -1785,6 +1838,103 @@ def api_cost_mapping_save(year, month):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  PACKAGE SCAN TIMES & DOUBLE RATE
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/scan-paczki')
+@leader_required
+def scan_paczki():
+    return render_template('scan_paczki.html')
+
+
+@app.route('/api/package-time/start', methods=['POST'])
+@leader_required
+def api_package_time_start():
+    data = request.get_json()
+    employee_barcode = (data.get('employee_barcode') or '').strip()
+    package_barcode = (data.get('package_barcode') or '').strip()
+
+    if not employee_barcode:
+        return jsonify({'error': 'Brak kodu pracownika.'}), 400
+    if not package_barcode:
+        return jsonify({'error': 'Brak kodu paczki.'}), 400
+
+    user = User.query.filter_by(barcode_id=employee_barcode, is_active_user=True).first()
+    if not user:
+        return jsonify({'error': 'Nieznany kod pracownika.'}), 404
+
+    carton = ImportedCarton.query.filter_by(barcode=package_barcode).first()
+    if not carton:
+        return jsonify({'error': 'Nieznany kod paczki.'}), 404
+
+    carton.scan_start_at = datetime.utcnow()
+    carton.scan_start_by = user.id
+    db.session.commit()
+
+    return jsonify({
+        'message': f'Start zarejestrowany dla paczki {package_barcode} — {user.display_name}.',
+        'carton': carton.to_dict()
+    }), 200
+
+
+@app.route('/api/package-time/end', methods=['POST'])
+@leader_required
+def api_package_time_end():
+    data = request.get_json()
+    employee_barcode = (data.get('employee_barcode') or '').strip()
+    package_barcode = (data.get('package_barcode') or '').strip()
+
+    if not employee_barcode:
+        return jsonify({'error': 'Brak kodu pracownika.'}), 400
+    if not package_barcode:
+        return jsonify({'error': 'Brak kodu paczki.'}), 400
+
+    user = User.query.filter_by(barcode_id=employee_barcode, is_active_user=True).first()
+    if not user:
+        return jsonify({'error': 'Nieznany kod pracownika.'}), 404
+
+    carton = ImportedCarton.query.filter_by(barcode=package_barcode).first()
+    if not carton:
+        return jsonify({'error': 'Nieznany kod paczki.'}), 404
+
+    if not carton.scan_start_at:
+        return jsonify({'error': 'Brak zarejestrowanego startu dla tej paczki.'}), 400
+
+    carton.scan_end_at = datetime.utcnow()
+    carton.scan_end_by = user.id
+    db.session.commit()
+
+    secs = carton.processing_seconds()
+    mins, s = divmod(secs, 60)
+    time_str = f'{mins}m {s}s'
+
+    return jsonify({
+        'message': f'Koniec zarejestrowany — czas procesowania: {time_str}.',
+        'carton': carton.to_dict()
+    }), 200
+
+
+@app.route('/api/packages/uebergabe-double-rate', methods=['PUT'])
+@leader_required
+def api_uebergabe_double_rate():
+    data = request.get_json()
+    uebergabe_nr = (data.get('uebergabe_nr') or '').strip()
+    double_rate = bool(data.get('double_rate'))
+
+    if not uebergabe_nr:
+        return jsonify({'error': 'Brak uebergabe_nr.'}), 400
+
+    stats = GeneralStat.query.filter_by(list_id=uebergabe_nr).all()
+    for stat in stats:
+        stat.double_rate = double_rate
+        stat.updated_at = datetime.utcnow()
+        stat.updated_by = current_user.id
+    db.session.commit()
+
+    return jsonify({'message': f'Double rate {"włączony" if double_rate else "wyłączony"} dla {uebergabe_nr} ({len(stats)} rekordów).'})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  TIME TRACKING
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -2014,6 +2164,226 @@ def api_time_event_delete(event_id):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  FORECAST
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/forecast')
+@leader_required
+def forecast_page():
+    today = date.today()
+    date_from = (today - timedelta(days=7)).isoformat()
+    date_to = (today + timedelta(days=14)).isoformat()
+    return render_template('forecast.html', date_from=date_from, date_to=date_to)
+
+
+@app.route('/api/forecast/chart-data')
+@leader_required
+def api_forecast_chart_data():
+    date_from_str = request.args.get('date_from', '')
+    date_to_str = request.args.get('date_to', '')
+
+    try:
+        date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        date_from = date.today() - timedelta(days=7)
+
+    try:
+        date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        date_to = date.today() + timedelta(days=14)
+
+    actual_rows = db.session.query(
+        ImportedCarton.ziel_datum,
+        func.sum(ImportedCarton.stueckzahl).label('total')
+    ).filter(
+        ImportedCarton.ziel_datum >= date_from,
+        ImportedCarton.ziel_datum <= date_to,
+        ImportedCarton.ziel_datum.isnot(None)
+    ).group_by(ImportedCarton.ziel_datum).all()
+
+    actual_map = {row.ziel_datum: (row.total or 0) for row in actual_rows}
+
+    forecast_rows = Forecast.query.filter(
+        Forecast.date >= date_from,
+        Forecast.date <= date_to
+    ).all()
+
+    forecast_map = {f.date: {'quantity': f.quantity or 0, 'notes': f.notes or ''} for f in forecast_rows}
+
+    result = []
+    current = date_from
+    while current <= date_to:
+        forecast_qty = forecast_map.get(current, {}).get('quantity', 0)
+        actual_qty = actual_map.get(current, 0)
+        result.append({
+            'date': current.isoformat(),
+            'forecast': forecast_qty,
+            'actual': actual_qty,
+            'diff': forecast_qty - actual_qty,
+            'notes': forecast_map.get(current, {}).get('notes', '')
+        })
+        current += timedelta(days=1)
+
+    return jsonify(result)
+
+
+@app.route('/api/forecast/save', methods=['POST'])
+@leader_required
+def api_forecast_save():
+    data = request.get_json()
+    entries = data if isinstance(data, list) else [data]
+
+    saved = 0
+    for entry in entries:
+        date_str = (entry.get('date') or '').strip()
+        try:
+            d = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            continue
+
+        qty = int(entry.get('quantity') or 0)
+        notes = (entry.get('notes') or '').strip()
+
+        existing = Forecast.query.filter_by(date=d).first()
+        if existing:
+            existing.quantity = qty
+            existing.notes = notes
+            existing.updated_at = datetime.utcnow()
+            existing.updated_by = current_user.id
+        else:
+            db.session.add(Forecast(
+                date=d,
+                quantity=qty,
+                notes=notes,
+                created_by=current_user.id
+            ))
+        saved += 1
+
+    db.session.commit()
+    return jsonify({'message': f'Zapisano {saved} wpisów.', 'saved': saved})
+
+
+@app.route('/api/forecast/export')
+@leader_required
+def api_forecast_export():
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.chart import BarChart, Reference
+    from flask import make_response
+    import io as _io
+
+    date_from_str = request.args.get('date_from', '')
+    date_to_str = request.args.get('date_to', '')
+
+    try:
+        date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        date_from = date.today() - timedelta(days=7)
+
+    try:
+        date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        date_to = date.today() + timedelta(days=14)
+
+    actual_rows = db.session.query(
+        ImportedCarton.ziel_datum,
+        func.sum(ImportedCarton.stueckzahl).label('total')
+    ).filter(
+        ImportedCarton.ziel_datum >= date_from,
+        ImportedCarton.ziel_datum <= date_to,
+        ImportedCarton.ziel_datum.isnot(None)
+    ).group_by(ImportedCarton.ziel_datum).all()
+
+    actual_map = {row.ziel_datum: (row.total or 0) for row in actual_rows}
+
+    forecast_rows = Forecast.query.filter(
+        Forecast.date >= date_from,
+        Forecast.date <= date_to
+    ).all()
+
+    forecast_map = {f.date: {'quantity': f.quantity or 0, 'notes': f.notes or ''} for f in forecast_rows}
+
+    days = []
+    current = date_from
+    while current <= date_to:
+        days.append(current)
+        current += timedelta(days=1)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Forecast vs Actual'
+
+    header_font = Font(bold=True, color='FFFFFF')
+    col_fills = [
+        PatternFill('solid', fgColor='2D3250'),
+        PatternFill('solid', fgColor='4A6FD9'),
+        PatternFill('solid', fgColor='27AE60'),
+        PatternFill('solid', fgColor='C0392B'),
+        PatternFill('solid', fgColor='7D3C98'),
+    ]
+    headers = ['Data', 'Forecast', 'Actual (Paczki)', 'Różnica (F-A)', 'Notatki']
+
+    for col, (h, fill) in enumerate(zip(headers, col_fills), start=1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.font = header_font
+        cell.fill = fill
+        cell.alignment = Alignment(horizontal='center')
+
+    for row_idx, d in enumerate(days, start=2):
+        forecast_qty = forecast_map.get(d, {}).get('quantity', 0)
+        actual_qty = actual_map.get(d, 0)
+        diff = forecast_qty - actual_qty
+
+        ws.cell(row=row_idx, column=1, value=d.strftime('%d.%m.%Y'))
+        ws.cell(row=row_idx, column=2, value=forecast_qty)
+        ws.cell(row=row_idx, column=3, value=actual_qty)
+        diff_cell = ws.cell(row=row_idx, column=4, value=diff)
+        ws.cell(row=row_idx, column=5, value=forecast_map.get(d, {}).get('notes', ''))
+
+        if diff > 0:
+            diff_cell.fill = PatternFill('solid', fgColor='FDEBD0')
+        elif diff < 0:
+            diff_cell.fill = PatternFill('solid', fgColor='FADBD8')
+
+    for col_letter, width in [('A', 14), ('B', 14), ('C', 18), ('D', 18), ('E', 35)]:
+        ws.column_dimensions[col_letter].width = width
+
+    n = len(days)
+    if n > 0:
+        chart = BarChart()
+        chart.type = 'col'
+        chart.grouping = 'clustered'
+        chart.title = 'Forecast vs Actual'
+        chart.y_axis.title = 'Ilość paczek'
+        chart.x_axis.title = 'Data'
+        chart.width = 26
+        chart.height = 14
+
+        forecast_ref = Reference(ws, min_col=2, min_row=1, max_row=n + 1)
+        actual_ref = Reference(ws, min_col=3, min_row=1, max_row=n + 1)
+        dates_ref = Reference(ws, min_col=1, min_row=2, max_row=n + 1)
+
+        chart.add_data(forecast_ref, titles_from_data=True)
+        chart.add_data(actual_ref, titles_from_data=True)
+        chart.set_categories(dates_ref)
+        chart.series[0].graphicalProperties.solidFill = '4A6FD9'
+        chart.series[1].graphicalProperties.solidFill = '27AE60'
+
+        ws.add_chart(chart, 'G2')
+
+    buf = _io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    resp = make_response(buf.read())
+    resp.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    resp.headers['Content-Disposition'] = (
+        f'attachment; filename=forecast_{date_from_str}_{date_to_str}.xlsx'
+    )
+    return resp
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  SEED DATA
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -2097,9 +2467,13 @@ def migrate_columns():
     """Add missing columns to existing tables without dropping data."""
     with db.engine.connect() as conn:
         migrations = [
-            ("imported_carton", "processed_by",  "INTEGER REFERENCES user(id)"),
-            ("imported_carton", "processed_at",  "DATETIME"),
-            ("general_stat",    "double_rate",    "BOOLEAN DEFAULT 0"),
+            ("imported_carton", "processed_by",   "INTEGER REFERENCES user(id)"),
+            ("imported_carton", "processed_at",   "DATETIME"),
+            ("general_stat",    "double_rate",     "BOOLEAN DEFAULT 0"),
+            ("imported_carton", "scan_start_at",  "DATETIME"),
+            ("imported_carton", "scan_start_by",  "INTEGER REFERENCES user(id)"),
+            ("imported_carton", "scan_end_at",    "DATETIME"),
+            ("imported_carton", "scan_end_by",    "INTEGER REFERENCES user(id)"),
         ]
         for table, column, col_def in migrations:
             try:
@@ -2107,6 +2481,24 @@ def migrate_columns():
                 conn.commit()
             except Exception:
                 pass  # column already exists
+
+        indexes = [
+            "CREATE INDEX IF NOT EXISTS ix_carton_ziel_datum   ON imported_carton (ziel_datum)",
+            "CREATE INDEX IF NOT EXISTS ix_carton_uebergabe_nr ON imported_carton (uebergabe_nr)",
+            "CREATE INDEX IF NOT EXISTS ix_carton_processed_by ON imported_carton (processed_by)",
+            "CREATE INDEX IF NOT EXISTS ix_carton_land         ON imported_carton (land)",
+            "CREATE INDEX IF NOT EXISTS ix_carton_imported_at  ON imported_carton (imported_at)",
+            "CREATE INDEX IF NOT EXISTS ix_gstat_loading_date  ON general_stat    (loading_date)",
+            "CREATE INDEX IF NOT EXISTS ix_gstat_list_id       ON general_stat    (list_id)",
+            "CREATE INDEX IF NOT EXISTS ix_wte_user_shift      ON worker_time_event (user_id, shift_id)",
+            "CREATE INDEX IF NOT EXISTS ix_wte_shift_id        ON worker_time_event (shift_id)",
+        ]
+        for sql in indexes:
+            try:
+                conn.execute(db.text(sql))
+                conn.commit()
+            except Exception:
+                pass
 
 
 with app.app_context():

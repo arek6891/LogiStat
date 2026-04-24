@@ -1,0 +1,335 @@
+{% extends 'base.html' %}
+{% block title %}Czasy paczek — LogiStat{% endblock %}
+
+{% block head %}
+<style>
+    .scan-tabs {
+        display: flex;
+        gap: 0;
+        border-bottom: 2px solid var(--border);
+        margin-bottom: 28px;
+    }
+    .scan-tab {
+        padding: 12px 32px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        color: var(--text-muted);
+        border-bottom: 3px solid transparent;
+        margin-bottom: -2px;
+        transition: all .2s;
+        user-select: none;
+    }
+    .scan-tab.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+    }
+    .scan-tab:hover:not(.active) {
+        color: var(--text-primary);
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .scan-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 32px;
+        max-width: 520px;
+    }
+    .scan-step {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 20px;
+    }
+    .scan-step-num {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: .9rem;
+        flex-shrink: 0;
+    }
+    .scan-step-num.done { background: var(--accent-glow); color: var(--accent); }
+    .scan-step-num.active { background: var(--accent); color: #fff; }
+    .scan-step-num.waiting { background: var(--bg-hover); color: var(--text-muted); }
+    .scan-input-wrap {
+        position: relative;
+        flex: 1;
+    }
+    .scan-input-wrap input {
+        width: 100%;
+        padding: 12px 16px;
+        font-size: 1.1rem;
+        border-radius: var(--radius-sm);
+        border: 2px solid var(--border);
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        transition: border-color .2s;
+    }
+    .scan-input-wrap input:focus {
+        outline: none;
+        border-color: var(--accent);
+    }
+    .scan-input-wrap input:disabled {
+        opacity: .4;
+        cursor: not-allowed;
+    }
+    .result-box {
+        margin-top: 20px;
+        padding: 14px 18px;
+        border-radius: var(--radius-sm);
+        font-size: .95rem;
+        display: none;
+    }
+    .result-box.success { background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.3); color: #22c55e; }
+    .result-box.error   { background: rgba(239,68,68,.12);  border: 1px solid rgba(239,68,68,.3);  color: #ef4444; }
+
+    .recent-list {
+        margin-top: 28px;
+    }
+    .recent-list h4 {
+        font-size: .8rem;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        color: var(--text-muted);
+        margin-bottom: 12px;
+    }
+    .recent-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 12px;
+        border-radius: var(--radius-sm);
+        background: var(--bg-hover);
+        margin-bottom: 6px;
+        font-size: .85rem;
+    }
+    .recent-item .barcode { font-family: monospace; color: var(--accent); }
+    .recent-item .time { color: var(--text-muted); font-size: .78rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">⏱ Czasy paczek</h1>
+        <p class="page-subtitle">Rejestracja czasu start/koniec procesowania paczek</p>
+    </div>
+</div>
+
+<div class="scan-tabs">
+    <div class="scan-tab active" onclick="switchTab('start')">🟢 Start paczki</div>
+    <div class="scan-tab" onclick="switchTab('end')">🔴 Koniec paczki</div>
+</div>
+
+<!-- TAB: Start paczki -->
+<div id="tab-start" class="tab-panel active">
+    <div class="scan-card">
+        <h3 style="margin-top:0;margin-bottom:24px;">Zarejestruj START procesowania</h3>
+
+        <div class="scan-step">
+            <div class="scan-step-num active" id="start-step1-num">1</div>
+            <div class="scan-input-wrap">
+                <input type="text" id="start-emp" placeholder="Zeskanuj kod pracownika…"
+                    autocomplete="off" autofocus
+                    onkeydown="handleKey(event, 'start-emp', 'start-pkg')">
+            </div>
+        </div>
+
+        <div class="scan-step">
+            <div class="scan-step-num waiting" id="start-step2-num">2</div>
+            <div class="scan-input-wrap">
+                <input type="text" id="start-pkg" placeholder="Zeskanuj kod paczki…"
+                    autocomplete="off" disabled
+                    onkeydown="handleKey(event, 'start-pkg', null, submitStart)">
+            </div>
+        </div>
+
+        <div class="result-box" id="start-result"></div>
+
+        <div class="recent-list" id="start-recent" style="display:none;">
+            <h4>Ostatnie skany (start)</h4>
+            <div id="start-recent-list"></div>
+        </div>
+    </div>
+</div>
+
+<!-- TAB: Koniec paczki -->
+<div id="tab-end" class="tab-panel">
+    <div class="scan-card">
+        <h3 style="margin-top:0;margin-bottom:24px;">Zarejestruj KONIEC procesowania</h3>
+
+        <div class="scan-step">
+            <div class="scan-step-num active" id="end-step1-num">1</div>
+            <div class="scan-input-wrap">
+                <input type="text" id="end-emp" placeholder="Zeskanuj kod pracownika…"
+                    autocomplete="off"
+                    onkeydown="handleKey(event, 'end-emp', 'end-pkg')">
+            </div>
+        </div>
+
+        <div class="scan-step">
+            <div class="scan-step-num waiting" id="end-step2-num">2</div>
+            <div class="scan-input-wrap">
+                <input type="text" id="end-pkg" placeholder="Zeskanuj kod paczki…"
+                    autocomplete="off" disabled
+                    onkeydown="handleKey(event, 'end-pkg', null, submitEnd)">
+            </div>
+        </div>
+
+        <div class="result-box" id="end-result"></div>
+
+        <div class="recent-list" id="end-recent" style="display:none;">
+            <h4>Ostatnie skany (koniec)</h4>
+            <div id="end-recent-list"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TIMEOUT_MS = 300;
+let empTimers = {};
+const recentStart = [];
+const recentEnd = [];
+
+function switchTab(name) {
+    document.querySelectorAll('.scan-tab').forEach((t, i) => {
+        t.classList.toggle('active', (name === 'start' && i === 0) || (name === 'end' && i === 1));
+    });
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+
+    // Focus employee input on tab switch
+    const empId = name + '-emp';
+    setTimeout(() => {
+        const el = document.getElementById(empId);
+        if (el) { el.value = ''; el.focus(); }
+    }, 50);
+
+    // Reset step styling
+    resetSteps(name);
+}
+
+function resetSteps(prefix) {
+    const s1 = document.getElementById(prefix + '-step1-num');
+    const s2 = document.getElementById(prefix + '-step2-num');
+    const pkg = document.getElementById(prefix + '-pkg');
+    const emp = document.getElementById(prefix + '-emp');
+    s1.className = 'scan-step-num active';
+    s2.className = 'scan-step-num waiting';
+    pkg.disabled = true;
+    emp.disabled = false;
+}
+
+function handleKey(event, currentId, nextId, submitFn) {
+    if (event.key !== 'Enter') return;
+    const val = document.getElementById(currentId).value.trim();
+    if (!val) return;
+
+    if (nextId) {
+        // Move to next field
+        const next = document.getElementById(nextId);
+        const prefix = currentId.split('-')[0];
+        document.getElementById(prefix + '-step1-num').className = 'scan-step-num done';
+        document.getElementById(prefix + '-step2-num').className = 'scan-step-num active';
+        next.disabled = false;
+        next.value = '';
+        next.focus();
+    } else if (submitFn) {
+        submitFn();
+    }
+}
+
+function showResult(prefix, msg, type) {
+    const el = document.getElementById(prefix + '-result');
+    el.textContent = msg;
+    el.className = 'result-box ' + type;
+    el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+function addRecent(prefix, barcode, workerName, extraInfo) {
+    const arr = prefix === 'start' ? recentStart : recentEnd;
+    arr.unshift({ barcode, workerName, extraInfo, time: new Date().toLocaleTimeString('pl') });
+    if (arr.length > 8) arr.pop();
+
+    const listEl = document.getElementById(prefix + '-recent-list');
+    const wrapEl = document.getElementById(prefix + '-recent');
+    wrapEl.style.display = 'block';
+    listEl.innerHTML = arr.map(r => `
+        <div class="recent-item">
+            <div>
+                <span class="barcode">${r.barcode}</span>
+                <span style="color:var(--text-muted);margin-left:8px;font-size:.8rem;">${r.workerName}</span>
+                ${r.extraInfo ? `<span style="color:#22c55e;margin-left:8px;font-size:.8rem;">${r.extraInfo}</span>` : ''}
+            </div>
+            <span class="time">${r.time}</span>
+        </div>`).join('');
+}
+
+async function submitStart() {
+    const emp = document.getElementById('start-emp').value.trim();
+    const pkg = document.getElementById('start-pkg').value.trim();
+    if (!emp || !pkg) return;
+
+    const res = await fetch('/api/package-time/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employee_barcode: emp, package_barcode: pkg })
+    });
+    const data = await res.json();
+
+    if (res.ok) {
+        showResult('start', '✅ ' + data.message, 'success');
+        addRecent('start', pkg, data.carton?.scan_start_by_name || emp, null);
+    } else {
+        showResult('start', '❌ ' + data.error, 'error');
+    }
+
+    // Reset for next scan
+    document.getElementById('start-emp').value = '';
+    document.getElementById('start-pkg').value = '';
+    resetSteps('start');
+    document.getElementById('start-emp').focus();
+}
+
+async function submitEnd() {
+    const emp = document.getElementById('end-emp').value.trim();
+    const pkg = document.getElementById('end-pkg').value.trim();
+    if (!emp || !pkg) return;
+
+    const res = await fetch('/api/package-time/end', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employee_barcode: emp, package_barcode: pkg })
+    });
+    const data = await res.json();
+
+    if (res.ok) {
+        const secs = data.carton?.processing_seconds;
+        let timeStr = '';
+        if (secs !== null && secs !== undefined) {
+            const m = Math.floor(secs / 60), s = secs % 60;
+            timeStr = (m > 0 ? m + 'm ' : '') + s + 's';
+        }
+        showResult('end', '✅ ' + data.message, 'success');
+        addRecent('end', pkg, data.carton?.scan_end_by_name || emp, timeStr ? `⏱ ${timeStr}` : null);
+    } else {
+        showResult('end', '❌ ' + data.error, 'error');
+    }
+
+    // Reset for next scan
+    document.getElementById('end-emp').value = '';
+    document.getElementById('end-pkg').value = '';
+    resetSteps('end');
+    document.getElementById('end-emp').focus();
+}
+</script>
+{% endblock %}

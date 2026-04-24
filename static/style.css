@@ -107,8 +107,26 @@ html, body {
 
 .sidebar-nav {
     flex: 1;
+    min-height: 0;
     padding: 0 12px;
     list-style: none;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: #6c63ff transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+    width: 4px;
+}
+
+.sidebar-nav::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+    background: #6c63ff;
+    border-radius: 4px;
 }
 
 .sidebar-nav a {
