@@ -1,63 +1,30 @@
 {% extends 'base.html' %}
-{% block title %}LogiStat — Skanowanie paczek{% endblock %}
+{% block title %}LogiStat — Skan paczek (podgląd){% endblock %}
 
 {% block content %}
 <div class="scanner-page">
     <div class="page-header" style="text-align:center;">
-        <h1>📦 Skanowanie paczek</h1>
-        <p style="color:var(--text-muted);" id="pageSubtitle">Zeskanuj kod pracownika, następnie kod paczki — i tak w kółko.</p>
-    </div>
-
-    <!-- Pasek stanu -->
-    <div style="display:flex;justify-content:center;gap:1rem;margin-bottom:1.5rem;">
-        <div id="stepBadgeEmployee" class="scanner-shift-badge" style="opacity:1;transition:opacity .2s;">
-            👤 Pracownik
-        </div>
-        <div style="display:flex;align-items:center;color:var(--text-muted);">→</div>
-        <div id="stepBadgePackage" class="scanner-shift-badge" style="opacity:0.3;transition:opacity .2s;">
-            📦 Paczka
-        </div>
+        <h1>📦 Skan paczek — podgląd</h1>
+        <p style="color:var(--text-muted);">Zeskanuj kod paczki, aby sprawdzić jej status: czy została
+            przeskanowana, przez kogo, czy jest zakończona oraz podstawowe dane.</p>
     </div>
 
     <!-- Jeden input -->
     <div class="scanner-input-area">
-        <div class="scanner-subtitle" id="scanLabel">Zeskanuj kod pracownika</div>
+        <div class="scanner-subtitle" id="scanLabel">Zeskanuj kod paczki</div>
         <input type="text" id="scanInput" class="scanner-input" placeholder="Skanuj..." autofocus autocomplete="off">
     </div>
 
-    <!-- Aktualny pracownik (po pierwszym skanie) -->
-    <div id="currentEmployee" style="display:none;margin:1rem 0;text-align:center;">
-        <div style="display:inline-flex;align-items:center;gap:.75rem;background:var(--surface);
-                    border:2px solid var(--accent);border-radius:10px;padding:.75rem 1.5rem;">
-            <div class="user-avatar" id="empAvatar" style="width:40px;height:40px;font-size:1.2rem;"></div>
-            <span style="font-weight:700;" id="empName"></span>
-            <span style="color:var(--text-muted);font-size:.8rem;" id="empPackageCount"></span>
-        </div>
-    </div>
-
-    <!-- Lista skanowań -->
-    <div style="margin-top:1.5rem;">
-        <div class="scanned-count" id="totalCount" style="display:none;">
-            Łącznie: <strong id="scanCount">0</strong> paczek
-        </div>
-        <div class="scanned-list" id="scannedList"></div>
-    </div>
+    <!-- Karta wyniku -->
+    <div id="resultCard" style="display:none;max-width:640px;margin:1.5rem auto 0;"></div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-    // Stan: 'employee' lub 'package'
-    let state = 'employee';
-    let currentEmployee = null;
-    let sessionCount = 0;
-    let employeePackageCount = 0;
-    let scanTimer = null;
-
     const scanInput = document.getElementById('scanInput');
-    const scanLabel = document.getElementById('scanLabel');
-    const stepEmployee = document.getElementById('stepBadgeEmployee');
-    const stepPackage = document.getElementById('stepBadgePackage');
+    const resultCard = document.getElementById('resultCard');
+    let scanTimer = null;
 
     scanInput.addEventListener('input', () => {
         clearTimeout(scanTimer);
@@ -67,7 +34,7 @@
                 const barcode = scanInput.value.trim();
                 scanInput.value = '';
                 scanInput.classList.remove('scanning');
-                if (barcode.length >= 3) handleScan(barcode);
+                if (barcode.length >= 3) lookup(barcode);
             }, 300);
         }
     });
@@ -76,114 +43,116 @@
         setTimeout(() => scanInput.focus(), 100);
     });
 
-    async function handleScan(barcode) {
-        if (state === 'employee') {
-            await doScanEmployee(barcode);
-        } else {
-            await doScanPackage(barcode);
-        }
-    }
-
-    async function doScanEmployee(barcode) {
+    async function lookup(barcode) {
         try {
-            const res = await fetch('/api/scan-employee', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ barcode })
-            });
+            const res = await fetch('/api/package-lookup?barcode=' + encodeURIComponent(barcode));
             const data = await res.json();
-            if (!res.ok) { showToast(data.error, 'error'); return; }
-
-            currentEmployee = data.user;
-            employeePackageCount = 0;
-            document.getElementById('empAvatar').textContent = data.user.display_name[0];
-            document.getElementById('empName').textContent = data.user.display_name;
-            document.getElementById('empPackageCount').textContent = '';
-            document.getElementById('currentEmployee').style.display = '';
-            setState('package');
-        } catch {
-            showToast('Błąd połączenia.', 'error');
-        }
-    }
-
-    async function doScanPackage(barcode) {
-        try {
-            const res = await fetch('/api/scan-package', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    employee_barcode: currentEmployee.barcode_id,
-                    package_barcode: barcode
-                })
-            });
-            const data = await res.json();
-
             if (!res.ok) {
                 showToast(data.error, 'error');
-                addResultCard(null, barcode, data.error, data.existing_worker || null);
-                // Wróć do skanowania pracownika po błędzie duplikatu
-                setState('employee');
+                renderNotFound(barcode, data.error);
                 return;
             }
-
-            showToast(data.message, 'success');
-            sessionCount++;
-            employeePackageCount++;
-            document.getElementById('empPackageCount').textContent = `(${employeePackageCount} paczek)`;
-            document.getElementById('scanCount').textContent = sessionCount;
-            document.getElementById('totalCount').style.display = '';
-            addResultCard(data.carton, barcode, null, null);
-
-            // Po każdej paczce wróć do skanowania pracownika
-            setState('employee');
+            renderCard(data.carton);
         } catch {
             showToast('Błąd połączenia.', 'error');
         }
     }
 
-    function setState(s) {
-        state = s;
-        if (s === 'employee') {
-            scanLabel.textContent = 'Zeskanuj kod pracownika';
-            stepEmployee.style.opacity = '1';
-            stepPackage.style.opacity = '0.3';
-        } else {
-            scanLabel.textContent = `Zeskanuj kod paczki → ${currentEmployee.display_name}`;
-            stepEmployee.style.opacity = '0.3';
-            stepPackage.style.opacity = '1';
-        }
+    function fmtDateTime(iso) {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        return d.toLocaleDateString('pl') + ' ' + d.toLocaleTimeString('pl');
     }
 
-    function addResultCard(carton, barcode, errorMsg, existingWorker) {
-        const list = document.getElementById('scannedList');
-        const card = document.createElement('div');
-        card.className = 'scanned-card';
+    function fmtDuration(secs) {
+        if (secs === null || secs === undefined) return '—';
+        const m = Math.floor(secs / 60);
+        const s = secs % 60;
+        return (m > 0 ? m + 'm ' : '') + s + 's';
+    }
 
-        if (errorMsg) {
-            const detail = existingWorker
-                ? `Już przypisana do: <strong>${existingWorker}</strong>`
-                : errorMsg;
-            card.style.borderLeft = '3px solid var(--danger, #ef4444)';
-            card.innerHTML = `
-                <div class="user-avatar" style="background:var(--danger,#ef4444);font-size:1.1rem;">✕</div>
-                <div class="user-info">
-                    <div class="user-name" style="font-family:monospace;color:var(--danger,#ef4444);">${barcode}</div>
-                    <div class="user-time">${detail}</div>
-                </div>`;
-        } else {
-            const time = new Date(carton.processed_at).toLocaleTimeString('pl');
-            card.style.borderLeft = '3px solid var(--accent)';
-            card.innerHTML = `
-                <div class="user-avatar" style="background:var(--accent);font-size:1.1rem;">📦</div>
-                <div class="user-info">
-                    <div class="user-name" style="font-family:monospace;">${carton.barcode}</div>
-                    <div class="user-time">
-                        <strong>${currentEmployee.display_name}</strong>
-                        · ${carton.land || '—'} · ${carton.stueckzahl} szt. · ${time}
+    function renderNotFound(barcode, msg) {
+        resultCard.style.display = '';
+        resultCard.innerHTML = `
+            <div class="card" style="border-left:4px solid var(--danger,#ef4444);">
+                <div style="display:flex;align-items:center;gap:.75rem;">
+                    <div style="font-size:1.8rem;">❌</div>
+                    <div>
+                        <div style="font-family:monospace;font-weight:700;color:var(--danger,#ef4444);">${barcode}</div>
+                        <div style="color:var(--text-muted);font-size:.9rem;">${msg}</div>
                     </div>
+                </div>
+            </div>`;
+    }
+
+    function pill(ok, okText, noText) {
+        const bg = ok ? 'rgba(34,197,94,.15)' : 'rgba(148,163,184,.15)';
+        const col = ok ? '#22c55e' : '#94a3b8';
+        return `<span style="display:inline-block;padding:.3rem .8rem;border-radius:999px;
+            background:${bg};color:${col};font-weight:700;font-size:.85rem;">${ok ? okText : noText}</span>`;
+    }
+
+    function row(label, value) {
+        return `<div style="display:flex;justify-content:space-between;gap:1rem;padding:.4rem 0;
+                    border-bottom:1px solid var(--border);">
+                    <span style="color:var(--text-muted);">${label}</span>
+                    <span style="font-weight:600;text-align:right;">${value}</span>
                 </div>`;
-        }
-        list.prepend(card);
+    }
+
+    function renderCard(c) {
+        resultCard.style.display = '';
+
+        // Status zakończenia: zakończona / w trakcie / nierozpoczęta
+        let finishText, finishOk = c.finished;
+        if (c.finished) finishText = '✅ Zakończona';
+        else if (c.scan_start_at) finishText = '⏳ W trakcie (rozpoczęta, bez końca)';
+        else finishText = '⏳ Niezakończona';
+
+        const borderCol = c.finished ? 'var(--success,#22c55e)'
+                        : (c.scanned ? '#f59e0b' : 'var(--text-muted)');
+
+        const drBadge = c.double_rate
+            ? `<span style="display:inline-block;padding:.15rem .6rem;border-radius:999px;
+                 background:rgba(251,146,60,.15);color:#fb923c;font-weight:700;font-size:.8rem;">DOUBLE RATE</span>`
+            : '—';
+
+        resultCard.innerHTML = `
+            <div class="card" style="border-left:4px solid ${borderCol};">
+                <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem;">
+                    <div style="font-size:1.8rem;">📦</div>
+                    <div style="font-family:monospace;font-weight:700;font-size:1.2rem;">${c.barcode}</div>
+                </div>
+
+                <div style="display:flex;flex-wrap:wrap;gap:1.5rem;margin-bottom:1.25rem;">
+                    <div>
+                        <div style="color:var(--text-muted);font-size:.8rem;margin-bottom:.35rem;">Przeskanowana</div>
+                        ${pill(c.scanned, '✅ TAK', '❌ NIE')}
+                        ${c.scanned && c.scanned_by ? `<div style="margin-top:.35rem;font-size:.85rem;">przez <strong>${c.scanned_by}</strong></div>` : ''}
+                    </div>
+                    <div>
+                        <div style="color:var(--text-muted);font-size:.8rem;margin-bottom:.35rem;">Status</div>
+                        ${pill(finishOk, finishText, finishText)}
+                    </div>
+                </div>
+
+                <div style="margin-bottom:1rem;">
+                    ${row('Kraj (Land)', c.land || '—')}
+                    ${row('Ilość (Stückzahl)', c.stueckzahl)}
+                    ${row('Kategoria', c.kategorie || '—')}
+                    ${row('Ziel-Datum', c.ziel_datum ? new Date(c.ziel_datum).toLocaleDateString('pl') : '—')}
+                    ${row('Übergabe Nr.', c.uebergabe_nr || '—')}
+                    ${row('Double rate', drBadge)}
+                </div>
+
+                <div style="background:rgba(148,163,184,.06);border-radius:8px;padding:.75rem 1rem;">
+                    <div style="color:var(--text-muted);font-size:.8rem;margin-bottom:.4rem;">Szczegóły procesowania</div>
+                    ${row('Przypisano', c.processed_by_name ? `${c.processed_by_name} · ${fmtDateTime(c.processed_at)}` : '—')}
+                    ${row('Start', c.scan_start_at ? `${c.scan_start_by_name || '—'} · ${fmtDateTime(c.scan_start_at)}` : '—')}
+                    ${row('Koniec', c.scan_end_at ? `${c.scan_end_by_name || '—'} · ${fmtDateTime(c.scan_end_at)}` : '—')}
+                    ${row('Czas procesowania', fmtDuration(c.processing_seconds))}
+                </div>
+            </div>`;
     }
 </script>
 {% endblock %}

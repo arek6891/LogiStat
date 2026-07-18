@@ -1806,6 +1806,26 @@ def scan_package():
     return render_template('scan_package.html')
 
 
+@app.route('/api/package-lookup', methods=['GET'])
+@leader_required
+def api_package_lookup():
+    """Read-only lookup: sprawdza status paczki (przeskanowana / kto / zakończona) + dane."""
+    barcode = (request.args.get('barcode') or '').strip()
+    if not barcode:
+        return jsonify({'error': 'Brak kodu paczki.'}), 400
+
+    carton = ImportedCarton.query.filter_by(barcode=barcode).first()
+    if not carton:
+        return jsonify({'error': 'Nieznany kod paczki. Upewnij się, że paczka została zaimportowana.'}), 404
+
+    d = carton.to_dict()
+    # Derived status: przeskanowana = przypisana LUB rozpoczęto pomiar czasu
+    d['scanned'] = bool(carton.processed_by) or bool(carton.scan_start_at)
+    d['scanned_by'] = d.get('processed_by_name') or d.get('scan_start_by_name')
+    d['finished'] = bool(carton.scan_end_at)
+    return jsonify({'carton': d}), 200
+
+
 @app.route('/api/scan-package', methods=['POST'])
 @leader_required
 def api_scan_package():
