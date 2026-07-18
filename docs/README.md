@@ -84,23 +84,37 @@ LogiStat/
 | **leader** | Loguje się hasłem. Skanuje, przydziela, wpisuje ilości, dodaje użytkowników. |
 | **admin** | Wszystko + zarządzanie czynnościami + Panel Admina (mapowanie krajów) |
 
-## Ekrany aplikacji
+## Ekrany aplikacji (struktura menu)
 
-1. **Skaner zmian** (`/scanner/1`, `/scanner/2`) — rejestracja obecności EAN-128
-2. **Przydzielanie** (`/assignment`) — drag & drop operatorów do czynności
-3. **Wpis ilości** (`/data-entry`) — ilości zrobione per osoba
-4. **Statystyki** (`/stats`) — wykresy i tabele per pracownik
-5. **Czynności** (`/admin/activities`) — zarządzanie czynnościami (admin)
-6. **Użytkownicy** (`/admin/users`) — dodawanie/edycja operatorów
-7. **Panel Admina** (`/admin/panel`) — hub administracyjny (admin)
-8. **Mapowanie krajów** (`/admin/country-mapping`) — tabela Country → Innenauftrag (admin)
-9. **Import CSV** (`/import-csv`) — drag & drop danych wejściowych z automatyczną deduplikacją (admin)
-10. **Statystyki ogólne** (`/general-stats`) — edytowalna tabela zestawień wg listów i dat; żółta linia **double rate** (admin)
-11. **Dashboard dzienny** (`/dashboard`) — karty i podsumowanie dnia, per pracownik
-12. **Paczki** (`/paczki`) — surowe dane CSV z filtrami; checkbox **double rate**; kolumny czasu procesowania
-13. **Skan paczek** (`/scan-package`) — **podgląd** statusu paczki (przeskanowana / przez kogo / zakończona) — tylko odczyt
-14. **Czasy paczek** (`/scan-paczki`) — Start/Koniec procesowania; blokada „kto zaczął, ten kończy"
-15. **Czas pracy** (`/time-tracking`) — skanowanie przerw i końca pracy
-16. **Czasy pracowników** (`/worker-times`) — przegląd i korekta czasów (przerwa >30 min na czerwono)
-17. **Forecast** (`/forecast`) — prognoza ilości per dzień
-18. **Zmiana hasła** (`/profile`) — formularz zmiany hasła zalogowanego użytkownika
+Nawigacja w sidebarze jest pogrupowana w sekcje:
+
+### 🗂 Przegląd
+- 🏠 **Dashboard** (`/dashboard`) — karty i podsumowanie dnia, per pracownik (metryki paczek = **zakończone**, `scan_end`)
+- 📈 **Forecast** (`/forecast`) — prognoza ilości per dzień
+
+### 🗂 Zmiana
+- 📷 **Skaner zmian** (`/scanner/1`, `/scanner/2`) — rejestracja obecności EAN-128
+- 📋 **Przydzielanie** (`/assignment`) — drag & drop operatorów do czynności
+- ✏️ **Wpis ilości** (`/data-entry`) — ilości zrobione per osoba
+- 📊 **Statystyki** (`/stats`) — wykresy i tabele per pracownik; zakończone paczki liczone automatycznie
+
+### 🗂 Paczki
+- 🔎 **Paczki inspektor** (`/scan-package`) — podgląd statusu paczki (przeskanowana / przez kogo / zakończona), read-only
+- ⏱ **Czasy paczek** (`/scan-paczki`) — Start/Koniec procesowania; blokada „kto zaczął, ten kończy"
+- 📦 **Paczki (dane)** (`/paczki`) — surowe dane CSV z filtrami; checkbox **double rate**; kolumny czasu
+
+### 🗂 Czas pracy
+- 🕐 **Czas pracy** (`/time-tracking`) — skanowanie przerw i końca pracy
+- 👥 **Czasy pracowników** (`/worker-times`) — przegląd i korekta czasów (przerwa >30 min na czerwono)
+
+### 🗂 Rozliczenia (CSV) — *tylko admin*
+- 📥 **Import CSV** (`/import-csv`) — drag & drop danych wejściowych z automatyczną deduplikacją
+- 💶 **Statystyki ogólne** (`/general-stats`) — tabela zestawień wg list i dat; żółta linia **double rate**
+
+### 🗂 Administracja
+- 👤 **Użytkownicy** (`/admin/users`) — dodawanie/edycja operatorów
+- ⚙️ **Czynności** (`/admin/activities`) — zarządzanie czynnościami *(admin)*
+- 🛡️ **Panel Admina** (`/admin/panel`) — hub administracyjny + mapowanie krajów *(admin)*
+
+### Stopka sidebara
+- 🔑 **Zmiana hasła** (`/profile`) · **Wyloguj**
