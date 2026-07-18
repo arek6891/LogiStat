@@ -45,7 +45,7 @@
 - [ ] **Powiadomienia dźwiękowe** — toast z dźwiękiem przy skanowaniu
   - `new Audio('/static/beep.mp3').play()` po udanym skanie
 
-- [ ] **Próg czasu przerwy konfigurowalny** — aktualnie hardcoded 30 min
+- [x] **Próg czasu przerwy konfigurowalny** — `/admin/settings` (`PUT /api/settings`, klucz `break_threshold_minutes`, domyślnie 30); tabela `AppSetting` (klucz/wartość)
 
 ## 🟢 Ukończone
 

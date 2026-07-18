@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block title %}LogiStat — Ustawienia{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>⚙️ Ustawienia</h2>
+    <p class="subtitle">Konfiguracja systemowa</p>
+</div>
+
+<div class="card" style="max-width:520px;margin-top:1.5rem;">
+    <h3 style="margin-top:0;">Czas pracy</h3>
+
+    <label style="display:block;margin:1rem 0 .35rem;font-weight:600;">
+        Próg przerwy (min)
+    </label>
+    <p style="color:var(--text-muted);font-size:.85rem;margin:0 0 .5rem;">
+        Przerwa dłuższa niż ta wartość jest oznaczana ⚠️ (czerwono) w „Czasy pracowników".
+    </p>
+    <div style="display:flex;gap:.75rem;align-items:center;">
+        <input type="number" id="breakThreshold" class="form-control" style="width:120px;"
+               min="1" step="1" value="{{ break_threshold }}">
+        <button class="btn btn-primary" id="saveBtn" onclick="saveSettings()">Zapisz</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function saveSettings() {
+    const val = parseInt(document.getElementById('breakThreshold').value, 10);
+    if (!val || val < 1) { showToast('Podaj wartość większą od zera.', 'error'); return; }
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true;
+    try {
+        const res = await fetch('/api/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ break_threshold_minutes: val })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { showToast(data.error || 'Błąd zapisu.', 'error'); return; }
+        showToast(data.message || 'Zapisano.', 'success');
+    } catch {
+        showToast('Błąd połączenia.', 'error');
+    } finally {
+        btn.disabled = false;
+    }
+}
+</script>
+{% endblock %}

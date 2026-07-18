@@ -4,7 +4,7 @@
 <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
     <div>
         <h1>⏱ Czasy pracowników</h1>
-        <p style="color:var(--text-muted);">Przegląd i korekta rejestracji czasu pracy.</p>
+        <p style="color:var(--text-muted);">Przegląd i korekta rejestracji czasu pracy. Przerwa powyżej <strong>{{ break_threshold }} min</strong> oznaczona ⚠️.</p>
     </div>
     <div style="display:flex;gap:.5rem;align-items:center;">
         <input type="date" id="dateFilter" class="form-control" style="width:160px;"
@@ -59,6 +59,9 @@
 
 {% block scripts %}
 <script>
+    // Konfigurowalny próg przerwy (min) — z ustawień admina
+    const BREAK_THRESHOLD = {{ break_threshold }};
+
     // Default: today
     const today = new Date().toISOString().slice(0, 10);
     document.getElementById('dateFilter').value = today;
@@ -112,7 +115,7 @@
         <tbody>`;
 
         workers.forEach(w => {
-            const overBreak = w.break_minutes > 30;
+            const overBreak = w.break_minutes > BREAK_THRESHOLD;
             const rowStyle  = overBreak
                 ? 'background:rgba(248,113,113,.10);border-left:3px solid var(--danger);'
                 : '';

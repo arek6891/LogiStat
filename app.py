@@ -473,6 +473,42 @@ class WorkerTimeEvent(db.Model):
         }
 
 
+class AppSetting(db.Model):
+    """Generic key/value store for app-wide configurable settings."""
+    key = db.Column(db.String(100), primary_key=True)
+    value = db.Column(db.String(500), nullable=True)
+
+
+# Defaults for known settings (used when a key is not yet stored)
+SETTING_DEFAULTS = {
+    'break_threshold_minutes': '30',
+}
+
+
+def get_setting(key, default=None):
+    """Return a stored setting value, else its known default, else `default`."""
+    row = AppSetting.query.get(key)
+    if row is not None and row.value is not None:
+        return row.value
+    return SETTING_DEFAULTS.get(key, default)
+
+
+def get_setting_int(key, default=0):
+    try:
+        return int(get_setting(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def set_setting(key, value):
+    row = AppSetting.query.get(key)
+    if row is None:
+        row = AppSetting(key=key, value=str(value))
+        db.session.add(row)
+    else:
+        row.value = str(value)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  AUTH HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -648,6 +684,32 @@ def admin_country_mapping():
 @admin_required
 def admin_cost_mapping():
     return render_template('admin_cost_mapping.html', categories=STAT_CATEGORIES, category_labels=STAT_CATEGORY_LABELS)
+
+
+@app.route('/admin/settings')
+@admin_required
+def admin_settings():
+    return render_template('admin_settings.html',
+                           break_threshold=get_setting_int('break_threshold_minutes', 30))
+
+
+@app.route('/api/settings', methods=['PUT'])
+@admin_required
+def api_settings_update():
+    data = request.get_json() or {}
+    if 'break_threshold_minutes' in data:
+        try:
+            val = int(data['break_threshold_minutes'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Próg przerwy musi być liczbą całkowitą.'}), 400
+        if val < 1:
+            return jsonify({'error': 'Próg przerwy musi być większy od zera.'}), 400
+        set_setting('break_threshold_minutes', val)
+    db.session.commit()
+    return jsonify({
+        'message': 'Zapisano ustawienia.',
+        'break_threshold_minutes': get_setting_int('break_threshold_minutes', 30),
+    }), 200
 
 
 @app.route('/import-csv')
@@ -2588,7 +2650,8 @@ def time_tracking():
 @app.route('/worker-times')
 @leader_required
 def worker_times():
-    return render_template('worker_times.html')
+    return render_template('worker_times.html',
+                           break_threshold=get_setting_int('break_threshold_minutes', 30))
 
 
 @app.route('/api/time/scan', methods=['POST'])
