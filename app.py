@@ -1957,8 +1957,12 @@ def api_package_time_start():
     if not carton:
         return jsonify({'error': 'Nieznany kod paczki.'}), 404
 
+    # Paczka już zakończona — nie można jej rozpocząć ponownie
+    if carton.scan_end_at:
+        return jsonify({'error': 'Paczka jest już zakończona — nie można jej rozpocząć ponownie.'}), 409
+
     # Paczka w trakcie (start bez końca) — tylko pracownik, który zaczął, nią zarządza
-    if carton.scan_start_at and not carton.scan_end_at:
+    if carton.scan_start_at:
         if carton.scan_start_by == user.id:
             return jsonify({
                 'message': f'Paczka {package_barcode} już rozpoczęta przez Ciebie — start bez zmian.',
@@ -1969,11 +1973,9 @@ def api_package_time_start():
             'error': f'Paczka już rozpoczęta przez {starter.display_name if starter else "innego pracownika"}. Nie można jej podebrać.'
         }), 409
 
-    # Świeży start (nierozpoczęta lub ponowne przetwarzanie zakończonej — nowy cykl)
+    # Świeży start (paczka nierozpoczęta)
     carton.scan_start_at = datetime.utcnow()
     carton.scan_start_by = user.id
-    carton.scan_end_at = None
-    carton.scan_end_by = None
     db.session.commit()
 
     return jsonify({

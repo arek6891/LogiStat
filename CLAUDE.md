@@ -48,7 +48,7 @@ Leader enters quantities per person → `DailyStat` records with audit trail
 
 **Package scanning — two separate modules:**
 - `/scan-package` ("Skan paczek"): **read-only lookup**. Scan a package barcode → `GET /api/package-lookup` returns status (scanned / by whom / finished) + basic data. `scanned = processed_by OR scan_start_at`; `finished = scan_end_at`; "kto" = `processed_by_name` else `scan_start_by_name`. Does NOT mutate anything.
-- `/scan-paczki` ("Czasy paczek"): time tracking. Tabs Start / Koniec → `POST /api/package-time/start|end` set `scan_start_at`/`scan_end_at` (+ `_by`). `processing_seconds()` = end − start. **Ownership lock:** a package in progress belongs to the worker who started it — another worker starting → 409, ending → 403; same worker re-start keeps the original timestamp; a finished package can be re-started as a new cycle.
+- `/scan-paczki` ("Czasy paczek"): time tracking. Tabs Start / Koniec → `POST /api/package-time/start|end` set `scan_start_at`/`scan_end_at` (+ `_by`). `processing_seconds()` = end − start. **Ownership lock:** a package in progress belongs to the worker who started it — another worker starting → 409, ending → 403; same worker re-start keeps the original timestamp. A **finished** package is locked: re-start → 409, re-end → 409 (no re-processing).
 
 `ImportedCarton.processed_by` + `processed_at` are set only via reassignment on `/paczki` (leader+) now. The old alternating employee→package assignment scan (`/api/scan-package` POST, 409 on duplicate) is retired dead code.
 
