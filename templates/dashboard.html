@@ -15,6 +15,7 @@
             padding:4px;margin-bottom:1.5rem;display:inline-flex;">
     <button class="shift-tab active" id="tab-summary" onclick="switchTab('summary')">Podsumowanie</button>
     <button class="shift-tab" id="tab-workers" onclick="switchTab('workers')">Per pracownik</button>
+    <button class="shift-tab" id="tab-shifts" onclick="switchTab('shifts')">Per zmiana</button>
 </div>
 
 <!-- ═══ ZAKŁADKA: PODSUMOWANIE ═══ -->
@@ -86,15 +87,95 @@
     </div>
 </div>
 
+<!-- ═══ ZAKŁADKA: PER ZMIANA ═══ -->
+<div id="pane-shifts" style="display:none;">
+    <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1.5rem;flex-wrap:wrap;">
+        <label style="color:var(--text-muted);font-size:.9rem;">Dzień:</label>
+        <input type="date" id="shiftDate" class="form-control" style="width:170px;" onchange="loadShifts()">
+        <button class="btn btn-ghost btn-sm" onclick="loadShifts()">↻ Odśwież</button>
+    </div>
+    <div id="shiftsGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.5rem;">
+        <div style="padding:3rem;text-align:center;color:var(--text-muted);grid-column:1/-1;">Ładowanie…</div>
+    </div>
+    <div id="unattributedBox" style="margin-top:1.5rem;"></div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
     function switchTab(name) {
-        ['summary','workers'].forEach(t => {
+        ['summary','workers','shifts'].forEach(t => {
             document.getElementById('pane-' + t).style.display = t === name ? '' : 'none';
             document.getElementById('tab-' + t).classList.toggle('active', t === name);
         });
+        if (name === 'shifts') loadShifts();
+    }
+
+    // ── Per zmiana ──────────────────────────────────────────────────────────
+    function localDateStr() {
+        const d = new Date();
+        return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    }
+
+    function renderShiftCard(s) {
+        const actRows = s.activities.length
+            ? s.activities.map(a => `<tr>
+                <td style="padding:7px 16px;font-size:.85rem;color:var(--text-secondary);">${a.activity}</td>
+                <td style="padding:7px 16px;text-align:right;font-weight:600;color:var(--text-primary);">${a.qty.toLocaleString('pl')}</td></tr>`).join('')
+            : `<tr><td colspan="2" style="padding:12px 16px;color:var(--text-muted);font-size:.85rem;">Brak wpisów ilości.</td></tr>`;
+        const badge = s.exists ? '' : ' <span style="font-size:.72rem;color:var(--warning);font-weight:400;">(brak utworzonej zmiany)</span>';
+        return `
+        <div class="card" style="padding:0;overflow:hidden;">
+            <div style="padding:14px 18px;background:var(--bg-secondary);border-bottom:1px solid var(--border);
+                        display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                <div style="font-weight:700;font-size:1.05rem;">🔁 Zmiana ${s.shift_number}${badge}</div>
+                <div style="font-size:.8rem;color:var(--text-muted);white-space:nowrap;">${s.present_count} obecnych</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--border);">
+                <div style="padding:14px 16px;text-align:center;border-right:1px solid var(--border);">
+                    <div style="font-size:1.8rem;font-weight:800;color:var(--accent);">${s.packages}</div>
+                    <div style="font-size:.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">paczek</div>
+                </div>
+                <div style="padding:14px 16px;text-align:center;">
+                    <div style="font-size:1.8rem;font-weight:800;color:var(--success);">${s.pieces.toLocaleString('pl')}</div>
+                    <div style="font-size:.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">sztuk</div>
+                </div>
+            </div>
+            <table style="width:100%;border-collapse:collapse;">
+                <thead style="background:var(--bg-secondary);"><tr>
+                    <th style="padding:8px 16px;text-align:left;font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;">Czynność</th>
+                    <th style="padding:8px 16px;text-align:right;font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;">Ilość</th>
+                </tr></thead>
+                <tbody style="border-top:1px solid var(--border);">${actRows}</tbody>
+            </table>
+        </div>`;
+    }
+
+    async function loadShifts() {
+        const inp = document.getElementById('shiftDate');
+        if (!inp.value) inp.value = localDateStr();
+        const grid = document.getElementById('shiftsGrid');
+        const box = document.getElementById('unattributedBox');
+        grid.innerHTML = '<div style="padding:3rem;text-align:center;color:var(--text-muted);grid-column:1/-1;">Ładowanie…</div>';
+        try {
+            const res = await fetch('/api/dashboard/shifts?date=' + encodeURIComponent(inp.value));
+            const d = await res.json();
+            grid.innerHTML = d.shifts.map(renderShiftCard).join('');
+            const u = d.unattributed;
+            if (u && u.packages > 0) {
+                box.innerHTML = `<div class="card" style="border-left:3px solid var(--warning);">
+                    <div style="font-weight:600;margin-bottom:.35rem;">⚠️ Paczki nieprzypisane do zmiany: ${u.packages} (${u.pieces.toLocaleString('pl')} szt.)</div>
+                    <div style="font-size:.85rem;color:var(--text-muted);margin-bottom:.5rem;">Pracownicy bez zeskanowanej obecności lub obecni na obu zmianach:</div>
+                    <div style="font-size:.85rem;line-height:1.6;">${u.workers.map(w => `${w.name} — ${w.packages} pacz. / ${w.pieces.toLocaleString('pl')} szt. <span style="color:var(--text-muted);">(${w.reason})</span>`).join('<br>')}</div>
+                </div>`;
+            } else {
+                box.innerHTML = '';
+            }
+        } catch(e) {
+            grid.innerHTML = '<div style="padding:3rem;text-align:center;color:var(--danger);grid-column:1/-1;">Błąd ładowania.</div>';
+            box.innerHTML = '';
+        }
     }
 
     async function load() {
@@ -102,7 +183,7 @@
             const res = await fetch('/api/dashboard');
             const d = await res.json();
 
-            document.getElementById('asOf').textContent = d.as_of + ' UTC';
+            document.getElementById('asOf').textContent = d.as_of;
 
             // — Karty —
             document.getElementById('doneTodayVal').textContent = d.done_today;

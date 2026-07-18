@@ -1,5 +1,72 @@
 # LogiStat — Changelog
 
+## [1.7.0] — 2026-07-18
+
+### Poprawka: spójne wyświetlanie czasu (Europe/Warsaw)
+
+**Problem:** czasy zapisywane są w UTC (poprawnie), ale wyświetlały się niespójnie — rekordy pokazywały UTC (2h za zegarem PL latem), a potwierdzenia „na żywo" po skanie prawdziwy czas lokalny. Przyczyna: API zwracało czasy przez `isoformat()` **bez sufiksu `Z`**, więc `new Date()` w przeglądarce traktował je jako lokalne (bez konwersji), a szablony renderowały UTC wprost.
+
+**Rozwiązanie** (zapis dalej w UTC, wyświetlanie Europe/Warsaw, odporne na DST):
+- Helper `iso_z()` — serializuje datetime z jawnym `Z` (tylko pola datetime; pola DATE bez zmian)
+- Filtr Jinja `localdt('%fmt')` — konwertuje naive-UTC → Europe/Warsaw dla czasów renderowanych serwerowo (paczki: start/koniec/import/edycja; skaner: obecność)
+- `as_of` na dashboardzie w czasie lokalnym (usunięto etykietę „UTC")
+- Naprawia też **dryf przy ręcznej edycji czasów pracy** (`/worker-times`): stara wersja przy każdym zapisie przesuwała czas o −2h; round-trip zweryfikowany (silnik V8, strefa Warszawa) — brak dryfu
+
+### Dashboard — zakładka „Per zmiana"
+
+#### Backend
+- `GET /api/dashboard/shifts?date=YYYY-MM-DD` — dzienny podział per zmiana (domyślnie dziś)
+- Paczki (bez `shift_id`) przypisywane do zmiany **wg obecności pracownika** (`ShiftAttendance`): paczka liczy się do jedynej zmiany, na którą pracownik był zeskanowany danego dnia
+- Pracownicy bez obecności lub obecni na obu zmianach → kubełek `unattributed` (nic nie ginie, każda paczka liczona raz)
+- DailyStat agregowane per zmiana bezpośrednio przez `shift_id`
+
+#### Frontend
+- `dashboard.html` — trzecia zakładka „Per zmiana" z **wyborem daty** (przeglądanie historii)
+- Dwie karty obok siebie (Zmiana 1 / Zmiana 2): liczba obecnych, paczki, sztuki, rozbicie per czynność
+- Sekcja ostrzegawcza dla paczek nieprzypisanych do zmiany
+
+### Ręczne dodawanie i edycja paczek (moduł Paczki)
+
+#### Backend — modele / migracje
+- `ImportedCarton.added_manually` (bool) — odróżnia paczki dodane ręcznie od importowanych
+- `ImportedCarton.modified_at` / `modified_by` — audyt edycji
+- `migrate_columns()`: dodane `imported_carton.added_manually`, `modified_at`, `modified_by`
+- Relacje `imported_by_user`, `modified_by_user`; `to_dict()` zwraca `imported_by_login`, `modified_by_login`, `added_manually`, `modified_at`
+
+#### Backend — dodawanie
+- `POST /api/packages` (leader+) — ręczne dodanie pojedynczej paczki dla przypadków, których nie ma w plikach CSV
+- Przechodzi przez **ten sam** pipeline co import (`process_import_rows`) — dedup po `barcode`, agregacja do `GeneralStat`, rozliczenie identyczne jak paczka z importu; ustawia `added_manually=True`, `imported_by`
+- Walidacja: 5 pól wymaganych (`barcode`, `stueckzahl` > 0, `land`, `ziel_datum`, `uebergabe_nr`) → 400; duplikat barcode → 409 (pre-check + fallback na `IntegrityError`)
+- `process_import_rows` czyta teraz opcjonalne `double_rate` / `added_manually` z wiersza (brak klucza w CSV/Excel → `False`)
+
+#### Backend — edycja
+- `PUT /api/packages/<id>` (leader+) — edycja wszystkich pól danych; dozwolona **tylko** dla paczek `added_manually` (import → 403)
+- `recompute_general_stat()` — po zmianie pola grupującego (`uebergabe_nr`/`land`/`ziel_datum`) przelicza dotknięte linie GeneralStat **od zera z sumy paczek** (recompute-from-sum, nie delta) — poprawne także gdy paczka ręczna dzieli linię z paczkami z CSV; pusta grupa zostaje z `amounts=0` (zachowuje `category_data`)
+- Zmiana barcode na istniejący → 409 (rollback); ustawia `modified_by`/`modified_at`
+
+#### Frontend
+- `/paczki` — przycisk „➕ Dodaj paczkę" + modal (wymagane pola oznaczone `*`); ten sam modal obsługuje edycję („✎ Edytuj" przy paczkach ręcznych)
+- Kolumna „Data importu" pokazuje teraz **kto dodał** (login „👤 …"), znacznik „ręczna" i ślad edycji („✏ login · data")
+- Land jako lista rozwijana z mapowań krajów (zapisuje `innenauftrag`, gwarantuje mapowanie kosztu)
+- Edycja paczki zeskanowanej → potwierdzenie przed zapisem
+- Enter (skaner EAN-128) przenosi focus do kolejnego pola zamiast zamykać modal
+- Tytuł strony: „Paczki (Dane CSV)" → „Paczki (dane)" (obejmuje też paczki ręczne)
+
+### Import danych z Excela (.xlsx)
+
+#### Backend
+- `POST /api/import/excel` — import kartonów z pliku Excel `.xlsx` (openpyxl, `data_only=True, read_only=True`)
+- Wydzielony wspólny helper `process_import_rows(rows)` — jeden pipeline (dedup po `barcode` + agregacja do `GeneralStat` + kształt odpowiedzi) dla importu CSV **i** Excel
+- Type-aware koercja pól (`_cell_to_barcode/_int/_date/_str`): CSV zwraca stringi, openpyxl natywne `datetime`/`int`/`float`/`None`
+  - daty: natywne komórki datowe używane wprost, stringi przez `strptime`
+  - barcode: całkowite floaty renderowane bez `.0` (`str(int(val))`)
+  - ⚠️ numeryczne barcode w Excelu = float64: długie SSCC/EAN >2^53 tracą precyzję, wiodące zera znikają u źródła — kolumnę barcode formatować jako tekst
+- Kolumny jak w CSV (`normalize_header`): `Barcode`, `Land`, `Stückzahl`, `Kategorie`, `Ziel-Datum`, `Übergabe Nr.`
+
+#### Frontend
+- `/import-csv` — strona „Import danych": drag & drop przyjmuje `.csv` **i** `.xlsx`, routing endpointu po rozszerzeniu pliku; ta sama karta wyników
+- Sidebar: „Import CSV" → „Import danych"
+
 ## [1.6.0] — 2026-07-18
 
 ### Zmiana hasła, Double Rate per-paczka, Podgląd paczek, Blokady czasu paczek

@@ -3,10 +3,11 @@
 {% block content %}
 <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
     <div>
-        <h1>📦 Paczki (Dane CSV)</h1>
-        <p style="color:var(--text-muted);">Surowe dane paczek zaimportowane ze wszystkich plików CSV w systemie.</p>
+        <h1>📦 Paczki (dane)</h1>
+        <p style="color:var(--text-muted);">Surowe dane paczek: zaimportowane z plików CSV/Excel oraz dodane ręcznie.</p>
     </div>
-    <div>
+    <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;">
+        <button type="button" class="btn btn-primary" onclick="openAddPackage()">➕ Dodaj paczkę</button>
         <form method="GET" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
             <input type="date" name="date_from" value="{{ date_from }}" class="form-control" style="width:130px;" placeholder="Od (Ziel-Datum)">
             <span style="color:var(--text-muted);">—</span>
@@ -16,6 +17,47 @@
             <button type="submit" class="btn btn-primary">Filtruj</button>
             <a href="{{ url_for('paczki_view') }}" class="btn btn-secondary" style="padding:0.5rem;" title="Wyczyść">✖</a>
         </form>
+    </div>
+</div>
+
+<!-- Modal dodawania paczki -->
+<div id="addPackageModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;">
+    <div style="background:var(--surface);border-radius:12px;padding:2rem;min-width:360px;max-width:520px;width:90%;max-height:90vh;overflow-y:auto;">
+        <h3 style="margin-top:0;" id="apModalTitle">➕ Dodaj paczkę ręcznie</h3>
+        <p style="color:var(--text-muted);font-size:.85rem;">Dla paczek, których nie ma w plikach CSV. Paczka trafi do rozliczenia tak samo jak paczki z importu. Pola z <span style="color:var(--danger);">*</span> są wymagane.</p>
+
+        <label style="display:block;margin:.75rem 0 .25rem;font-weight:600;">Barcode <span style="color:var(--danger);">*</span></label>
+        <input type="text" id="apBarcode" class="form-control" style="width:100%;font-family:monospace;" placeholder="Zeskanuj lub wpisz kod" autocomplete="off">
+
+        <label style="display:block;margin:.75rem 0 .25rem;font-weight:600;">Stückzahl (ilość szt.) <span style="color:var(--danger);">*</span></label>
+        <input type="number" id="apStueckzahl" class="form-control" style="width:100%;" min="1" step="1" placeholder="np. 12">
+
+        <label style="display:block;margin:.75rem 0 .25rem;font-weight:600;">Land (kraj / Innenauftrag) <span style="color:var(--danger);">*</span></label>
+        <select id="apLand" class="form-control" style="width:100%;">
+            <option value="">— wybierz kraj —</option>
+            {% for m in country_mappings %}
+            <option value="{{ m.innenauftrag }}">{{ m.country }} ({{ m.innenauftrag }})</option>
+            {% endfor %}
+        </select>
+
+        <label style="display:block;margin:.75rem 0 .25rem;font-weight:600;">Ziel-Datum <span style="color:var(--danger);">*</span></label>
+        <input type="date" id="apZielDatum" class="form-control" style="width:100%;">
+
+        <label style="display:block;margin:.75rem 0 .25rem;font-weight:600;">Übergabe Nr. <span style="color:var(--danger);">*</span></label>
+        <input type="text" id="apUebergabe" class="form-control" style="width:100%;font-family:monospace;" placeholder="Numer przekazania" autocomplete="off">
+
+        <label style="display:block;margin:.75rem 0 .25rem;font-weight:600;">Kategorie <span style="color:var(--text-muted);font-weight:400;">(opcjonalnie)</span></label>
+        <input type="text" id="apKategorie" class="form-control" style="width:100%;" placeholder="np. Labelling" autocomplete="off">
+
+        <label style="display:flex;align-items:center;gap:.5rem;margin:1rem 0;cursor:pointer;">
+            <input type="checkbox" id="apDoubleRate" style="width:18px;height:18px;cursor:pointer;">
+            <span style="font-weight:600;">Double rate</span>
+        </label>
+
+        <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1rem;">
+            <button class="btn btn-secondary" onclick="closeAddPackage()">Anuluj</button>
+            <button class="btn btn-primary" id="apSubmitBtn" onclick="submitAddPackage()">Dodaj paczkę</button>
+        </div>
     </div>
 </div>
 
@@ -65,13 +107,13 @@
                 </td>
                 <td style="font-size:.8rem;{% if not item.scan_start_at %}color:var(--text-muted){% endif %};">
                     {% if item.scan_start_at %}
-                    <div>{{ item.scan_start_at.strftime('%d.%m %H:%M:%S') }}</div>
+                    <div>{{ item.scan_start_at | localdt('%d.%m %H:%M:%S') }}</div>
                     {% if item.scan_start_by_user %}<div style="color:var(--text-muted);font-size:.75rem;">{{ item.scan_start_by_user.display_name }}</div>{% endif %}
                     {% else %}—{% endif %}
                 </td>
                 <td style="font-size:.8rem;{% if not item.scan_end_at %}color:var(--text-muted){% endif %};">
                     {% if item.scan_end_at %}
-                    <div>{{ item.scan_end_at.strftime('%d.%m %H:%M:%S') }}</div>
+                    <div>{{ item.scan_end_at | localdt('%d.%m %H:%M:%S') }}</div>
                     {% if item.scan_end_by_user %}<div style="color:var(--text-muted);font-size:.75rem;">{{ item.scan_end_by_user.display_name }}</div>{% endif %}
                     {% else %}—{% endif %}
                 </td>
@@ -86,7 +128,27 @@
                     <span style="color:var(--text-muted);">—</span>
                     {% endif %}
                 </td>
-                <td style="color:var(--text-muted);">{{ item.imported_at.strftime('%d.%m.%Y %H:%M') if item.imported_at else '—' }}</td>
+                <td style="color:var(--text-muted);font-size:.8rem;">
+                    <div>{{ item.imported_at | localdt('%d.%m.%Y %H:%M') }}</div>
+                    {% if item.imported_by_user %}<div title="Kto dodał (login)">👤 {{ item.imported_by_user.username }}</div>{% endif %}
+                    {% if item.added_manually %}
+                    <div style="margin-top:.35rem;display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;">
+                        <span style="background:rgba(99,102,241,.15);color:var(--accent);padding:1px 6px;border-radius:6px;font-size:.7rem;">ręczna</span>
+                        <button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:.75rem;"
+                            data-id="{{ item.id }}"
+                            data-barcode="{{ item.barcode }}"
+                            data-stueckzahl="{{ item.stueckzahl }}"
+                            data-land="{{ item.land or '' }}"
+                            data-ziel="{{ item.ziel_datum.isoformat() if item.ziel_datum else '' }}"
+                            data-uebergabe="{{ item.uebergabe_nr or '' }}"
+                            data-kategorie="{{ item.kategorie or '' }}"
+                            data-double="{{ '1' if item.double_rate else '0' }}"
+                            data-scanned="{{ '1' if (item.scan_start_at or item.scan_end_at) else '0' }}"
+                            onclick="openEditPackage(this)" title="Edytuj paczkę">✎ Edytuj</button>
+                    </div>
+                    {% endif %}
+                    {% if item.modified_at %}<div style="font-size:.7rem;color:var(--text-muted);" title="Ostatnia edycja">✏ {{ item.modified_by_user.username if item.modified_by_user else '' }} · {{ item.modified_at | localdt('%d.%m %H:%M') }}</div>{% endif %}
+                </td>
             </tr>
             {% endfor %}
             {% if not items %}
@@ -134,6 +196,114 @@
 
 {% block scripts %}
 <script>
+// ── Dodawanie / edycja paczki ręcznie ─────────────────────────────────────
+let editingCartonId = null;   // null = tryb dodawania, id = tryb edycji
+let editingScanned = false;   // czy edytowana paczka ma czasy skanowania
+
+function openAddPackage() {
+    editingCartonId = null;
+    editingScanned = false;
+    document.getElementById('apModalTitle').textContent = '➕ Dodaj paczkę ręcznie';
+    document.getElementById('apSubmitBtn').textContent = 'Dodaj paczkę';
+    document.getElementById('apBarcode').value = '';
+    document.getElementById('apStueckzahl').value = '';
+    document.getElementById('apLand').value = '';
+    document.getElementById('apZielDatum').value = '';
+    document.getElementById('apUebergabe').value = '';
+    document.getElementById('apKategorie').value = '';
+    document.getElementById('apDoubleRate').checked = false;
+    document.getElementById('addPackageModal').style.display = 'flex';
+    setTimeout(() => document.getElementById('apBarcode').focus(), 50);
+}
+function openEditPackage(btn) {
+    const d = btn.dataset;
+    editingCartonId = parseInt(d.id, 10);
+    editingScanned = d.scanned === '1';
+    document.getElementById('apModalTitle').textContent = '✎ Edytuj paczkę';
+    document.getElementById('apSubmitBtn').textContent = 'Zapisz zmiany';
+    document.getElementById('apBarcode').value = d.barcode || '';
+    document.getElementById('apStueckzahl').value = d.stueckzahl || '';
+    document.getElementById('apLand').value = d.land || '';
+    document.getElementById('apZielDatum').value = d.ziel || '';
+    document.getElementById('apUebergabe').value = d.uebergabe || '';
+    document.getElementById('apKategorie').value = d.kategorie || '';
+    document.getElementById('apDoubleRate').checked = d.double === '1';
+    document.getElementById('addPackageModal').style.display = 'flex';
+    setTimeout(() => document.getElementById('apBarcode').focus(), 50);
+}
+function closeAddPackage() {
+    document.getElementById('addPackageModal').style.display = 'none';
+    editingCartonId = null;
+}
+document.getElementById('addPackageModal').addEventListener('click', function(e) {
+    if (e.target === this) closeAddPackage();
+});
+// Skaner EAN-128 kończy skan Enterem — nie pozwól mu wysłać/zamknąć modala,
+// przenieś focus na kolejne pole zamiast tego.
+document.getElementById('addPackageModal').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const order = ['apBarcode', 'apStueckzahl', 'apLand', 'apZielDatum', 'apUebergabe', 'apKategorie'];
+        const idx = order.indexOf(e.target.id);
+        if (idx >= 0 && idx < order.length - 1) {
+            document.getElementById(order[idx + 1]).focus();
+        }
+    }
+});
+
+async function submitAddPackage() {
+    const payload = {
+        barcode: document.getElementById('apBarcode').value.trim(),
+        stueckzahl: parseInt(document.getElementById('apStueckzahl').value, 10),
+        land: document.getElementById('apLand').value,
+        ziel_datum: document.getElementById('apZielDatum').value,
+        uebergabe_nr: document.getElementById('apUebergabe').value.trim(),
+        kategorie: document.getElementById('apKategorie').value.trim(),
+        double_rate: document.getElementById('apDoubleRate').checked,
+    };
+
+    // Walidacja po stronie klienta (serwer i tak waliduje)
+    if (!payload.barcode) { showToast('Podaj barcode.', 'error'); return; }
+    if (!payload.stueckzahl || payload.stueckzahl <= 0) { showToast('Podaj ilość (Stückzahl) > 0.', 'error'); return; }
+    if (!payload.land) { showToast('Wybierz kraj (Land).', 'error'); return; }
+    if (!payload.ziel_datum) { showToast('Podaj Ziel-Datum.', 'error'); return; }
+    if (!payload.uebergabe_nr) { showToast('Podaj Übergabe Nr.', 'error'); return; }
+
+    // Ostrzeżenie przy edycji paczki z zarejestrowanymi czasami skanowania
+    if (editingCartonId && editingScanned) {
+        if (!confirm('Ta paczka ma już zarejestrowany start/koniec skanowania. Edytować mimo to?')) {
+            return;
+        }
+    }
+
+    const isEdit = editingCartonId != null;
+    const url = isEdit ? `/api/packages/${editingCartonId}` : '/api/packages';
+    const method = isEdit ? 'PUT' : 'POST';
+
+    const btn = document.getElementById('apSubmitBtn');
+    btn.disabled = true;
+    try {
+        const res = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            showToast(data.error || 'Błąd zapisu paczki.', 'error');
+            return;
+        }
+        showToast(data.message || (isEdit ? 'Zapisano paczkę.' : 'Dodano paczkę.'), 'success');
+        closeAddPackage();
+        setTimeout(() => location.reload(), 800);
+    } catch {
+        showToast('Błąd połączenia.', 'error');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+// ── Przepisanie pracownika ────────────────────────────────────────────────
 let reassignCartonId = null;
 
 function openReassign(cartonId, barcode, currentUserId) {

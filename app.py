@@ -2,7 +2,8 @@ import os
 import csv
 import io
 import json
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+from zoneinfo import ZoneInfo
 from functools import wraps
 
 from flask import (
@@ -27,6 +28,30 @@ db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
+
+# ── Time helpers ───────────────────────────────────────────────────────────────
+# Everything is STORED in UTC (naive). For display we serialize with an explicit
+# 'Z' so the browser's `new Date()` parses it as UTC and converts to local, and we
+# provide a Jinja filter for server-rendered timestamps (single-site: Europe/Warsaw).
+LOCAL_TZ = ZoneInfo('Europe/Warsaw')
+
+
+def iso_z(dt):
+    """Serialize a naive-UTC datetime as an explicit-UTC ISO string (…Z).
+
+    Without the 'Z', `new Date(iso)` in the browser parses a date-time string as
+    LOCAL, so a stored UTC value would render unconverted (2h off in PL summer).
+    Returns None for falsy input. Use ONLY for datetime columns, not date-only.
+    """
+    return dt.isoformat() + 'Z' if dt else None
+
+
+@app.template_filter('localdt')
+def localdt_filter(dt, fmt='%d.%m.%Y %H:%M'):
+    """Jinja filter: render a naive-UTC datetime in Europe/Warsaw (DST-correct)."""
+    if not dt:
+        return '—'
+    return dt.replace(tzinfo=timezone.utc).astimezone(LOCAL_TZ).strftime(fmt)
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  MODELS
@@ -113,7 +138,7 @@ class ShiftAttendance(db.Model):
             'shift_id': self.shift_id,
             'user_id': self.user_id,
             'user': self.user.to_dict(),
-            'scanned_at': self.scanned_at.isoformat()
+            'scanned_at': iso_z(self.scanned_at)
         }
 
 
@@ -179,9 +204,9 @@ class DailyStat(db.Model):
             'quantity': self.quantity,
             'note': self.note,
             'entered_by': self.entered_by,
-            'entered_at': self.entered_at.isoformat() if self.entered_at else None,
+            'entered_at': iso_z(self.entered_at),
             'modified_by': self.modified_by,
-            'modified_at': self.modified_at.isoformat() if self.modified_at else None,
+            'modified_at': iso_z(self.modified_at),
             'user': self.user.to_dict(),
             'activity': self.activity.to_dict()
         }
@@ -243,6 +268,9 @@ class ImportedCarton(db.Model):
     scan_start_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     scan_end_at = db.Column(db.DateTime, nullable=True)
     scan_end_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    added_manually = db.Column(db.Boolean, default=False)
+    modified_at = db.Column(db.DateTime, nullable=True)
+    modified_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
 
     __table_args__ = (
         db.Index('ix_carton_ziel_datum',    'ziel_datum'),
@@ -256,6 +284,8 @@ class ImportedCarton(db.Model):
     processed_by_user = db.relationship('User', foreign_keys=[processed_by])
     scan_start_by_user = db.relationship('User', foreign_keys=[scan_start_by])
     scan_end_by_user = db.relationship('User', foreign_keys=[scan_end_by])
+    imported_by_user = db.relationship('User', foreign_keys=[imported_by])
+    modified_by_user = db.relationship('User', foreign_keys=[modified_by])
 
     def processing_seconds(self):
         if self.scan_start_at and self.scan_end_at:
@@ -275,12 +305,16 @@ class ImportedCarton(db.Model):
             'processed_by': self.processed_by,
             'double_rate': self.double_rate or False,
             'processed_by_name': self.processed_by_user.display_name if self.processed_by_user else None,
-            'processed_at': self.processed_at.isoformat() if self.processed_at else None,
-            'scan_start_at': self.scan_start_at.isoformat() if self.scan_start_at else None,
+            'processed_at': iso_z(self.processed_at),
+            'scan_start_at': iso_z(self.scan_start_at),
             'scan_start_by_name': self.scan_start_by_user.display_name if self.scan_start_by_user else None,
-            'scan_end_at': self.scan_end_at.isoformat() if self.scan_end_at else None,
+            'scan_end_at': iso_z(self.scan_end_at),
             'scan_end_by_name': self.scan_end_by_user.display_name if self.scan_end_by_user else None,
             'processing_seconds': self.processing_seconds(),
+            'added_manually': self.added_manually or False,
+            'imported_by_login': self.imported_by_user.username if self.imported_by_user else None,
+            'modified_at': iso_z(self.modified_at),
+            'modified_by_login': self.modified_by_user.username if self.modified_by_user else None,
         }
 
 
@@ -432,7 +466,7 @@ class WorkerTimeEvent(db.Model):
             'user_name':      self.user.display_name,
             'shift_id':       self.shift_id,
             'event_type':     self.event_type,
-            'timestamp':      self.timestamp.isoformat(),
+            'timestamp':      iso_z(self.timestamp),
             'is_manual':      self.is_manual,
             'note':           self.note or '',
             'recorded_by_name': self.recorder.display_name if self.recorder else None,
@@ -654,6 +688,7 @@ def paczki_view():
 
     pagination = query.order_by(ImportedCarton.imported_at.desc()).paginate(page=page, per_page=100, error_out=False)
     users = User.query.filter_by(is_active_user=True).order_by(User.display_name).all()
+    country_mappings = CountryMapping.query.order_by(CountryMapping.country).all()
 
     return render_template('paczki.html',
                            pagination=pagination,
@@ -662,7 +697,8 @@ def paczki_view():
                            date_to=date_to_str,
                            barcode=barcode,
                            land=land,
-                           users=users)
+                           users=users,
+                           country_mappings=country_mappings)
 
 
 @app.route('/general-stats/export')
@@ -1267,7 +1303,7 @@ def api_stats_user(user_id):
             'note': stat.note,
             'entered_by': stat.entered_by_user.display_name if stat.entered_by_user else None,
             'modified_by': stat.modified_by_user.display_name if stat.modified_by_user else None,
-            'modified_at': stat.modified_at.isoformat() if stat.modified_at else None,
+            'modified_at': iso_z(stat.modified_at),
             'stat_id': stat.id
         })
 
@@ -1576,44 +1612,87 @@ def normalize_header(h):
     return h
 
 
-@app.route('/api/import-csv', methods=['POST'])
-@admin_required
-def api_import_csv():
-    if 'file' not in request.files:
-        return jsonify({'error': 'Brak pliku.'}), 400
+def _cell_to_barcode(val):
+    """Coerce a cell value to a barcode string.
 
-    file = request.files['file']
-    if not file.filename:
-        return jsonify({'error': 'Brak nazwy pliku.'}), 400
+    Excel stores numeric-looking barcodes as float64 \u2014 a whole number is
+    rendered without the trailing '.0' (str(123.0) -> '123'), and leading
+    zeros are already lost at the source. CSV always hands us strings.
+    """
+    if val is None:
+        return ''
+    if isinstance(val, bool):
+        return ''
+    if isinstance(val, int):
+        return str(val)
+    if isinstance(val, float):
+        return str(int(val)) if val.is_integer() else str(val)
+    return str(val).strip()
 
-    raw_bytes = file.read()
-    encoding = detect_csv_encoding(raw_bytes)
-    text = raw_bytes.decode(encoding)
 
-    reader = csv.DictReader(io.StringIO(text), delimiter=';')
+def _cell_to_int(val):
+    """Coerce a cell value to an int quantity (0 on failure)."""
+    if val is None:
+        return 0
+    if isinstance(val, bool):
+        return 0
+    if isinstance(val, (int, float)):
+        return int(val)
+    try:
+        return int(float(str(val).strip().replace(',', '')))
+    except (ValueError, TypeError):
+        return 0
 
-    # Normalize headers
-    if reader.fieldnames:
-        header_map = {h: normalize_header(h) for h in reader.fieldnames}
-    else:
-        return jsonify({'error': 'Plik CSV nie ma nag\u0142\u00f3wk\u00f3w.'}), 400
 
+def _cell_to_date(val):
+    """Coerce a cell value to a date (None on failure).
+
+    openpyxl returns datetime/date for date cells; CSV returns strings.
+    """
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val.date()
+    if isinstance(val, date):
+        return val
+    s = str(val).strip()
+    for fmt in ('%d.%m.%Y', '%Y-%m-%d', '%d/%m/%Y'):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _cell_to_str(val):
+    """Coerce a cell value to a trimmed string ('' for None)."""
+    if val is None:
+        return ''
+    return str(val).strip()
+
+
+def process_import_rows(rows):
+    """Shared import pipeline for CSV and Excel.
+
+    `rows` is an iterable of dicts keyed by NORMALIZED header names
+    (barcode, land, stueckzahl, kategorie, ziel_datum, uebergabe_nr).
+    Values may be raw strings (CSV) or native types (Excel) \u2014 all field
+    coercion is type-aware. Creates ImportedCarton records (deduped by
+    barcode) and upserts aggregated GeneralStat rows. Returns the result
+    dict for the API response.
+    """
     imported = 0
     skipped = 0
     skipped_barcodes = []
-    errors = []
     aggregation = {}  # key: (list_id, land, date_str) -> sum of stueckzahl
 
-    for i, row in enumerate(reader, start=2):
-        # Remap keys
-        mapped = {header_map.get(k, k): v for k, v in row.items()}
-
-        barcode = (mapped.get('barcode') or '').strip()
-        land = (mapped.get('land') or '').strip()
-        stueckzahl_str = (mapped.get('stueckzahl') or '0').strip().replace(',', '')
-        kategorie = (mapped.get('kategorie') or '').strip()
-        ziel_datum_str = (mapped.get('ziel_datum') or '').strip()
-        uebergabe_nr = (mapped.get('uebergabe_nr') or '').strip()
+    for row in rows:
+        barcode = _cell_to_barcode(row.get('barcode'))
+        land = _cell_to_str(row.get('land'))
+        kategorie = _cell_to_str(row.get('kategorie'))
+        uebergabe_nr = _cell_to_str(row.get('uebergabe_nr'))
+        stueckzahl = _cell_to_int(row.get('stueckzahl'))
+        ziel_datum = _cell_to_date(row.get('ziel_datum'))
 
         if not barcode:
             continue
@@ -1623,21 +1702,6 @@ def api_import_csv():
             skipped += 1
             skipped_barcodes.append(barcode)
             continue
-
-        # Parse quantity
-        try:
-            stueckzahl = int(float(stueckzahl_str))
-        except (ValueError, TypeError):
-            stueckzahl = 0
-
-        # Parse date
-        ziel_datum = None
-        for fmt in ('%d.%m.%Y', '%Y-%m-%d', '%d/%m/%Y'):
-            try:
-                ziel_datum = datetime.strptime(ziel_datum_str, fmt).date()
-                break
-            except ValueError:
-                continue
 
         # Match Land to CountryMapping
         mapping = CountryMapping.query.filter_by(innenauftrag=land).first()
@@ -1650,6 +1714,8 @@ def api_import_csv():
             ziel_datum=ziel_datum,
             uebergabe_nr=uebergabe_nr,
             country_mapping_id=mapping.id if mapping else None,
+            double_rate=bool(row.get('double_rate')),
+            added_manually=bool(row.get('added_manually')),
             imported_by=current_user.id
         )
         db.session.add(carton)
@@ -1696,14 +1762,85 @@ def api_import_csv():
 
     db.session.commit()
 
-    return jsonify({
+    return {
         'message': f'Zaimportowano {imported} karton\u00f3w.',
         'imported': imported,
         'skipped': skipped,
         'skipped_barcodes': skipped_barcodes[:50],
         'stats_created': stats_created,
         'stats_updated': stats_updated
-    }), 200
+    }
+
+
+@app.route('/api/import-csv', methods=['POST'])
+@admin_required
+def api_import_csv():
+    if 'file' not in request.files:
+        return jsonify({'error': 'Brak pliku.'}), 400
+
+    file = request.files['file']
+    if not file.filename:
+        return jsonify({'error': 'Brak nazwy pliku.'}), 400
+
+    raw_bytes = file.read()
+    encoding = detect_csv_encoding(raw_bytes)
+    text = raw_bytes.decode(encoding)
+
+    reader = csv.DictReader(io.StringIO(text), delimiter=';')
+
+    # Normalize headers
+    if reader.fieldnames:
+        header_map = {h: normalize_header(h) for h in reader.fieldnames}
+    else:
+        return jsonify({'error': 'Plik CSV nie ma nag\u0142\u00f3wk\u00f3w.'}), 400
+
+    rows = ({header_map.get(k, k): v for k, v in row.items()} for row in reader)
+    return jsonify(process_import_rows(rows)), 200
+
+
+@app.route('/api/import/excel', methods=['POST'])
+@admin_required
+def api_import_excel():
+    import openpyxl
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'Brak pliku.'}), 400
+
+    file = request.files['file']
+    if not file.filename:
+        return jsonify({'error': 'Brak nazwy pliku.'}), 400
+
+    raw_bytes = file.read()
+    try:
+        wb = openpyxl.load_workbook(
+            io.BytesIO(raw_bytes), data_only=True, read_only=True
+        )
+    except Exception as e:
+        return jsonify({'error': f'Nie mo\u017cna odczyta\u0107 pliku Excel: {e}'}), 400
+
+    ws = wb.active
+    row_iter = ws.iter_rows(values_only=True)
+
+    try:
+        header_row = next(row_iter)
+    except StopIteration:
+        return jsonify({'error': 'Plik Excel jest pusty.'}), 400
+
+    header_map = {}
+    for idx, cell in enumerate(header_row):
+        raw = str(cell) if cell is not None else ''
+        header_map[idx] = normalize_header(raw)
+
+    if not any(header_map.values()):
+        return jsonify({'error': 'Plik Excel nie ma nag\u0142\u00f3wk\u00f3w.'}), 400
+
+    def rows_gen():
+        for values in row_iter:
+            yield {header_map.get(idx, idx): val for idx, val in enumerate(values)}
+
+    result = jsonify(process_import_rows(rows_gen())), 200
+    wb.close()
+    return result
 
 
 @app.route('/api/general-stats', methods=['GET'])
@@ -1843,7 +1980,103 @@ def api_dashboard():
         'workers_today': workers_today,
         'activities_today': activities_today,
         'per_worker': per_worker,
-        'as_of': datetime.utcnow().strftime('%H:%M:%S'),
+        'as_of': datetime.now(LOCAL_TZ).strftime('%H:%M:%S'),
+    })
+
+
+@app.route('/api/dashboard/shifts')
+@leader_required
+def api_dashboard_shifts():
+    """Per-shift daily breakdown for a chosen date.
+
+    DailyStat is already shift-tagged (shift_id) → aggregated directly.
+    Packages (ImportedCarton) have no shift, so they are attributed by
+    ATTENDANCE: a package finished by a worker counts toward the single shift
+    that worker was scanned into that day. Workers with no attendance (or in
+    both shifts → ambiguous) land in the 'unattributed' bucket so nothing is
+    silently dropped and totals stay exact (each package counted once).
+    """
+    date_str = request.args.get('date', '')
+    try:
+        target = datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else date.today()
+    except ValueError:
+        target = date.today()
+
+    day_start = datetime.combine(target, datetime.min.time())
+    day_end = day_start + timedelta(days=1)
+
+    act_map = {a.id: a.name for a in Activity.query.all()}
+    user_map = {u.id: u.display_name for u in User.query.all()}
+
+    # Shifts that day + attendance (user_id -> set of shift_numbers attended)
+    shifts = {s.shift_number: s for s in Shift.query.filter_by(date=target).all()}
+    user_shifts = {}
+    for snum, sh in shifts.items():
+        for a in ShiftAttendance.query.filter_by(shift_id=sh.id).all():
+            user_shifts.setdefault(a.user_id, set()).add(snum)
+
+    # Packages finished that day, grouped by the worker who ended them
+    pkg_rows = db.session.query(
+        ImportedCarton.scan_end_by.label('user_id'),
+        func.count(ImportedCarton.id).label('packages'),
+        func.coalesce(func.sum(ImportedCarton.stueckzahl), 0).label('pieces'),
+    ).filter(
+        ImportedCarton.scan_end_at >= day_start,
+        ImportedCarton.scan_end_at < day_end,
+        ImportedCarton.scan_end_by.isnot(None),
+    ).group_by(ImportedCarton.scan_end_by).all()
+
+    per_shift_pkg = {1: {'packages': 0, 'pieces': 0}, 2: {'packages': 0, 'pieces': 0}}
+    unattributed = {'packages': 0, 'pieces': 0, 'workers': []}
+
+    for r in pkg_rows:
+        attended = user_shifts.get(r.user_id, set())
+        pkgs, pcs = int(r.packages), int(r.pieces or 0)
+        if len(attended) == 1:
+            snum = next(iter(attended))
+            per_shift_pkg[snum]['packages'] += pkgs
+            per_shift_pkg[snum]['pieces'] += pcs
+        else:
+            unattributed['packages'] += pkgs
+            unattributed['pieces'] += pcs
+            unattributed['workers'].append({
+                'name': user_map.get(r.user_id, '?'),
+                'packages': pkgs, 'pieces': pcs,
+                'reason': 'brak obecności' if not attended else 'obie zmiany',
+            })
+
+    # DailyStat per shift + activity (direct via shift_id)
+    ds_rows = db.session.query(
+        Shift.shift_number,
+        DailyStat.activity_id,
+        func.sum(DailyStat.quantity).label('qty'),
+    ).join(Shift, DailyStat.shift_id == Shift.id)\
+     .filter(Shift.date == target)\
+     .group_by(Shift.shift_number, DailyStat.activity_id).all()
+
+    per_shift_acts = {1: [], 2: []}
+    for r in ds_rows:
+        per_shift_acts.setdefault(r.shift_number, []).append(
+            {'activity': act_map.get(r.activity_id, '?'), 'qty': int(r.qty or 0)}
+        )
+
+    result_shifts = []
+    for snum in (1, 2):
+        sh = shifts.get(snum)
+        present = ShiftAttendance.query.filter_by(shift_id=sh.id).count() if sh else 0
+        result_shifts.append({
+            'shift_number': snum,
+            'exists': sh is not None,
+            'present_count': present,
+            'packages': per_shift_pkg[snum]['packages'],
+            'pieces': per_shift_pkg[snum]['pieces'],
+            'activities': sorted(per_shift_acts.get(snum, []), key=lambda x: x['qty'], reverse=True),
+        })
+
+    return jsonify({
+        'date': target.isoformat(),
+        'shifts': result_shifts,
+        'unattributed': unattributed,
     })
 
 
@@ -1921,6 +2154,210 @@ def api_scan_employee():
     if not user:
         return jsonify({'error': 'Nieznany kod pracownika.'}), 404
     return jsonify({'user': user.to_dict()}), 200
+
+
+@app.route('/api/packages', methods=['POST'])
+@leader_required
+def api_package_create():
+    """Manually add a single package (for packages missing from CSV imports).
+
+    Runs through the SAME pipeline as CSV/Excel import (process_import_rows),
+    so a manual package dedups, aggregates into GeneralStat and bills exactly
+    like an imported one. Duplicate barcode → 409; missing required fields or
+    bad values → 400.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    data = request.get_json() or {}
+    barcode = (data.get('barcode') or '').strip()
+    land = (data.get('land') or '').strip()
+    kategorie = (data.get('kategorie') or '').strip()
+    uebergabe_nr = (data.get('uebergabe_nr') or '').strip()
+    ziel_datum_str = (data.get('ziel_datum') or '').strip()
+    double_rate = bool(data.get('double_rate'))
+
+    # Required fields (5) — must not be skipped, else the package can't bill
+    missing = []
+    if not barcode:
+        missing.append('Barcode')
+    if not land:
+        missing.append('Land')
+    if not uebergabe_nr:
+        missing.append('Übergabe Nr.')
+    if not ziel_datum_str:
+        missing.append('Ziel-Datum')
+    if missing:
+        return jsonify({'error': 'Brakuje wymaganych pól: ' + ', '.join(missing)}), 400
+
+    # Quantity — must be a positive integer
+    try:
+        stueckzahl = int(data.get('stueckzahl'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Stückzahl musi być liczbą całkowitą.'}), 400
+    if stueckzahl <= 0:
+        return jsonify({'error': 'Stückzahl musi być większe od zera.'}), 400
+
+    # Date — must parse
+    ziel_datum = _cell_to_date(ziel_datum_str)
+    if ziel_datum is None:
+        return jsonify({'error': 'Nieprawidłowy format daty Ziel-Datum.'}), 400
+
+    # Duplicate barcode → 409 (pre-check; race handled by IntegrityError below)
+    if ImportedCarton.query.filter_by(barcode=barcode).first():
+        return jsonify({'error': f'Paczka o barcode "{barcode}" już istnieje.'}), 409
+
+    row = {
+        'barcode': barcode,
+        'land': land,
+        'stueckzahl': stueckzahl,
+        'kategorie': kategorie,
+        'ziel_datum': ziel_datum,
+        'uebergabe_nr': uebergabe_nr,
+        'double_rate': double_rate,
+        'added_manually': True,
+    }
+
+    try:
+        result = process_import_rows([row])
+    except IntegrityError:
+        # Concurrent add of the same barcode slipped past the pre-check
+        db.session.rollback()
+        return jsonify({'error': f'Paczka o barcode "{barcode}" już istnieje.'}), 409
+
+    # Guard: a silent skip (imported=0) must not read as success
+    if result.get('imported') != 1:
+        return jsonify({'error': 'Nie udało się dodać paczki.'}), 409
+
+    return jsonify({
+        'message': f'Dodano paczkę {barcode}.',
+        'stats_created': result.get('stats_created', 0),
+        'stats_updated': result.get('stats_updated', 0),
+    }), 201
+
+
+def recompute_general_stat(uebergabe_nr, land, ziel_datum, actor_id=None):
+    """Recompute a GeneralStat line's `amounts` from the SUM of its cartons.
+
+    `amounts` is a pure carton aggregate (only written by process_import_rows),
+    so recomputing from SUM(stueckzahl) over the (uebergabe_nr, land, ziel_datum)
+    group is exact — it avoids delta drift and stays correct when manual and
+    imported cartons share a line. Groups without uebergabe_nr or ziel_datum
+    never aggregate, so nothing to recompute. If the group emptied to 0, the
+    GeneralStat row is kept at amounts=0 (preserves any entered category_data).
+    """
+    if not (uebergabe_nr and ziel_datum):
+        return
+    total = db.session.query(
+        func.coalesce(func.sum(ImportedCarton.stueckzahl), 0)
+    ).filter(
+        ImportedCarton.uebergabe_nr == uebergabe_nr,
+        ImportedCarton.land == land,
+        ImportedCarton.ziel_datum == ziel_datum,
+    ).scalar() or 0
+
+    existing = GeneralStat.query.filter_by(
+        list_id=uebergabe_nr,
+        country_ledger=land,
+        loading_date=ziel_datum,
+    ).first()
+
+    if existing:
+        existing.amounts = total
+        existing.updated_at = datetime.utcnow()
+        if actor_id:
+            existing.updated_by = actor_id
+    elif total > 0:
+        mapping = CountryMapping.query.filter_by(innenauftrag=land).first()
+        stat = GeneralStat(
+            loading_date=ziel_datum,
+            week_number=ziel_datum.isocalendar()[1],
+            list_id=uebergabe_nr,
+            country_of_destination=mapping.country if mapping else None,
+            country_ledger=land,
+            amounts=total,
+            category_data=json.dumps(empty_category_data()),
+        )
+        db.session.add(stat)
+
+
+@app.route('/api/packages/<int:carton_id>', methods=['PUT'])
+@leader_required
+def api_package_update(carton_id):
+    """Edit a manually-added package; recompute affected GeneralStat lines.
+
+    Only `added_manually` packages are editable (imported ones are read-only →
+    403). Changing a group field (uebergabe/land/ziel) moves the carton between
+    GeneralStat groups — both the old and new lines are recomputed from carton
+    sums so billing stays exact.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    carton = ImportedCarton.query.get_or_404(carton_id)
+    if not carton.added_manually:
+        return jsonify({'error': 'Edytować można tylko paczki dodane ręcznie.'}), 403
+
+    data = request.get_json() or {}
+    barcode = (data.get('barcode') or '').strip()
+    land = (data.get('land') or '').strip()
+    kategorie = (data.get('kategorie') or '').strip()
+    uebergabe_nr = (data.get('uebergabe_nr') or '').strip()
+    ziel_datum_str = (data.get('ziel_datum') or '').strip()
+    double_rate = bool(data.get('double_rate'))
+
+    missing = []
+    if not barcode:
+        missing.append('Barcode')
+    if not land:
+        missing.append('Land')
+    if not uebergabe_nr:
+        missing.append('Übergabe Nr.')
+    if not ziel_datum_str:
+        missing.append('Ziel-Datum')
+    if missing:
+        return jsonify({'error': 'Brakuje wymaganych pól: ' + ', '.join(missing)}), 400
+
+    try:
+        stueckzahl = int(data.get('stueckzahl'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Stückzahl musi być liczbą całkowitą.'}), 400
+    if stueckzahl <= 0:
+        return jsonify({'error': 'Stückzahl musi być większe od zera.'}), 400
+
+    ziel_datum = _cell_to_date(ziel_datum_str)
+    if ziel_datum is None:
+        return jsonify({'error': 'Nieprawidłowy format daty Ziel-Datum.'}), 400
+
+    if barcode != carton.barcode and ImportedCarton.query.filter_by(barcode=barcode).first():
+        return jsonify({'error': f'Paczka o barcode "{barcode}" już istnieje.'}), 409
+
+    # Capture the OLD group before mutating, so we can recompute it after the move
+    old_group = (carton.uebergabe_nr, carton.land, carton.ziel_datum)
+
+    mapping = CountryMapping.query.filter_by(innenauftrag=land).first()
+    carton.barcode = barcode
+    carton.land = land
+    carton.stueckzahl = stueckzahl
+    carton.kategorie = kategorie
+    carton.ziel_datum = ziel_datum
+    carton.uebergabe_nr = uebergabe_nr
+    carton.double_rate = double_rate
+    carton.country_mapping_id = mapping.id if mapping else None
+    carton.modified_at = datetime.utcnow()
+    carton.modified_by = current_user.id
+
+    new_group = (uebergabe_nr, land, ziel_datum)
+
+    try:
+        db.session.flush()  # push the carton UPDATE so recompute SUMs see new values / catch collision
+        recompute_general_stat(*old_group, actor_id=current_user.id)
+        if new_group != old_group:
+            recompute_general_stat(*new_group, actor_id=current_user.id)
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'error': f'Paczka o barcode "{barcode}" już istnieje.'}), 409
+
+    return jsonify({'message': f'Zapisano paczkę {barcode}.', 'carton': carton.to_dict()}), 200
 
 
 @app.route('/api/packages/<int:carton_id>/assign', methods=['PUT'])
@@ -2118,7 +2555,7 @@ def _compute_worker_times(uid, shift, attendance_time):
             open_break = e.timestamp
         elif e.event_type == 'break_end' and open_break:
             secs = (e.timestamp - open_break).total_seconds()
-            breaks.append({'start': open_break.isoformat(), 'end': e.timestamp.isoformat(),
+            breaks.append({'start': iso_z(open_break), 'end': iso_z(e.timestamp),
                            'minutes': int(secs / 60)})
             break_secs += secs
             open_break = None
@@ -2126,13 +2563,13 @@ def _compute_worker_times(uid, shift, attendance_time):
             work_end_ts = e.timestamp
 
     if open_break:
-        breaks.append({'start': open_break.isoformat(), 'end': None, 'minutes': None})
+        breaks.append({'start': iso_z(open_break), 'end': None, 'minutes': None})
 
     end_ref = work_end_ts or datetime.utcnow()
     work_secs = max(0, (end_ref - attendance_time).total_seconds() - break_secs)
 
     return {
-        'work_end':      work_end_ts.isoformat() if work_end_ts else None,
+        'work_end':      iso_z(work_end_ts),
         'break_minutes': int(break_secs / 60),
         'work_minutes':  int(work_secs / 60),
         'breaks':        breaks,
@@ -2260,7 +2697,7 @@ def api_worker_times():
             'user_name':    att.user.display_name,
             'shift_id':     att.shift_id,
             'shift_number': att.shift.shift_number,
-            'shift_in':     att.scanned_at.isoformat(),
+            'shift_in':     iso_z(att.scanned_at),
         })
         result.append(summary)
 
@@ -2640,6 +3077,9 @@ def migrate_columns():
             ("imported_carton", "scan_start_by",  "INTEGER REFERENCES user(id)"),
             ("imported_carton", "scan_end_at",    "DATETIME"),
             ("imported_carton", "scan_end_by",    "INTEGER REFERENCES user(id)"),
+            ("imported_carton", "added_manually", "BOOLEAN DEFAULT 0"),
+            ("imported_carton", "modified_at",    "DATETIME"),
+            ("imported_carton", "modified_by",    "INTEGER REFERENCES user(id)"),
         ]
         for table, column, col_def in migrations:
             try:

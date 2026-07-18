@@ -55,13 +55,20 @@ Leader enters quantities per person → `DailyStat` records with audit trail
 **Double rate (per-package):**
 `ImportedCarton.double_rate` checkbox in `/paczki`. In General Stats, any line with double-rate cartons gets a second **yellow** row: Amounts = auto sum of double-rate `stueckzahl` (`double_rate_amount_map()`), categories entered manually into `GeneralStat.double_rate_category_data`. Both lines bill ×1 — doubling is emergent (packages counted twice). The legacy per-line `GeneralStat.double_rate` ×2 multiplier is removed (column kept as dead back-compat).
 
+**Dashboard (`/dashboard`):**
+Three tabs — Podsumowanie / Per pracownik (both from `GET /api/dashboard`, today-only, 30s auto-refresh) and **Per zmiana** (`GET /api/dashboard/shifts?date=`, any date). DailyStat is already shift-tagged (`shift_id`) so it aggregates per shift directly; packages have no shift, so they're attributed **by attendance** — a package counts toward the single shift its `scan_end_by` worker was scanned into (`ShiftAttendance`) that day. Workers with no attendance or in both shifts → `unattributed` bucket (each package counted exactly once).
+
 **Time tracking:**
 Worker scans barcode on `/time-tracking` to toggle break (`break_start`/`break_end`) or record `work_end`.
 All events stored in `WorkerTimeEvent`. Break state derived from `count(break_start) - count(break_end)` — no flag on User.
 Auto-closes open break when `work_end` is scanned.
 
-**CSV import flow:**
+**CSV / Excel import flow:**
 Raw rows → `ImportedCarton` (deduplicated by `barcode`) → aggregated into `GeneralStat` (grouped by `uebergabe_nr` + `land` + `ziel_datum`). Cost calculation uses `CostMapping` (per year/month rates in `rates_data` JSON). Cost = category amount × rate (×1); see Double rate above for the yellow-row billing.
+Both `POST /api/import-csv` (`;`-delimited CSV) and `POST /api/import/excel` (`.xlsx` via openpyxl) feed the **same** helper `process_import_rows(rows)` — same dedup + aggregation + response shape. The helper is **type-aware** (`_cell_to_barcode/_int/_date/_str`): CSV yields strings, openpyxl yields native `datetime`/`int`/`float`/`None`. Excel is read with `load_workbook(..., data_only=True, read_only=True)`; headers pass through the same `normalize_header`. Expected columns (same as CSV): `Barcode`, `Land`, `Stückzahl`, `Kategorie`, `Ziel-Datum`, `Übergabe Nr.`. **Caveat:** numeric barcode columns in Excel are stored as float64 — long SSCC/EAN >2^53 loses precision and leading zeros vanish at the source; format the barcode column as text. The `/import-csv` page accepts both extensions and routes by extension.
+**Manual add:** `POST /api/packages` (leader+, "➕ Dodaj paczkę" button in `/paczki`) creates a single `ImportedCarton` for packages missing from CSV. It feeds the **same** `process_import_rows([row])` so it dedups + aggregates + bills identically to an import. Required fields: `barcode`, `stueckzahl` (>0), `land`, `ziel_datum`, `uebergabe_nr`; optional: `kategorie`, `double_rate`. Duplicate barcode → 409 (pre-check + `IntegrityError` fallback for the concurrent-write race); the row carries optional `double_rate` / `added_manually` keys that `process_import_rows` now reads (absent in CSV/Excel rows → False). Land is a dropdown of `CountryMapping` (option value = `innenauftrag`, label = country). `imported_by` (set for both import and manual) is shown per row as the **login** ("👤 username") + a "ręczna" badge when `added_manually`.
+
+**Manual edit:** `PUT /api/packages/<id>` (leader+, "✎ Edytuj" button) — editable **only** for `added_manually` packages (imported ones → 403). Same validation as create; changed barcode collision → 409. Changing a group field (`uebergabe_nr`/`land`/`ziel_datum`) moves the carton between GeneralStat groups: `recompute_general_stat()` rewrites the affected line(s) as `SUM(stueckzahl)` over the group — **recompute-from-sum, not delta** (exact even when manual + imported cartons share a line; the invariant is that `amounts` is written only by carton aggregation). An emptied group's line is kept at `amounts=0` (preserves `category_data`). Sets `modified_by`/`modified_at` (shown per row). Editing a scanned package (has `scan_start_at`/`scan_end_at`) is allowed but the UI confirms first.
 
 **AI suggestions** (`/api/assignment/suggestions`): greedy algorithm using 30-day average `DailyStat.quantity` per user per activity.
 
@@ -72,13 +79,12 @@ Raw rows → `ImportedCarton` (deduplicated by `barcode`) → aggregated into `G
 - **Drag & drop:** Native HTML5 API. Multi-select via click, drag moves all selected.
 - **`GeneralStat.category_data`** and **`CostMapping.rates_data`** store JSON as `db.Text`. Always use `get_category_data()` / `get_rates_data()` accessors.
 - **User soft-delete:** `DELETE /api/users/<id>` sets `is_active_user=False`.
-- **All timestamps in UTC.** Frontend converts to local time via `new Date(iso).toLocaleTimeString('pl')`.
+- **All timestamps stored in UTC (naive `datetime.utcnow()`); displayed in Europe/Warsaw.** Two display paths, both DST-correct: (1) API JSON serializes datetimes via `iso_z()` which appends **`Z`** so the browser's `new Date(iso)` parses them as UTC and `toLocaleTimeString('pl')` converts to local — **datetime fields only, never date-only** columns (`ziel_datum`, `loading_date`, `Shift.date` stay bare `isoformat()`); (2) server-rendered Jinja timestamps use the **`| localdt('%fmt')`** filter (naive-UTC → `Europe/Warsaw`). Manual worker-time edits round-trip cleanly: the browser sends `new Date(local).toISOString().slice(0,19)` (naive UTC) and `fromisoformat` stores it as-is. Never render a stored datetime with bare `strftime` (shows UTC) or feed a Z-less ISO to `new Date()` (parsed as local → 2h off in PL summer).
 - **Break >30 min** highlighted red in `/worker-times` — threshold hardcoded in `worker_times.html`.
 - **SECRET_KEY:** Set via `SECRET_KEY` env var in production.
 
 ## Pending work (from TODO.md)
 
-- Excel import endpoint (`/api/import/excel`) — reserved but not implemented (`openpyxl` already in requirements)
 - Password change screen for leaders/admins
 - Touch/tablet support for drag & drop
 - Excel export for worker times
