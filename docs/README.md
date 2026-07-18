@@ -15,7 +15,7 @@ System do zarządzania pracownikami, przydzielania czynności i śledzenia staty
 ## Uruchomienie lokalne
 
 ```bash
-cd c:\Users\asobczyk\Downloads\Apps\LogiStat
+cd /opt/LogiStat
 pip install -r requirements.txt
 python app.py
 # → http://localhost:5001
