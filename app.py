@@ -1957,8 +1957,23 @@ def api_package_time_start():
     if not carton:
         return jsonify({'error': 'Nieznany kod paczki.'}), 404
 
+    # Paczka w trakcie (start bez końca) — tylko pracownik, który zaczął, nią zarządza
+    if carton.scan_start_at and not carton.scan_end_at:
+        if carton.scan_start_by == user.id:
+            return jsonify({
+                'message': f'Paczka {package_barcode} już rozpoczęta przez Ciebie — start bez zmian.',
+                'carton': carton.to_dict()
+            }), 200
+        starter = User.query.get(carton.scan_start_by) if carton.scan_start_by else None
+        return jsonify({
+            'error': f'Paczka już rozpoczęta przez {starter.display_name if starter else "innego pracownika"}. Nie można jej podebrać.'
+        }), 409
+
+    # Świeży start (nierozpoczęta lub ponowne przetwarzanie zakończonej — nowy cykl)
     carton.scan_start_at = datetime.utcnow()
     carton.scan_start_by = user.id
+    carton.scan_end_at = None
+    carton.scan_end_by = None
     db.session.commit()
 
     return jsonify({
@@ -1989,6 +2004,16 @@ def api_package_time_end():
 
     if not carton.scan_start_at:
         return jsonify({'error': 'Brak zarejestrowanego startu dla tej paczki.'}), 400
+
+    if carton.scan_end_at:
+        return jsonify({'error': 'Paczka jest już zakończona.'}), 409
+
+    # Tylko pracownik, który rozpoczął paczkę, może ją zakończyć
+    if carton.scan_start_by and carton.scan_start_by != user.id:
+        starter = User.query.get(carton.scan_start_by)
+        return jsonify({
+            'error': f'Paczkę rozpoczął {starter.display_name if starter else "inny pracownik"} — tylko on może ją zakończyć.'
+        }), 403
 
     carton.scan_end_at = datetime.utcnow()
     carton.scan_end_by = user.id
