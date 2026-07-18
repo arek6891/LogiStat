@@ -139,6 +139,9 @@ CREATE TABLE IF NOT EXISTS imported_carton (
     scan_end_at        TIMESTAMP,
     scan_end_by        INTEGER      REFERENCES "user"(id),
     double_rate        BOOLEAN      NOT NULL DEFAULT FALSE,
+    added_manually     BOOLEAN      NOT NULL DEFAULT FALSE,
+    modified_at        TIMESTAMP,
+    modified_by        INTEGER      REFERENCES "user"(id),
 
     CONSTRAINT uq_carton_barcode UNIQUE (barcode)
 );
