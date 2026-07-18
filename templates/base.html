@@ -94,8 +94,10 @@
                         <div style="color:var(--text-muted);font-size:0.75rem;">{{ current_user.role }}</div>
                     </div>
                 </div>
+                <a href="{{ url_for('profile') }}" class="btn btn-ghost btn-sm"
+                    style="margin-top:12px;width:100%;justify-content:center;">🔑 Zmień hasło</a>
                 <a href="{{ url_for('logout') }}" class="btn btn-ghost btn-sm"
-                    style="margin-top:12px;width:100%;justify-content:center;">Wyloguj</a>
+                    style="margin-top:8px;width:100%;justify-content:center;">Wyloguj</a>
             </div>
         </nav>
         <main class="main-content">

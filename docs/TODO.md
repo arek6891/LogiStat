@@ -37,9 +37,6 @@
   - Biblioteka `openpyxl` już zainstalowana w requirements.txt
   - Trzeba uzgodnić: jakie kolumny, jak mapować użytkowników, jak rozwiązywać konflikty
 
-- [ ] **Zmiana hasła admina/lidera** — brak ekranu do zmiany hasła
-  - Dodać stronę `/profile` lub modal w sidebar z formularzem zmiany hasła
-
 ## 🟡 Planowane usprawnienia
 
 - [ ] **Touch/tablet support** — drag & drop na tablecie wymaga touch events
@@ -79,6 +76,7 @@
 - [x] Dashboard dzienny — karty, pasek postępu, per pracownik (2 zakładki)
 - [x] Czas pracy — skanowanie przerw i końca pracy (toggle break_start/break_end)
 - [x] Czasy pracowników — moduł liderski z korektami ręcznymi, podświetlenie >30 min przerwy
+- [x] Zmiana hasła — ekran `/profile` z formularzem (aktualne + nowe + potwierdzenie), link w sidebarze
 
 ---
 

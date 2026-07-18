@@ -507,6 +507,29 @@ def logout():
     return redirect(url_for('login'))
 
 
+@app.route('/profile', methods=['GET', 'POST'])
+@login_required
+def profile():
+    if request.method == 'POST':
+        current = request.form.get('current_password', '')
+        new = request.form.get('new_password', '')
+        confirm = request.form.get('confirm_password', '')
+        if not current_user.check_password(current):
+            flash('Aktualne hasło jest nieprawidłowe.', 'error')
+        elif len(new) < 6:
+            flash('Nowe hasło musi mieć co najmniej 6 znaków.', 'error')
+        elif new != confirm:
+            flash('Nowe hasła nie są identyczne.', 'error')
+        elif new == current:
+            flash('Nowe hasło musi różnić się od aktualnego.', 'error')
+        else:
+            current_user.set_password(new)
+            db.session.commit()
+            flash('Hasło zostało zmienione.', 'success')
+            return redirect(url_for('profile'))
+    return render_template('profile.html')
+
+
 @app.route('/scanner/<int:shift_number>')
 @leader_required
 def scanner(shift_number):
