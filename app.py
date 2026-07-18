@@ -1751,24 +1751,24 @@ def api_dashboard():
     today = date.today()
     today_start = datetime.combine(today, datetime.min.time())
 
-    # Paczki — ogólne
+    # Paczki — ogólne (przetworzona = ZAKOŃCZONA, scan_end)
     total_cartons = ImportedCarton.query.count()
-    done_cartons = ImportedCarton.query.filter(ImportedCarton.processed_by.isnot(None)).count()
+    done_cartons = ImportedCarton.query.filter(ImportedCarton.scan_end_at.isnot(None)).count()
     remaining_cartons = total_cartons - done_cartons
 
-    # Paczki zrobione dziś
-    done_today_q = ImportedCarton.query.filter(ImportedCarton.processed_at >= today_start)
+    # Paczki zakończone dziś
+    done_today_q = ImportedCarton.query.filter(ImportedCarton.scan_end_at >= today_start)
     done_today = done_today_q.count()
     pieces_today = db.session.query(func.sum(ImportedCarton.stueckzahl))\
-        .filter(ImportedCarton.processed_at >= today_start).scalar() or 0
+        .filter(ImportedCarton.scan_end_at >= today_start).scalar() or 0
 
-    # Breakdown per pracownik — dziś
+    # Breakdown per pracownik — dziś (kto zakończył paczki)
     worker_rows = db.session.query(
         User.id.label('user_id'), User.display_name,
         func.count(ImportedCarton.id).label('packages'),
         func.sum(ImportedCarton.stueckzahl).label('pieces')
-    ).join(ImportedCarton, ImportedCarton.processed_by == User.id)\
-     .filter(ImportedCarton.processed_at >= today_start)\
+    ).join(ImportedCarton, ImportedCarton.scan_end_by == User.id)\
+     .filter(ImportedCarton.scan_end_at >= today_start)\
      .group_by(User.id, User.display_name)\
      .order_by(func.count(ImportedCarton.id).desc()).all()
 
@@ -1814,8 +1814,10 @@ def api_dashboard():
             {'activity': act_map.get(r.activity_id, '?'), 'qty': int(r.qty or 0)}
         )
 
-    present_users = User.query.filter(User.id.in_(present_ids)).order_by(User.display_name).all() \
-        if present_ids else []
+    # Widoczni: obecni na zmianie LUB ci, którzy dziś zakończyli paczki (nic nie chowamy)
+    relevant_ids = present_ids | set(pkg_by_user.keys())
+    present_users = User.query.filter(User.id.in_(relevant_ids)).order_by(User.display_name).all() \
+        if relevant_ids else []
 
     per_worker = []
     for u in present_users:
