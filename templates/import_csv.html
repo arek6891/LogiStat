@@ -1,10 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Import CSV — LogiStat{% endblock %}
+{% block title %}Import danych — LogiStat{% endblock %}
 {% block content %}
 <div class="page-header">
-    <h1>📥 Import CSV</h1>
-    <p style="color:var(--text-muted);">Wrzuć plik CSV z danymi kartonów. Dane zostaną zparsowane i zagregowane do
-        Statystyk ogólnych.</p>
+    <h1>📥 Import danych</h1>
+    <p style="color:var(--text-muted);">Wrzuć plik <strong>CSV</strong> lub <strong>Excel (.xlsx)</strong> z danymi
+        kartonów. Dane zostaną zparsowane i zagregowane do Statystyk ogólnych.<br>
+        Oczekiwane kolumny: <code>Barcode</code>, <code>Land</code>, <code>Stückzahl</code>, <code>Kategorie</code>,
+        <code>Ziel-Datum</code>, <code>Übergabe Nr.</code><br>
+        <span style="font-size:.85rem;">Excel: obsługiwany jest tylko format <strong>.xlsx</strong> (stary <code>.xls</code> → „Zapisz jako .xlsx").
+        Kolumnę <code>Barcode</code> sformatuj jako <strong>tekst</strong>, aby uniknąć utraty cyfr w długich kodach.</span></p>
 </div>
 
 <div class="card" style="max-width:700px;">
@@ -14,11 +18,11 @@
         ondragleave="this.style.borderColor='var(--border)';this.style.background='transparent';"
         ondrop="handleDrop(event)">
         <div style="font-size:3rem;margin-bottom:1rem;">📄</div>
-        <p style="font-size:1.1rem;font-weight:600;">Przeciągnij plik CSV tutaj</p>
+        <p style="font-size:1.1rem;font-weight:600;">Przeciągnij plik CSV lub Excel tutaj</p>
         <p style="color:var(--text-muted);margin:.5rem 0;">lub</p>
         <label class="btn btn-primary" style="cursor:pointer;">
             Wybierz plik
-            <input type="file" id="fileInput" accept=".csv" style="display:none;" onchange="handleFile(this.files[0])">
+            <input type="file" id="fileInput" accept=".csv,.xlsx" style="display:none;" onchange="handleFile(this.files[0])">
         </label>
         <p id="fileName" style="color:var(--text-muted);margin-top:1rem;font-size:.85rem;"></p>
     </div>
@@ -46,8 +50,9 @@
     }
 
     function handleFile(file) {
-        if (!file || !file.name.toLowerCase().endsWith('.csv')) {
-            showToast('Wybierz plik .csv', 'error');
+        const name = file ? file.name.toLowerCase() : '';
+        if (!file || !(name.endsWith('.csv') || name.endsWith('.xlsx'))) {
+            showToast('Wybierz plik .csv lub .xlsx', 'error');
             return;
         }
         document.getElementById('fileName').textContent = '📎 ' + file.name;
@@ -60,11 +65,15 @@
         loading.style.display = 'block';
         results.style.display = 'none';
 
+        const endpoint = file.name.toLowerCase().endsWith('.xlsx')
+            ? '/api/import/excel'
+            : '/api/import-csv';
+
         const formData = new FormData();
         formData.append('file', file);
 
         try {
-            const resp = await fetch('/api/import-csv', {
+            const resp = await fetch(endpoint, {
                 method: 'POST',
                 body: formData
             });

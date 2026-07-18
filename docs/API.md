@@ -181,11 +181,13 @@ Parametry query: `activity_id`, `date_from`, `date_to`
 
 ---
 
-## Admin — Import CSV i Statystyki
+## Admin — Import CSV / Excel i Statystyki
 
 | Method | URL | Opis |
 |--------|-----|------|
-| POST | `/api/import-csv` | Wrzucenie pliku CSV (multipart/form-data z kluczem `file`). Zwraca statystyki importowanych, pomiętych i zaaktualizowanych kartonów. |
+| POST | `/api/import-csv` | Wrzucenie pliku CSV (`;`-separowany, multipart/form-data z kluczem `file`). Zwraca statystyki importowanych, pominiętych i zaktualizowanych kartonów. |
+| POST | `/api/import/excel` | Wrzucenie pliku Excel `.xlsx` (multipart/form-data z kluczem `file`). Te same kolumny i ta sama odpowiedź co import CSV. ⚠️ numeryczną kolumnę barcode formatować jako tekst (Excel float64 traci precyzję dla długich kodów). |
+| POST | `/api/packages` | **Ręczne dodanie paczki** (leader+). JSON: `barcode`, `stueckzahl`, `land`, `ziel_datum` (`YYYY-MM-DD`), `uebergabe_nr` **(wymagane)** + `kategorie`, `double_rate` (opcjonalne). Przechodzi przez ten sam pipeline co import (agregacja do GeneralStat). Duplikat barcode → 409, brak pól / zła ilość / zła data → 400. |
 | GET | `/api/general-stats` | Lista statystyk z importu CSV do tabeli rozliczeniowej |
 | PUT | `/api/general-stats/<id>` | Edytuj statystykę: `category_data` (normalna linia) lub `double_rate_category_data` (żółta linia double rate); słownik 10 kategorii |
 

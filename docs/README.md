@@ -108,7 +108,7 @@ Nawigacja w sidebarze jest pogrupowana w sekcje:
 - 👥 **Czasy pracowników** (`/worker-times`) — przegląd i korekta czasów (przerwa >30 min na czerwono)
 
 ### 🗂 Rozliczenia (CSV) — *tylko admin*
-- 📥 **Import CSV** (`/import-csv`) — drag & drop danych wejściowych z automatyczną deduplikacją
+- 📥 **Import danych** (`/import-csv`) — drag & drop plików **CSV lub Excel (.xlsx)** z automatyczną deduplikacją po barcode
 - 💶 **Statystyki ogólne** (`/general-stats`) — tabela zestawień wg list i dat; żółta linia **double rate**
 
 ### 🗂 Administracja

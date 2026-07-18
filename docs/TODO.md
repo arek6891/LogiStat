@@ -27,10 +27,11 @@
         `sudo chmod 600 /etc/nginx/ssl/logistat/cert.key`
         następnie odkomentować blok HTTPS w `/etc/nginx/sites-available/logistat` i `sudo systemctl reload nginx`
 
-- [ ] **Import danych z Excela** — format kolumn do ustalenia z użytkownikiem
-  - Endpoint `/api/import/excel` jest zarezerwowany, ale jeszcze nieaktywny
-  - Biblioteka `openpyxl` już zainstalowana w requirements.txt
-  - Trzeba uzgodnić: jakie kolumny, jak mapować użytkowników, jak rozwiązywać konflikty
+- [x] **Import danych z Excela** — `POST /api/import/excel` (openpyxl), ten sam pipeline co CSV
+  - Kolumny jak w CSV: `Barcode`, `Land`, `Stückzahl`, `Kategorie`, `Ziel-Datum`, `Übergabe Nr.`
+  - Strona `/import-csv` przyjmuje teraz `.csv` **i** `.xlsx` (routing po rozszerzeniu)
+  - Wspólny helper `process_import_rows()` type-aware (openpyxl zwraca natywne typy)
+  - ⚠️ numeryczne barcode w Excelu = float64: długie SSCC/EAN >2^53 tracą precyzję, wiodące zera znikają — kolumnę barcode formatować jako tekst
 
 ## 🟡 Planowane usprawnienia
 

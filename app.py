@@ -654,6 +654,7 @@ def paczki_view():
 
     pagination = query.order_by(ImportedCarton.imported_at.desc()).paginate(page=page, per_page=100, error_out=False)
     users = User.query.filter_by(is_active_user=True).order_by(User.display_name).all()
+    country_mappings = CountryMapping.query.order_by(CountryMapping.country).all()
 
     return render_template('paczki.html',
                            pagination=pagination,
@@ -662,7 +663,8 @@ def paczki_view():
                            date_to=date_to_str,
                            barcode=barcode,
                            land=land,
-                           users=users)
+                           users=users,
+                           country_mappings=country_mappings)
 
 
 @app.route('/general-stats/export')
@@ -1576,44 +1578,87 @@ def normalize_header(h):
     return h
 
 
-@app.route('/api/import-csv', methods=['POST'])
-@admin_required
-def api_import_csv():
-    if 'file' not in request.files:
-        return jsonify({'error': 'Brak pliku.'}), 400
+def _cell_to_barcode(val):
+    """Coerce a cell value to a barcode string.
 
-    file = request.files['file']
-    if not file.filename:
-        return jsonify({'error': 'Brak nazwy pliku.'}), 400
+    Excel stores numeric-looking barcodes as float64 \u2014 a whole number is
+    rendered without the trailing '.0' (str(123.0) -> '123'), and leading
+    zeros are already lost at the source. CSV always hands us strings.
+    """
+    if val is None:
+        return ''
+    if isinstance(val, bool):
+        return ''
+    if isinstance(val, int):
+        return str(val)
+    if isinstance(val, float):
+        return str(int(val)) if val.is_integer() else str(val)
+    return str(val).strip()
 
-    raw_bytes = file.read()
-    encoding = detect_csv_encoding(raw_bytes)
-    text = raw_bytes.decode(encoding)
 
-    reader = csv.DictReader(io.StringIO(text), delimiter=';')
+def _cell_to_int(val):
+    """Coerce a cell value to an int quantity (0 on failure)."""
+    if val is None:
+        return 0
+    if isinstance(val, bool):
+        return 0
+    if isinstance(val, (int, float)):
+        return int(val)
+    try:
+        return int(float(str(val).strip().replace(',', '')))
+    except (ValueError, TypeError):
+        return 0
 
-    # Normalize headers
-    if reader.fieldnames:
-        header_map = {h: normalize_header(h) for h in reader.fieldnames}
-    else:
-        return jsonify({'error': 'Plik CSV nie ma nag\u0142\u00f3wk\u00f3w.'}), 400
 
+def _cell_to_date(val):
+    """Coerce a cell value to a date (None on failure).
+
+    openpyxl returns datetime/date for date cells; CSV returns strings.
+    """
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val.date()
+    if isinstance(val, date):
+        return val
+    s = str(val).strip()
+    for fmt in ('%d.%m.%Y', '%Y-%m-%d', '%d/%m/%Y'):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _cell_to_str(val):
+    """Coerce a cell value to a trimmed string ('' for None)."""
+    if val is None:
+        return ''
+    return str(val).strip()
+
+
+def process_import_rows(rows):
+    """Shared import pipeline for CSV and Excel.
+
+    `rows` is an iterable of dicts keyed by NORMALIZED header names
+    (barcode, land, stueckzahl, kategorie, ziel_datum, uebergabe_nr).
+    Values may be raw strings (CSV) or native types (Excel) \u2014 all field
+    coercion is type-aware. Creates ImportedCarton records (deduped by
+    barcode) and upserts aggregated GeneralStat rows. Returns the result
+    dict for the API response.
+    """
     imported = 0
     skipped = 0
     skipped_barcodes = []
-    errors = []
     aggregation = {}  # key: (list_id, land, date_str) -> sum of stueckzahl
 
-    for i, row in enumerate(reader, start=2):
-        # Remap keys
-        mapped = {header_map.get(k, k): v for k, v in row.items()}
-
-        barcode = (mapped.get('barcode') or '').strip()
-        land = (mapped.get('land') or '').strip()
-        stueckzahl_str = (mapped.get('stueckzahl') or '0').strip().replace(',', '')
-        kategorie = (mapped.get('kategorie') or '').strip()
-        ziel_datum_str = (mapped.get('ziel_datum') or '').strip()
-        uebergabe_nr = (mapped.get('uebergabe_nr') or '').strip()
+    for row in rows:
+        barcode = _cell_to_barcode(row.get('barcode'))
+        land = _cell_to_str(row.get('land'))
+        kategorie = _cell_to_str(row.get('kategorie'))
+        uebergabe_nr = _cell_to_str(row.get('uebergabe_nr'))
+        stueckzahl = _cell_to_int(row.get('stueckzahl'))
+        ziel_datum = _cell_to_date(row.get('ziel_datum'))
 
         if not barcode:
             continue
@@ -1623,21 +1668,6 @@ def api_import_csv():
             skipped += 1
             skipped_barcodes.append(barcode)
             continue
-
-        # Parse quantity
-        try:
-            stueckzahl = int(float(stueckzahl_str))
-        except (ValueError, TypeError):
-            stueckzahl = 0
-
-        # Parse date
-        ziel_datum = None
-        for fmt in ('%d.%m.%Y', '%Y-%m-%d', '%d/%m/%Y'):
-            try:
-                ziel_datum = datetime.strptime(ziel_datum_str, fmt).date()
-                break
-            except ValueError:
-                continue
 
         # Match Land to CountryMapping
         mapping = CountryMapping.query.filter_by(innenauftrag=land).first()
@@ -1650,6 +1680,7 @@ def api_import_csv():
             ziel_datum=ziel_datum,
             uebergabe_nr=uebergabe_nr,
             country_mapping_id=mapping.id if mapping else None,
+            double_rate=bool(row.get('double_rate')),
             imported_by=current_user.id
         )
         db.session.add(carton)
@@ -1696,14 +1727,85 @@ def api_import_csv():
 
     db.session.commit()
 
-    return jsonify({
+    return {
         'message': f'Zaimportowano {imported} karton\u00f3w.',
         'imported': imported,
         'skipped': skipped,
         'skipped_barcodes': skipped_barcodes[:50],
         'stats_created': stats_created,
         'stats_updated': stats_updated
-    }), 200
+    }
+
+
+@app.route('/api/import-csv', methods=['POST'])
+@admin_required
+def api_import_csv():
+    if 'file' not in request.files:
+        return jsonify({'error': 'Brak pliku.'}), 400
+
+    file = request.files['file']
+    if not file.filename:
+        return jsonify({'error': 'Brak nazwy pliku.'}), 400
+
+    raw_bytes = file.read()
+    encoding = detect_csv_encoding(raw_bytes)
+    text = raw_bytes.decode(encoding)
+
+    reader = csv.DictReader(io.StringIO(text), delimiter=';')
+
+    # Normalize headers
+    if reader.fieldnames:
+        header_map = {h: normalize_header(h) for h in reader.fieldnames}
+    else:
+        return jsonify({'error': 'Plik CSV nie ma nag\u0142\u00f3wk\u00f3w.'}), 400
+
+    rows = ({header_map.get(k, k): v for k, v in row.items()} for row in reader)
+    return jsonify(process_import_rows(rows)), 200
+
+
+@app.route('/api/import/excel', methods=['POST'])
+@admin_required
+def api_import_excel():
+    import openpyxl
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'Brak pliku.'}), 400
+
+    file = request.files['file']
+    if not file.filename:
+        return jsonify({'error': 'Brak nazwy pliku.'}), 400
+
+    raw_bytes = file.read()
+    try:
+        wb = openpyxl.load_workbook(
+            io.BytesIO(raw_bytes), data_only=True, read_only=True
+        )
+    except Exception as e:
+        return jsonify({'error': f'Nie mo\u017cna odczyta\u0107 pliku Excel: {e}'}), 400
+
+    ws = wb.active
+    row_iter = ws.iter_rows(values_only=True)
+
+    try:
+        header_row = next(row_iter)
+    except StopIteration:
+        return jsonify({'error': 'Plik Excel jest pusty.'}), 400
+
+    header_map = {}
+    for idx, cell in enumerate(header_row):
+        raw = str(cell) if cell is not None else ''
+        header_map[idx] = normalize_header(raw)
+
+    if not any(header_map.values()):
+        return jsonify({'error': 'Plik Excel nie ma nag\u0142\u00f3wk\u00f3w.'}), 400
+
+    def rows_gen():
+        for values in row_iter:
+            yield {header_map.get(idx, idx): val for idx, val in enumerate(values)}
+
+    result = jsonify(process_import_rows(rows_gen())), 200
+    wb.close()
+    return result
 
 
 @app.route('/api/general-stats', methods=['GET'])
@@ -1921,6 +2023,84 @@ def api_scan_employee():
     if not user:
         return jsonify({'error': 'Nieznany kod pracownika.'}), 404
     return jsonify({'user': user.to_dict()}), 200
+
+
+@app.route('/api/packages', methods=['POST'])
+@leader_required
+def api_package_create():
+    """Manually add a single package (for packages missing from CSV imports).
+
+    Runs through the SAME pipeline as CSV/Excel import (process_import_rows),
+    so a manual package dedups, aggregates into GeneralStat and bills exactly
+    like an imported one. Duplicate barcode → 409; missing required fields or
+    bad values → 400.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    data = request.get_json() or {}
+    barcode = (data.get('barcode') or '').strip()
+    land = (data.get('land') or '').strip()
+    kategorie = (data.get('kategorie') or '').strip()
+    uebergabe_nr = (data.get('uebergabe_nr') or '').strip()
+    ziel_datum_str = (data.get('ziel_datum') or '').strip()
+    double_rate = bool(data.get('double_rate'))
+
+    # Required fields (5) — must not be skipped, else the package can't bill
+    missing = []
+    if not barcode:
+        missing.append('Barcode')
+    if not land:
+        missing.append('Land')
+    if not uebergabe_nr:
+        missing.append('Übergabe Nr.')
+    if not ziel_datum_str:
+        missing.append('Ziel-Datum')
+    if missing:
+        return jsonify({'error': 'Brakuje wymaganych pól: ' + ', '.join(missing)}), 400
+
+    # Quantity — must be a positive integer
+    try:
+        stueckzahl = int(data.get('stueckzahl'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Stückzahl musi być liczbą całkowitą.'}), 400
+    if stueckzahl <= 0:
+        return jsonify({'error': 'Stückzahl musi być większe od zera.'}), 400
+
+    # Date — must parse
+    ziel_datum = _cell_to_date(ziel_datum_str)
+    if ziel_datum is None:
+        return jsonify({'error': 'Nieprawidłowy format daty Ziel-Datum.'}), 400
+
+    # Duplicate barcode → 409 (pre-check; race handled by IntegrityError below)
+    if ImportedCarton.query.filter_by(barcode=barcode).first():
+        return jsonify({'error': f'Paczka o barcode "{barcode}" już istnieje.'}), 409
+
+    row = {
+        'barcode': barcode,
+        'land': land,
+        'stueckzahl': stueckzahl,
+        'kategorie': kategorie,
+        'ziel_datum': ziel_datum,
+        'uebergabe_nr': uebergabe_nr,
+        'double_rate': double_rate,
+    }
+
+    try:
+        result = process_import_rows([row])
+    except IntegrityError:
+        # Concurrent add of the same barcode slipped past the pre-check
+        db.session.rollback()
+        return jsonify({'error': f'Paczka o barcode "{barcode}" już istnieje.'}), 409
+
+    # Guard: a silent skip (imported=0) must not read as success
+    if result.get('imported') != 1:
+        return jsonify({'error': 'Nie udało się dodać paczki.'}), 409
+
+    return jsonify({
+        'message': f'Dodano paczkę {barcode}.',
+        'stats_created': result.get('stats_created', 0),
+        'stats_updated': result.get('stats_updated', 0),
+    }), 201
 
 
 @app.route('/api/packages/<int:carton_id>/assign', methods=['PUT'])

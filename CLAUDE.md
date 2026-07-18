@@ -60,8 +60,10 @@ Worker scans barcode on `/time-tracking` to toggle break (`break_start`/`break_e
 All events stored in `WorkerTimeEvent`. Break state derived from `count(break_start) - count(break_end)` — no flag on User.
 Auto-closes open break when `work_end` is scanned.
 
-**CSV import flow:**
+**CSV / Excel import flow:**
 Raw rows → `ImportedCarton` (deduplicated by `barcode`) → aggregated into `GeneralStat` (grouped by `uebergabe_nr` + `land` + `ziel_datum`). Cost calculation uses `CostMapping` (per year/month rates in `rates_data` JSON). Cost = category amount × rate (×1); see Double rate above for the yellow-row billing.
+Both `POST /api/import-csv` (`;`-delimited CSV) and `POST /api/import/excel` (`.xlsx` via openpyxl) feed the **same** helper `process_import_rows(rows)` — same dedup + aggregation + response shape. The helper is **type-aware** (`_cell_to_barcode/_int/_date/_str`): CSV yields strings, openpyxl yields native `datetime`/`int`/`float`/`None`. Excel is read with `load_workbook(..., data_only=True, read_only=True)`; headers pass through the same `normalize_header`. Expected columns (same as CSV): `Barcode`, `Land`, `Stückzahl`, `Kategorie`, `Ziel-Datum`, `Übergabe Nr.`. **Caveat:** numeric barcode columns in Excel are stored as float64 — long SSCC/EAN >2^53 loses precision and leading zeros vanish at the source; format the barcode column as text. The `/import-csv` page accepts both extensions and routes by extension.
+**Manual add:** `POST /api/packages` (leader+, "➕ Dodaj paczkę" button in `/paczki`) creates a single `ImportedCarton` for packages missing from CSV. It feeds the **same** `process_import_rows([row])` so it dedups + aggregates + bills identically to an import. Required fields: `barcode`, `stueckzahl` (>0), `land`, `ziel_datum`, `uebergabe_nr`; optional: `kategorie`, `double_rate`. Duplicate barcode → 409 (pre-check + `IntegrityError` fallback for the concurrent-write race); the row carries an optional `double_rate` key that `process_import_rows` now reads (absent in CSV/Excel rows → False). Land is a dropdown of `CountryMapping` (option value = `innenauftrag`, label = country).
 
 **AI suggestions** (`/api/assignment/suggestions`): greedy algorithm using 30-day average `DailyStat.quantity` per user per activity.
 
@@ -78,7 +80,6 @@ Raw rows → `ImportedCarton` (deduplicated by `barcode`) → aggregated into `G
 
 ## Pending work (from TODO.md)
 
-- Excel import endpoint (`/api/import/excel`) — reserved but not implemented (`openpyxl` already in requirements)
 - Password change screen for leaders/admins
 - Touch/tablet support for drag & drop
 - Excel export for worker times

@@ -1,5 +1,35 @@
 # LogiStat — Changelog
 
+## [1.7.0] — 2026-07-18
+
+### Ręczne dodawanie paczek (moduł Paczki)
+
+#### Backend
+- `POST /api/packages` (leader+) — ręczne dodanie pojedynczej paczki dla przypadków, których nie ma w plikach CSV
+- Przechodzi przez **ten sam** pipeline co import (`process_import_rows`) — dedup po `barcode`, agregacja do `GeneralStat`, rozliczenie identyczne jak paczka z importu
+- Walidacja: 5 pól wymaganych (`barcode`, `stueckzahl` > 0, `land`, `ziel_datum`, `uebergabe_nr`) → 400; duplikat barcode → 409 (pre-check + fallback na `IntegrityError` przy równoległym zapisie)
+- `process_import_rows` czyta teraz opcjonalny `double_rate` z wiersza (brak klucza w CSV/Excel → `False`)
+
+#### Frontend
+- `/paczki` — przycisk „➕ Dodaj paczkę" + modal z formularzem (wymagane pola oznaczone `*`)
+- Land jako lista rozwijana z mapowań krajów (zapisuje `innenauftrag`, gwarantuje mapowanie kosztu)
+- Enter (skaner EAN-128) przenosi focus do kolejnego pola zamiast zamykać modal
+
+### Import danych z Excela (.xlsx)
+
+#### Backend
+- `POST /api/import/excel` — import kartonów z pliku Excel `.xlsx` (openpyxl, `data_only=True, read_only=True`)
+- Wydzielony wspólny helper `process_import_rows(rows)` — jeden pipeline (dedup po `barcode` + agregacja do `GeneralStat` + kształt odpowiedzi) dla importu CSV **i** Excel
+- Type-aware koercja pól (`_cell_to_barcode/_int/_date/_str`): CSV zwraca stringi, openpyxl natywne `datetime`/`int`/`float`/`None`
+  - daty: natywne komórki datowe używane wprost, stringi przez `strptime`
+  - barcode: całkowite floaty renderowane bez `.0` (`str(int(val))`)
+  - ⚠️ numeryczne barcode w Excelu = float64: długie SSCC/EAN >2^53 tracą precyzję, wiodące zera znikają u źródła — kolumnę barcode formatować jako tekst
+- Kolumny jak w CSV (`normalize_header`): `Barcode`, `Land`, `Stückzahl`, `Kategorie`, `Ziel-Datum`, `Übergabe Nr.`
+
+#### Frontend
+- `/import-csv` — strona „Import danych": drag & drop przyjmuje `.csv` **i** `.xlsx`, routing endpointu po rozszerzeniu pliku; ta sama karta wyników
+- Sidebar: „Import CSV" → „Import danych"
+
 ## [1.6.0] — 2026-07-18
 
 ### Zmiana hasła, Double Rate per-paczka, Podgląd paczek, Blokady czasu paczek
