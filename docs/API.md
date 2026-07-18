@@ -100,6 +100,12 @@ Korekta pojedynczego wpisu.
 
 ---
 
+## Admin — Ustawienia
+
+| Method | URL | Opis |
+|--------|-----|------|
+| PUT | `/api/settings` | Zapis ustawień systemowych (admin). JSON np. `{"break_threshold_minutes": 30}` (liczba ≥ 1). Przechowywane w tabeli `AppSetting`. Zła wartość → 400. |
+
 ## Dashboard
 
 | Method | URL | Opis |

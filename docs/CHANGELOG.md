@@ -2,6 +2,13 @@
 
 ## [1.7.0] — 2026-07-18
 
+### Konfigurowalny próg przerwy
+
+- Nowa tabela `AppSetting` (klucz/wartość) + helpery `get_setting`/`get_setting_int`/`set_setting`
+- `GET /admin/settings` + `PUT /api/settings` (admin) — edycja progu przerwy (klucz `break_threshold_minutes`, domyślnie 30, walidacja ≥ 1)
+- `/worker-times` czyta próg z ustawień (`BREAK_THRESHOLD` w JS, podpis w nagłówku) zamiast zahardkodowanego 30
+- Karta „⚙️ Ustawienia" w panelu admina
+
 ### Poprawka: spójne wyświetlanie czasu (Europe/Warsaw)
 
 **Problem:** czasy zapisywane są w UTC (poprawnie), ale wyświetlały się niespójnie — rekordy pokazywały UTC (2h za zegarem PL latem), a potwierdzenia „na żywo" po skanie prawdziwy czas lokalny. Przyczyna: API zwracało czasy przez `isoformat()` **bez sufiksu `Z`**, więc `new Date()` w przeglądarce traktował je jako lokalne (bez konwersji), a szablony renderowały UTC wprost.
