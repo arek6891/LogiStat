@@ -2,18 +2,32 @@
 
 ## [1.7.0] — 2026-07-18
 
-### Ręczne dodawanie paczek (moduł Paczki)
+### Ręczne dodawanie i edycja paczek (moduł Paczki)
 
-#### Backend
+#### Backend — modele / migracje
+- `ImportedCarton.added_manually` (bool) — odróżnia paczki dodane ręcznie od importowanych
+- `ImportedCarton.modified_at` / `modified_by` — audyt edycji
+- `migrate_columns()`: dodane `imported_carton.added_manually`, `modified_at`, `modified_by`
+- Relacje `imported_by_user`, `modified_by_user`; `to_dict()` zwraca `imported_by_login`, `modified_by_login`, `added_manually`, `modified_at`
+
+#### Backend — dodawanie
 - `POST /api/packages` (leader+) — ręczne dodanie pojedynczej paczki dla przypadków, których nie ma w plikach CSV
-- Przechodzi przez **ten sam** pipeline co import (`process_import_rows`) — dedup po `barcode`, agregacja do `GeneralStat`, rozliczenie identyczne jak paczka z importu
-- Walidacja: 5 pól wymaganych (`barcode`, `stueckzahl` > 0, `land`, `ziel_datum`, `uebergabe_nr`) → 400; duplikat barcode → 409 (pre-check + fallback na `IntegrityError` przy równoległym zapisie)
-- `process_import_rows` czyta teraz opcjonalny `double_rate` z wiersza (brak klucza w CSV/Excel → `False`)
+- Przechodzi przez **ten sam** pipeline co import (`process_import_rows`) — dedup po `barcode`, agregacja do `GeneralStat`, rozliczenie identyczne jak paczka z importu; ustawia `added_manually=True`, `imported_by`
+- Walidacja: 5 pól wymaganych (`barcode`, `stueckzahl` > 0, `land`, `ziel_datum`, `uebergabe_nr`) → 400; duplikat barcode → 409 (pre-check + fallback na `IntegrityError`)
+- `process_import_rows` czyta teraz opcjonalne `double_rate` / `added_manually` z wiersza (brak klucza w CSV/Excel → `False`)
+
+#### Backend — edycja
+- `PUT /api/packages/<id>` (leader+) — edycja wszystkich pól danych; dozwolona **tylko** dla paczek `added_manually` (import → 403)
+- `recompute_general_stat()` — po zmianie pola grupującego (`uebergabe_nr`/`land`/`ziel_datum`) przelicza dotknięte linie GeneralStat **od zera z sumy paczek** (recompute-from-sum, nie delta) — poprawne także gdy paczka ręczna dzieli linię z paczkami z CSV; pusta grupa zostaje z `amounts=0` (zachowuje `category_data`)
+- Zmiana barcode na istniejący → 409 (rollback); ustawia `modified_by`/`modified_at`
 
 #### Frontend
-- `/paczki` — przycisk „➕ Dodaj paczkę" + modal z formularzem (wymagane pola oznaczone `*`)
+- `/paczki` — przycisk „➕ Dodaj paczkę" + modal (wymagane pola oznaczone `*`); ten sam modal obsługuje edycję („✎ Edytuj" przy paczkach ręcznych)
+- Kolumna „Data importu" pokazuje teraz **kto dodał** (login „👤 …"), znacznik „ręczna" i ślad edycji („✏ login · data")
 - Land jako lista rozwijana z mapowań krajów (zapisuje `innenauftrag`, gwarantuje mapowanie kosztu)
+- Edycja paczki zeskanowanej → potwierdzenie przed zapisem
 - Enter (skaner EAN-128) przenosi focus do kolejnego pola zamiast zamykać modal
+- Tytuł strony: „Paczki (Dane CSV)" → „Paczki (dane)" (obejmuje też paczki ręczne)
 
 ### Import danych z Excela (.xlsx)
 

@@ -243,6 +243,9 @@ class ImportedCarton(db.Model):
     scan_start_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     scan_end_at = db.Column(db.DateTime, nullable=True)
     scan_end_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    added_manually = db.Column(db.Boolean, default=False)
+    modified_at = db.Column(db.DateTime, nullable=True)
+    modified_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
 
     __table_args__ = (
         db.Index('ix_carton_ziel_datum',    'ziel_datum'),
@@ -256,6 +259,8 @@ class ImportedCarton(db.Model):
     processed_by_user = db.relationship('User', foreign_keys=[processed_by])
     scan_start_by_user = db.relationship('User', foreign_keys=[scan_start_by])
     scan_end_by_user = db.relationship('User', foreign_keys=[scan_end_by])
+    imported_by_user = db.relationship('User', foreign_keys=[imported_by])
+    modified_by_user = db.relationship('User', foreign_keys=[modified_by])
 
     def processing_seconds(self):
         if self.scan_start_at and self.scan_end_at:
@@ -281,6 +286,10 @@ class ImportedCarton(db.Model):
             'scan_end_at': self.scan_end_at.isoformat() if self.scan_end_at else None,
             'scan_end_by_name': self.scan_end_by_user.display_name if self.scan_end_by_user else None,
             'processing_seconds': self.processing_seconds(),
+            'added_manually': self.added_manually or False,
+            'imported_by_login': self.imported_by_user.username if self.imported_by_user else None,
+            'modified_at': self.modified_at.isoformat() if self.modified_at else None,
+            'modified_by_login': self.modified_by_user.username if self.modified_by_user else None,
         }
 
 
@@ -1681,6 +1690,7 @@ def process_import_rows(rows):
             uebergabe_nr=uebergabe_nr,
             country_mapping_id=mapping.id if mapping else None,
             double_rate=bool(row.get('double_rate')),
+            added_manually=bool(row.get('added_manually')),
             imported_by=current_user.id
         )
         db.session.add(carton)
@@ -2083,6 +2093,7 @@ def api_package_create():
         'ziel_datum': ziel_datum,
         'uebergabe_nr': uebergabe_nr,
         'double_rate': double_rate,
+        'added_manually': True,
     }
 
     try:
@@ -2101,6 +2112,131 @@ def api_package_create():
         'stats_created': result.get('stats_created', 0),
         'stats_updated': result.get('stats_updated', 0),
     }), 201
+
+
+def recompute_general_stat(uebergabe_nr, land, ziel_datum, actor_id=None):
+    """Recompute a GeneralStat line's `amounts` from the SUM of its cartons.
+
+    `amounts` is a pure carton aggregate (only written by process_import_rows),
+    so recomputing from SUM(stueckzahl) over the (uebergabe_nr, land, ziel_datum)
+    group is exact — it avoids delta drift and stays correct when manual and
+    imported cartons share a line. Groups without uebergabe_nr or ziel_datum
+    never aggregate, so nothing to recompute. If the group emptied to 0, the
+    GeneralStat row is kept at amounts=0 (preserves any entered category_data).
+    """
+    if not (uebergabe_nr and ziel_datum):
+        return
+    total = db.session.query(
+        func.coalesce(func.sum(ImportedCarton.stueckzahl), 0)
+    ).filter(
+        ImportedCarton.uebergabe_nr == uebergabe_nr,
+        ImportedCarton.land == land,
+        ImportedCarton.ziel_datum == ziel_datum,
+    ).scalar() or 0
+
+    existing = GeneralStat.query.filter_by(
+        list_id=uebergabe_nr,
+        country_ledger=land,
+        loading_date=ziel_datum,
+    ).first()
+
+    if existing:
+        existing.amounts = total
+        existing.updated_at = datetime.utcnow()
+        if actor_id:
+            existing.updated_by = actor_id
+    elif total > 0:
+        mapping = CountryMapping.query.filter_by(innenauftrag=land).first()
+        stat = GeneralStat(
+            loading_date=ziel_datum,
+            week_number=ziel_datum.isocalendar()[1],
+            list_id=uebergabe_nr,
+            country_of_destination=mapping.country if mapping else None,
+            country_ledger=land,
+            amounts=total,
+            category_data=json.dumps(empty_category_data()),
+        )
+        db.session.add(stat)
+
+
+@app.route('/api/packages/<int:carton_id>', methods=['PUT'])
+@leader_required
+def api_package_update(carton_id):
+    """Edit a manually-added package; recompute affected GeneralStat lines.
+
+    Only `added_manually` packages are editable (imported ones are read-only →
+    403). Changing a group field (uebergabe/land/ziel) moves the carton between
+    GeneralStat groups — both the old and new lines are recomputed from carton
+    sums so billing stays exact.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    carton = ImportedCarton.query.get_or_404(carton_id)
+    if not carton.added_manually:
+        return jsonify({'error': 'Edytować można tylko paczki dodane ręcznie.'}), 403
+
+    data = request.get_json() or {}
+    barcode = (data.get('barcode') or '').strip()
+    land = (data.get('land') or '').strip()
+    kategorie = (data.get('kategorie') or '').strip()
+    uebergabe_nr = (data.get('uebergabe_nr') or '').strip()
+    ziel_datum_str = (data.get('ziel_datum') or '').strip()
+    double_rate = bool(data.get('double_rate'))
+
+    missing = []
+    if not barcode:
+        missing.append('Barcode')
+    if not land:
+        missing.append('Land')
+    if not uebergabe_nr:
+        missing.append('Übergabe Nr.')
+    if not ziel_datum_str:
+        missing.append('Ziel-Datum')
+    if missing:
+        return jsonify({'error': 'Brakuje wymaganych pól: ' + ', '.join(missing)}), 400
+
+    try:
+        stueckzahl = int(data.get('stueckzahl'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Stückzahl musi być liczbą całkowitą.'}), 400
+    if stueckzahl <= 0:
+        return jsonify({'error': 'Stückzahl musi być większe od zera.'}), 400
+
+    ziel_datum = _cell_to_date(ziel_datum_str)
+    if ziel_datum is None:
+        return jsonify({'error': 'Nieprawidłowy format daty Ziel-Datum.'}), 400
+
+    if barcode != carton.barcode and ImportedCarton.query.filter_by(barcode=barcode).first():
+        return jsonify({'error': f'Paczka o barcode "{barcode}" już istnieje.'}), 409
+
+    # Capture the OLD group before mutating, so we can recompute it after the move
+    old_group = (carton.uebergabe_nr, carton.land, carton.ziel_datum)
+
+    mapping = CountryMapping.query.filter_by(innenauftrag=land).first()
+    carton.barcode = barcode
+    carton.land = land
+    carton.stueckzahl = stueckzahl
+    carton.kategorie = kategorie
+    carton.ziel_datum = ziel_datum
+    carton.uebergabe_nr = uebergabe_nr
+    carton.double_rate = double_rate
+    carton.country_mapping_id = mapping.id if mapping else None
+    carton.modified_at = datetime.utcnow()
+    carton.modified_by = current_user.id
+
+    new_group = (uebergabe_nr, land, ziel_datum)
+
+    try:
+        db.session.flush()  # push the carton UPDATE so recompute SUMs see new values / catch collision
+        recompute_general_stat(*old_group, actor_id=current_user.id)
+        if new_group != old_group:
+            recompute_general_stat(*new_group, actor_id=current_user.id)
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'error': f'Paczka o barcode "{barcode}" już istnieje.'}), 409
+
+    return jsonify({'message': f'Zapisano paczkę {barcode}.', 'carton': carton.to_dict()}), 200
 
 
 @app.route('/api/packages/<int:carton_id>/assign', methods=['PUT'])
@@ -2820,6 +2956,9 @@ def migrate_columns():
             ("imported_carton", "scan_start_by",  "INTEGER REFERENCES user(id)"),
             ("imported_carton", "scan_end_at",    "DATETIME"),
             ("imported_carton", "scan_end_by",    "INTEGER REFERENCES user(id)"),
+            ("imported_carton", "added_manually", "BOOLEAN DEFAULT 0"),
+            ("imported_carton", "modified_at",    "DATETIME"),
+            ("imported_carton", "modified_by",    "INTEGER REFERENCES user(id)"),
         ]
         for table, column, col_def in migrations:
             try:

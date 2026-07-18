@@ -23,7 +23,7 @@
 <!-- Modal dodawania paczki -->
 <div id="addPackageModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;">
     <div style="background:var(--surface);border-radius:12px;padding:2rem;min-width:360px;max-width:520px;width:90%;max-height:90vh;overflow-y:auto;">
-        <h3 style="margin-top:0;">➕ Dodaj paczkę ręcznie</h3>
+        <h3 style="margin-top:0;" id="apModalTitle">➕ Dodaj paczkę ręcznie</h3>
         <p style="color:var(--text-muted);font-size:.85rem;">Dla paczek, których nie ma w plikach CSV. Paczka trafi do rozliczenia tak samo jak paczki z importu. Pola z <span style="color:var(--danger);">*</span> są wymagane.</p>
 
         <label style="display:block;margin:.75rem 0 .25rem;font-weight:600;">Barcode <span style="color:var(--danger);">*</span></label>
@@ -128,7 +128,27 @@
                     <span style="color:var(--text-muted);">—</span>
                     {% endif %}
                 </td>
-                <td style="color:var(--text-muted);">{{ item.imported_at.strftime('%d.%m.%Y %H:%M') if item.imported_at else '—' }}</td>
+                <td style="color:var(--text-muted);font-size:.8rem;">
+                    <div>{{ item.imported_at.strftime('%d.%m.%Y %H:%M') if item.imported_at else '—' }}</div>
+                    {% if item.imported_by_user %}<div title="Kto dodał (login)">👤 {{ item.imported_by_user.username }}</div>{% endif %}
+                    {% if item.added_manually %}
+                    <div style="margin-top:.35rem;display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;">
+                        <span style="background:rgba(99,102,241,.15);color:var(--accent);padding:1px 6px;border-radius:6px;font-size:.7rem;">ręczna</span>
+                        <button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:.75rem;"
+                            data-id="{{ item.id }}"
+                            data-barcode="{{ item.barcode }}"
+                            data-stueckzahl="{{ item.stueckzahl }}"
+                            data-land="{{ item.land or '' }}"
+                            data-ziel="{{ item.ziel_datum.isoformat() if item.ziel_datum else '' }}"
+                            data-uebergabe="{{ item.uebergabe_nr or '' }}"
+                            data-kategorie="{{ item.kategorie or '' }}"
+                            data-double="{{ '1' if item.double_rate else '0' }}"
+                            data-scanned="{{ '1' if (item.scan_start_at or item.scan_end_at) else '0' }}"
+                            onclick="openEditPackage(this)" title="Edytuj paczkę">✎ Edytuj</button>
+                    </div>
+                    {% endif %}
+                    {% if item.modified_at %}<div style="font-size:.7rem;color:var(--text-muted);" title="Ostatnia edycja">✏ {{ item.modified_by_user.username if item.modified_by_user else '' }} · {{ item.modified_at.strftime('%d.%m %H:%M') }}</div>{% endif %}
+                </td>
             </tr>
             {% endfor %}
             {% if not items %}
@@ -176,8 +196,15 @@
 
 {% block scripts %}
 <script>
-// ── Dodawanie paczki ręcznie ──────────────────────────────────────────────
+// ── Dodawanie / edycja paczki ręcznie ─────────────────────────────────────
+let editingCartonId = null;   // null = tryb dodawania, id = tryb edycji
+let editingScanned = false;   // czy edytowana paczka ma czasy skanowania
+
 function openAddPackage() {
+    editingCartonId = null;
+    editingScanned = false;
+    document.getElementById('apModalTitle').textContent = '➕ Dodaj paczkę ręcznie';
+    document.getElementById('apSubmitBtn').textContent = 'Dodaj paczkę';
     document.getElementById('apBarcode').value = '';
     document.getElementById('apStueckzahl').value = '';
     document.getElementById('apLand').value = '';
@@ -188,8 +215,25 @@ function openAddPackage() {
     document.getElementById('addPackageModal').style.display = 'flex';
     setTimeout(() => document.getElementById('apBarcode').focus(), 50);
 }
+function openEditPackage(btn) {
+    const d = btn.dataset;
+    editingCartonId = parseInt(d.id, 10);
+    editingScanned = d.scanned === '1';
+    document.getElementById('apModalTitle').textContent = '✎ Edytuj paczkę';
+    document.getElementById('apSubmitBtn').textContent = 'Zapisz zmiany';
+    document.getElementById('apBarcode').value = d.barcode || '';
+    document.getElementById('apStueckzahl').value = d.stueckzahl || '';
+    document.getElementById('apLand').value = d.land || '';
+    document.getElementById('apZielDatum').value = d.ziel || '';
+    document.getElementById('apUebergabe').value = d.uebergabe || '';
+    document.getElementById('apKategorie').value = d.kategorie || '';
+    document.getElementById('apDoubleRate').checked = d.double === '1';
+    document.getElementById('addPackageModal').style.display = 'flex';
+    setTimeout(() => document.getElementById('apBarcode').focus(), 50);
+}
 function closeAddPackage() {
     document.getElementById('addPackageModal').style.display = 'none';
+    editingCartonId = null;
 }
 document.getElementById('addPackageModal').addEventListener('click', function(e) {
     if (e.target === this) closeAddPackage();
@@ -225,11 +269,22 @@ async function submitAddPackage() {
     if (!payload.ziel_datum) { showToast('Podaj Ziel-Datum.', 'error'); return; }
     if (!payload.uebergabe_nr) { showToast('Podaj Übergabe Nr.', 'error'); return; }
 
+    // Ostrzeżenie przy edycji paczki z zarejestrowanymi czasami skanowania
+    if (editingCartonId && editingScanned) {
+        if (!confirm('Ta paczka ma już zarejestrowany start/koniec skanowania. Edytować mimo to?')) {
+            return;
+        }
+    }
+
+    const isEdit = editingCartonId != null;
+    const url = isEdit ? `/api/packages/${editingCartonId}` : '/api/packages';
+    const method = isEdit ? 'PUT' : 'POST';
+
     const btn = document.getElementById('apSubmitBtn');
     btn.disabled = true;
     try {
-        const res = await fetch('/api/packages', {
-            method: 'POST',
+        const res = await fetch(url, {
+            method: method,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
@@ -238,7 +293,7 @@ async function submitAddPackage() {
             showToast(data.error || 'Błąd zapisu paczki.', 'error');
             return;
         }
-        showToast(data.message || 'Dodano paczkę.', 'success');
+        showToast(data.message || (isEdit ? 'Zapisano paczkę.' : 'Dodano paczkę.'), 'success');
         closeAddPackage();
         setTimeout(() => location.reload(), 800);
     } catch {
