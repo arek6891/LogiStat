@@ -30,6 +30,7 @@
                 <th>Kategorie</th>
                 <th>Ziel-Datum</th>
                 <th>Übergabe Nr.</th>
+                <th style="text-align:center;background:rgba(251,146,60,.10);color:#fb923c;">Double rate</th>
                 <th>Pracownik</th>
                 <th>Start paczki</th>
                 <th>Koniec paczki</th>
@@ -47,6 +48,11 @@
                 <td>{{ item.kategorie or '—' }}</td>
                 <td>{{ item.ziel_datum.strftime('%d.%m.%Y') if item.ziel_datum else '—' }}</td>
                 <td style="font-family:monospace;font-size:.85rem;">{{ item.uebergabe_nr or '—' }}</td>
+                <td style="text-align:center;">
+                    <input type="checkbox" class="dr-checkbox" {% if item.double_rate %}checked{% endif %}
+                        onchange="toggleCartonDoubleRate({{ item.id }}, this)"
+                        title="Licz tę paczkę jako double rate" style="width:18px;height:18px;cursor:pointer;">
+                </td>
                 <td>
                     {% if item.processed_by_user %}
                     <span style="color:var(--accent);">{{ item.processed_by_user.display_name }}</span>
@@ -85,7 +91,7 @@
             {% endfor %}
             {% if not items %}
             <tr>
-                <td colspan="11" style="text-align:center;padding:3rem;color:var(--text-muted);">
+                <td colspan="12" style="text-align:center;padding:3rem;color:var(--text-muted);">
                     Brak paczek spełniających kryteria.
                 </td>
             </tr>
@@ -159,6 +165,25 @@ async function confirmReassign() {
 document.getElementById('reassignModal').addEventListener('click', function(e) {
     if (e.target === this) closeReassign();
 });
+
+async function toggleCartonDoubleRate(cartonId, checkbox) {
+    const val = checkbox.checked;
+    checkbox.disabled = true;
+    try {
+        const res = await fetch(`/api/packages/${cartonId}/double-rate`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ double_rate: val })
+        });
+        if (!res.ok) { throw new Error(); }
+        showToast(val ? 'Oznaczono jako double rate.' : 'Usunięto double rate.', 'success');
+    } catch {
+        checkbox.checked = !val;  // rollback
+        showToast('Błąd zapisu double rate.', 'error');
+    } finally {
+        checkbox.disabled = false;
+    }
+}
 
 </script>
 {% endblock %}

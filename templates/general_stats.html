@@ -67,7 +67,7 @@
             {% for s in stats %}
             {% set row_ym = '%d-%02d'|format(s.loading_date.year, s.loading_date.month) %}
             {% set rates = rates_by_ym.get(row_ym, {}) %}
-            <tr data-id="{{ s.id }}" data-ym="{{ row_ym }}" data-double-rate="{{ 'true' if s.double_rate else 'false' }}">
+            <tr data-id="{{ s.id }}" data-ym="{{ row_ym }}">
                 <td>{{ s.loading_date.strftime('%d.%m.%Y') }}</td>
                 <td>{{ s.week_number }}</td>
                 <td>{{ s.list_id }}</td>
@@ -105,6 +105,44 @@
                     {{ '%.2f'|format(row_total.val) }} €
                 </td>
             </tr>
+            {% if s.dr_amount and s.dr_amount > 0 %}
+            {% set dcd = s.get_double_rate_category_data() %}
+            {% set dr_total = namespace(val=0) %}
+            {% set dr_total_amount = namespace(val=0) %}
+            {% for cat in categories %}
+            {% set amt = dcd.get(cat, {}).get('amount', 0) %}
+            {% set rate = rates.get(cat, 0.0) %}
+            {% set dr_total.val = dr_total.val + amt * rate %}
+            {% set dr_total_amount.val = dr_total_amount.val + amt %}
+            {% endfor %}
+            <tr data-id="{{ s.id }}" data-ym="{{ row_ym }}" data-dr-row="true" class="dr-row">
+                <td>{{ s.loading_date.strftime('%d.%m.%Y') }}</td>
+                <td>{{ s.week_number }}</td>
+                <td>{{ s.list_id }} <span style="color:#f59e0b;font-weight:700;">(2×)</span></td>
+                <td>{{ s.country_of_destination or '—' }}</td>
+                <td>{{ s.country_ledger }}</td>
+                <td style="font-weight:600;color:#f59e0b;" title="Suma Stückzahl paczek oznaczonych jako double rate">{{ s.dr_amount }}</td>
+                <td class="row-total-amount" style="font-weight:700; color:#60a5fa;"
+                    data-val="{{ dr_total_amount.val }}">{{ dr_total_amount.val }}</td>
+                {% for cat in categories %}
+                {% set amt = dcd.get(cat, {}).get('amount', 0) %}
+                {% set rate = rates.get(cat, 0.0) %}
+                {% set computed_cost = amt * rate %}
+                <td>
+                    <input type="number" class="inline-input cat-amount" data-cat="{{ cat }}" data-field="amount"
+                        value="{{ amt }}" min="0" step="1" style="width:65px;">
+                </td>
+                <td>
+                    <input type="text" class="inline-input cat-cost" data-cat="{{ cat }}" data-field="cost"
+                        value="{{ '%.2f'|format(computed_cost) }}" readonly tabindex="-1"
+                        style="width:75px; background:rgba(255,255,255,0.08); border-color:transparent; color:#cbd5e1; border-radius:4px;">
+                </td>
+                {% endfor %}
+                <td class="total-cost" style="font-weight:700;color:var(--success,#22c55e);">
+                    {{ '%.2f'|format(dr_total.val) }} €
+                </td>
+            </tr>
+            {% endif %}
             {% endfor %}
             {% if not stats %}
             <tr>
@@ -150,6 +188,14 @@
         top: 0;
         z-index: 2;
     }
+
+    .dr-row {
+        background: rgba(251, 191, 36, .10);
+    }
+
+    .dr-row td {
+        border-top: 1px dashed rgba(251, 191, 36, .45);
+    }
 </style>
 
 <script>
@@ -176,7 +222,6 @@
         const categories = JSON.parse('{{ categories|tojson|safe }}');
         const ym = row.dataset.ym;
         const rates = ratesByYm[ym] || {};
-        const multiplier = row.dataset.doubleRate === 'true' ? 2.0 : 1.0;
 
         categories.forEach(cat => {
             const amountInput = row.querySelector(`[data-cat="${cat}"][data-field="amount"]`);
@@ -185,7 +230,7 @@
                 const amt = parseInt(amountInput.value) || 0;
                 const rate = parseFloat(rates[cat]) || 0.0;
                 totalAmount += amt;
-                const cst = amt * rate * multiplier;
+                const cst = amt * rate;
                 costInput.value = cst.toFixed(2);
                 total += cst;
             }
@@ -202,30 +247,6 @@
             totalAmountCell.textContent = totalAmount;
             totalAmountCell.dataset.val = totalAmount;
         }
-    }
-
-    async function toggleDoubleRate(checkbox) {
-        const row = checkbox.closest('tr');
-        const id = row.dataset.id;
-        const val = checkbox.checked;
-        row.dataset.doubleRate = val ? 'true' : 'false';
-
-        // Wizualne podświetlenie wiersza
-        row.style.background = val ? 'rgba(251,146,60,.07)' : '';
-
-        try {
-            const res = await fetch(`/api/general-stats/${id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ double_rate: val })
-            });
-            if (!res.ok) { showToast('Błąd zapisu Double Rate.', 'error'); return; }
-        } catch {
-            showToast('Błąd połączenia.', 'error');
-        }
-
-        updateRowTotal(row);
-        updateGlobalSums();
     }
 
     function updateGlobalSums() {
@@ -289,9 +310,6 @@
     document.querySelector('input[name="date_to"]').addEventListener('change', syncExportLink);
 
     // Initialize sums on load
-    document.querySelectorAll('#statsTable tbody tr[data-id]').forEach(row => {
-        if (row.dataset.doubleRate === 'true') row.style.background = 'rgba(251,146,60,.07)';
-    });
     updateGlobalSums();
 
     async function saveAll() {
@@ -321,11 +339,16 @@
                 };
             });
 
+            // Yellow double-rate row saves into a separate field on the same record
+            const payload = row.dataset.drRow === 'true'
+                ? { double_rate_category_data: categoryData }
+                : { category_data: categoryData };
+
             try {
                 const resp = await fetch(`/api/general-stats/${id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ category_data: categoryData })
+                    body: JSON.stringify(payload)
                 });
                 if (resp.ok) {
                     saved++;

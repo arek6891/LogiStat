@@ -27,11 +27,6 @@
         `sudo chmod 600 /etc/nginx/ssl/logistat/cert.key`
         następnie odkomentować blok HTTPS w `/etc/nginx/sites-available/logistat` i `sudo systemctl reload nginx`
 
-- [ ] **Double Rate — dokończyć implementację w module Paczki**
-  - UI usunięte z Paczek i Statystyk Ogólnych (backend i pole w bazie pozostały)
-  - Brakuje informacji: skąd pochodzi double rate? Z CSV? Ręcznie per lista? Per kraj/data?
-  - Gdy będą info: backend gotowy (`GeneralStat.double_rate` + API `/api/packages/uebergabe-double-rate`), dodać tylko UI
-
 - [ ] **Import danych z Excela** — format kolumn do ustalenia z użytkownikiem
   - Endpoint `/api/import/excel` jest zarezerwowany, ale jeszcze nieaktywny
   - Biblioteka `openpyxl` już zainstalowana w requirements.txt
@@ -77,6 +72,7 @@
 - [x] Czas pracy — skanowanie przerw i końca pracy (toggle break_start/break_end)
 - [x] Czasy pracowników — moduł liderski z korektami ręcznymi, podświetlenie >30 min przerwy
 - [x] Zmiana hasła — ekran `/profile` z formularzem (aktualne + nowe + potwierdzenie), link w sidebarze
+- [x] Double Rate — checkbox per paczka w `/paczki`; żółta druga linia w Statystykach ogólnych (Amounts auto z paczek double rate, kategorie ręczne, ×1) + w eksporcie xlsx
 
 ---
 

@@ -238,6 +238,7 @@ class ImportedCarton(db.Model):
     imported_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     processed_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     processed_at = db.Column(db.DateTime, nullable=True)
+    double_rate = db.Column(db.Boolean, default=False)
     scan_start_at = db.Column(db.DateTime, nullable=True)
     scan_start_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     scan_end_at = db.Column(db.DateTime, nullable=True)
@@ -272,6 +273,7 @@ class ImportedCarton(db.Model):
             'uebergabe_nr': self.uebergabe_nr,
             'country_mapping_id': self.country_mapping_id,
             'processed_by': self.processed_by,
+            'double_rate': self.double_rate or False,
             'processed_by_name': self.processed_by_user.display_name if self.processed_by_user else None,
             'processed_at': self.processed_at.isoformat() if self.processed_at else None,
             'scan_start_at': self.scan_start_at.isoformat() if self.scan_start_at else None,
@@ -305,7 +307,8 @@ class GeneralStat(db.Model):
     country_ledger = db.Column(db.String(150), nullable=False)
     amounts = db.Column(db.Integer, default=0)
     category_data = db.Column(db.Text, default='{}')
-    double_rate = db.Column(db.Boolean, default=False)
+    double_rate = db.Column(db.Boolean, default=False)  # legacy per-line flag (unused; kept for back-compat)
+    double_rate_category_data = db.Column(db.Text, default='{}')  # yellow row: manual per-category amounts for double-rate packages
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=True)
     updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
@@ -326,6 +329,15 @@ class GeneralStat(db.Model):
     def set_category_data(self, data):
         self.category_data = json.dumps(data)
 
+    def get_double_rate_category_data(self):
+        try:
+            return json.loads(self.double_rate_category_data) if self.double_rate_category_data else empty_category_data()
+        except (json.JSONDecodeError, TypeError):
+            return empty_category_data()
+
+    def set_double_rate_category_data(self, data):
+        self.double_rate_category_data = json.dumps(data)
+
     def total_cost(self):
         cd = self.get_category_data()
         return sum(v.get('amount', 0) * v.get('cost', 0) for v in cd.values())
@@ -341,12 +353,11 @@ class GeneralStat(db.Model):
         mapping = CostMapping.query.filter_by(year=ym[0], month=ym[1]).first()
         rates = mapping.get_rates_data() if mapping else {}
 
-        multiplier = 2.0 if self.double_rate else 1.0
         total_cost = 0.0
         for cat, data in cd.items():
             amt = data.get('amount', 0)
             rate = rates.get(cat, 0.0)
-            data['computed_cost'] = amt * rate * multiplier
+            data['computed_cost'] = amt * rate
             total_cost += data['computed_cost']
 
         return {
@@ -644,13 +655,6 @@ def paczki_view():
     pagination = query.order_by(ImportedCarton.imported_at.desc()).paginate(page=page, per_page=100, error_out=False)
     users = User.query.filter_by(is_active_user=True).order_by(User.display_name).all()
 
-    # Double rate per uebergabe_nr — query GeneralStat for each distinct list_id
-    unr_set = set(i.uebergabe_nr for i in pagination.items if i.uebergabe_nr)
-    dr_map = {}
-    for unr in unr_set:
-        stat = GeneralStat.query.filter_by(list_id=unr).first()
-        dr_map[unr] = stat.double_rate if stat else False
-
     return render_template('paczki.html',
                            pagination=pagination,
                            items=pagination.items,
@@ -658,8 +662,7 @@ def paczki_view():
                            date_to=date_to_str,
                            barcode=barcode,
                            land=land,
-                           users=users,
-                           dr_map=dr_map)
+                           users=users)
 
 
 @app.route('/general-stats/export')
@@ -684,6 +687,8 @@ def general_stats_export():
         except ValueError:
             pass
     stats = query.order_by(GeneralStat.loading_date.asc()).all()
+
+    dr_amounts = double_rate_amount_map()
 
     cost_mappings = CostMapping.query.all()
     rates_by_ym = {(cm.year, cm.month): cm.get_rates_data() for cm in cost_mappings}
@@ -751,27 +756,23 @@ def general_stats_export():
     ws.row_dimensions[1].height = 28
     ws.row_dimensions[2].height = 18
 
-    # Data rows
-    for ri, s in enumerate(stats, 3):
+    def write_data_row(ri, s, cd, dr_label, row_fill, amounts_val):
+        """Write one data row (normal or yellow double-rate) at Excel row ri."""
         ym = (s.loading_date.year, s.loading_date.month)
         rates = rates_by_ym.get(ym, {})
-        multiplier = 2.0 if s.double_rate else 1.0
-        cd = s.get_category_data()
 
         total_amount = sum(cd.get(cat, {}).get('amount', 0) for cat in STAT_CATEGORIES)
-        total_cost = sum(cd.get(cat, {}).get('amount', 0) * rates.get(cat, 0.0) * multiplier
-                        for cat in STAT_CATEGORIES)
-
-        row_fill = dr_fill_row if s.double_rate else None
+        total_cost = sum(cd.get(cat, {}).get('amount', 0) * rates.get(cat, 0.0)
+                         for cat in STAT_CATEGORIES)
 
         row_data = [
             s.loading_date.strftime('%d.%m.%Y'),
-            'TAK' if s.double_rate else '',
+            dr_label,
             s.week_number,
             s.list_id,
             s.country_of_destination or '',
             s.country_ledger,
-            s.amounts,
+            amounts_val,
             total_amount,
         ]
 
@@ -781,13 +782,13 @@ def general_stats_export():
             c.alignment = Alignment(horizontal='center' if ci in (1, 2, 3, 7, 8) else 'left')
             if row_fill:
                 c.fill = row_fill
-            if ci == 2 and s.double_rate:
+            if ci == 2 and dr_label:
                 c.font = Font(bold=True, color='C2410C')
 
         for i, cat in enumerate(STAT_CATEGORIES):
             col = cat_cols_start + i * 2
             amt = cd.get(cat, {}).get('amount', 0)
-            cost = amt * rates.get(cat, 0.0) * multiplier
+            cost = amt * rates.get(cat, 0.0)
             for offset, val in enumerate([amt, round(cost, 2)]):
                 c = ws.cell(row=ri, column=col + offset, value=val)
                 c.border = thin
@@ -801,6 +802,20 @@ def general_stats_export():
         tc.font = Font(bold=True)
         if row_fill:
             tc.fill = row_fill
+
+    # Data rows — normal row, then a yellow double-rate row when the line has
+    # double-rate packages. The doubling is emergent: the same packages are
+    # billed once in the normal row and again (×1) in the yellow row.
+    ri = 3
+    for s in stats:
+        write_data_row(ri, s, s.get_category_data(), '', None, s.amounts)
+        ri += 1
+
+        dr_amount = dr_amounts.get((s.list_id, s.country_ledger, s.loading_date), 0)
+        if dr_amount > 0:
+            write_data_row(ri, s, s.get_double_rate_category_data(),
+                           'DOUBLE RATE', dr_fill_row, dr_amount)
+            ri += 1
 
     # Column widths
     col_widths = [12, 10, 6, 14, 22, 18, 9, 12]
@@ -821,6 +836,23 @@ def general_stats_export():
     response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     response.headers['Content-Disposition'] = f'attachment; filename="{fname}"'
     return response
+
+
+def double_rate_amount_map():
+    """Sum of Stückzahl of double-rate cartons, keyed by
+    (uebergabe_nr, land, ziel_datum) == (list_id, country_ledger, loading_date)."""
+    from sqlalchemy import func
+    rows = db.session.query(
+        ImportedCarton.uebergabe_nr,
+        ImportedCarton.land,
+        ImportedCarton.ziel_datum,
+        func.coalesce(func.sum(ImportedCarton.stueckzahl), 0),
+    ).filter(ImportedCarton.double_rate.is_(True)).group_by(
+        ImportedCarton.uebergabe_nr,
+        ImportedCarton.land,
+        ImportedCarton.ziel_datum,
+    ).all()
+    return {(u, l, d): int(s or 0) for u, l, d, s in rows}
 
 
 @app.route('/general-stats')
@@ -857,7 +889,12 @@ def general_stats_page():
             pass
 
     stats = query.order_by(GeneralStat.loading_date.desc()).all()
-    
+
+    # Ilość double-rate (suma Stückzahl paczek oznaczonych) per linia → żółty wiersz
+    dr_amounts = double_rate_amount_map()
+    for s in stats:
+        s.dr_amount = dr_amounts.get((s.list_id, s.country_ledger, s.loading_date), 0)
+
     # Przekazanie do szablonu wszystkich mapowań kosztów aby JS miał do nich dostęp przy edycji
     cost_mappings = CostMapping.query.all()
     rates_by_ym = {f"{cm.year}-{cm.month:02d}": cm.get_rates_data() for cm in cost_mappings}
@@ -1639,8 +1676,8 @@ def api_general_stat_update(stat_id):
 
     if 'category_data' in data:
         stat.set_category_data(data['category_data'])
-    if 'double_rate' in data:
-        stat.double_rate = bool(data['double_rate'])
+    if 'double_rate_category_data' in data:
+        stat.set_double_rate_category_data(data['double_rate_category_data'])
     stat.updated_at = datetime.utcnow()
     stat.updated_by = current_user.id
 
@@ -1832,6 +1869,16 @@ def api_package_reassign(carton_id):
         user = User.query.get_or_404(user_id)
         carton.processed_by = user.id
         carton.processed_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'carton': carton.to_dict()}), 200
+
+
+@app.route('/api/packages/<int:carton_id>/double-rate', methods=['PUT'])
+@leader_required
+def api_package_double_rate(carton_id):
+    carton = ImportedCarton.query.get_or_404(carton_id)
+    data = request.get_json() or {}
+    carton.double_rate = bool(data.get('double_rate'))
     db.session.commit()
     return jsonify({'carton': carton.to_dict()}), 200
 
@@ -2493,6 +2540,8 @@ def migrate_columns():
             ("imported_carton", "processed_by",   "INTEGER REFERENCES user(id)"),
             ("imported_carton", "processed_at",   "DATETIME"),
             ("general_stat",    "double_rate",     "BOOLEAN DEFAULT 0"),
+            ("general_stat",    "double_rate_category_data", "TEXT DEFAULT '{}'"),
+            ("imported_carton", "double_rate",     "BOOLEAN DEFAULT 0"),
             ("imported_carton", "scan_start_at",  "DATETIME"),
             ("imported_carton", "scan_start_by",  "INTEGER REFERENCES user(id)"),
             ("imported_carton", "scan_end_at",    "DATETIME"),
