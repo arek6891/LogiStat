@@ -2,7 +2,8 @@ import os
 import csv
 import io
 import json
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+from zoneinfo import ZoneInfo
 from functools import wraps
 
 from flask import (
@@ -27,6 +28,30 @@ db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
+
+# ── Time helpers ───────────────────────────────────────────────────────────────
+# Everything is STORED in UTC (naive). For display we serialize with an explicit
+# 'Z' so the browser's `new Date()` parses it as UTC and converts to local, and we
+# provide a Jinja filter for server-rendered timestamps (single-site: Europe/Warsaw).
+LOCAL_TZ = ZoneInfo('Europe/Warsaw')
+
+
+def iso_z(dt):
+    """Serialize a naive-UTC datetime as an explicit-UTC ISO string (…Z).
+
+    Without the 'Z', `new Date(iso)` in the browser parses a date-time string as
+    LOCAL, so a stored UTC value would render unconverted (2h off in PL summer).
+    Returns None for falsy input. Use ONLY for datetime columns, not date-only.
+    """
+    return dt.isoformat() + 'Z' if dt else None
+
+
+@app.template_filter('localdt')
+def localdt_filter(dt, fmt='%d.%m.%Y %H:%M'):
+    """Jinja filter: render a naive-UTC datetime in Europe/Warsaw (DST-correct)."""
+    if not dt:
+        return '—'
+    return dt.replace(tzinfo=timezone.utc).astimezone(LOCAL_TZ).strftime(fmt)
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  MODELS
@@ -113,7 +138,7 @@ class ShiftAttendance(db.Model):
             'shift_id': self.shift_id,
             'user_id': self.user_id,
             'user': self.user.to_dict(),
-            'scanned_at': self.scanned_at.isoformat()
+            'scanned_at': iso_z(self.scanned_at)
         }
 
 
@@ -179,9 +204,9 @@ class DailyStat(db.Model):
             'quantity': self.quantity,
             'note': self.note,
             'entered_by': self.entered_by,
-            'entered_at': self.entered_at.isoformat() if self.entered_at else None,
+            'entered_at': iso_z(self.entered_at),
             'modified_by': self.modified_by,
-            'modified_at': self.modified_at.isoformat() if self.modified_at else None,
+            'modified_at': iso_z(self.modified_at),
             'user': self.user.to_dict(),
             'activity': self.activity.to_dict()
         }
@@ -280,15 +305,15 @@ class ImportedCarton(db.Model):
             'processed_by': self.processed_by,
             'double_rate': self.double_rate or False,
             'processed_by_name': self.processed_by_user.display_name if self.processed_by_user else None,
-            'processed_at': self.processed_at.isoformat() if self.processed_at else None,
-            'scan_start_at': self.scan_start_at.isoformat() if self.scan_start_at else None,
+            'processed_at': iso_z(self.processed_at),
+            'scan_start_at': iso_z(self.scan_start_at),
             'scan_start_by_name': self.scan_start_by_user.display_name if self.scan_start_by_user else None,
-            'scan_end_at': self.scan_end_at.isoformat() if self.scan_end_at else None,
+            'scan_end_at': iso_z(self.scan_end_at),
             'scan_end_by_name': self.scan_end_by_user.display_name if self.scan_end_by_user else None,
             'processing_seconds': self.processing_seconds(),
             'added_manually': self.added_manually or False,
             'imported_by_login': self.imported_by_user.username if self.imported_by_user else None,
-            'modified_at': self.modified_at.isoformat() if self.modified_at else None,
+            'modified_at': iso_z(self.modified_at),
             'modified_by_login': self.modified_by_user.username if self.modified_by_user else None,
         }
 
@@ -441,7 +466,7 @@ class WorkerTimeEvent(db.Model):
             'user_name':      self.user.display_name,
             'shift_id':       self.shift_id,
             'event_type':     self.event_type,
-            'timestamp':      self.timestamp.isoformat(),
+            'timestamp':      iso_z(self.timestamp),
             'is_manual':      self.is_manual,
             'note':           self.note or '',
             'recorded_by_name': self.recorder.display_name if self.recorder else None,
@@ -1278,7 +1303,7 @@ def api_stats_user(user_id):
             'note': stat.note,
             'entered_by': stat.entered_by_user.display_name if stat.entered_by_user else None,
             'modified_by': stat.modified_by_user.display_name if stat.modified_by_user else None,
-            'modified_at': stat.modified_at.isoformat() if stat.modified_at else None,
+            'modified_at': iso_z(stat.modified_at),
             'stat_id': stat.id
         })
 
@@ -1955,7 +1980,7 @@ def api_dashboard():
         'workers_today': workers_today,
         'activities_today': activities_today,
         'per_worker': per_worker,
-        'as_of': datetime.utcnow().strftime('%H:%M:%S'),
+        'as_of': datetime.now(LOCAL_TZ).strftime('%H:%M:%S'),
     })
 
 
@@ -2530,7 +2555,7 @@ def _compute_worker_times(uid, shift, attendance_time):
             open_break = e.timestamp
         elif e.event_type == 'break_end' and open_break:
             secs = (e.timestamp - open_break).total_seconds()
-            breaks.append({'start': open_break.isoformat(), 'end': e.timestamp.isoformat(),
+            breaks.append({'start': iso_z(open_break), 'end': iso_z(e.timestamp),
                            'minutes': int(secs / 60)})
             break_secs += secs
             open_break = None
@@ -2538,13 +2563,13 @@ def _compute_worker_times(uid, shift, attendance_time):
             work_end_ts = e.timestamp
 
     if open_break:
-        breaks.append({'start': open_break.isoformat(), 'end': None, 'minutes': None})
+        breaks.append({'start': iso_z(open_break), 'end': None, 'minutes': None})
 
     end_ref = work_end_ts or datetime.utcnow()
     work_secs = max(0, (end_ref - attendance_time).total_seconds() - break_secs)
 
     return {
-        'work_end':      work_end_ts.isoformat() if work_end_ts else None,
+        'work_end':      iso_z(work_end_ts),
         'break_minutes': int(break_secs / 60),
         'work_minutes':  int(work_secs / 60),
         'breaks':        breaks,
@@ -2672,7 +2697,7 @@ def api_worker_times():
             'user_name':    att.user.display_name,
             'shift_id':     att.shift_id,
             'shift_number': att.shift.shift_number,
-            'shift_in':     att.scanned_at.isoformat(),
+            'shift_in':     iso_z(att.scanned_at),
         })
         result.append(summary)
 

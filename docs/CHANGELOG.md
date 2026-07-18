@@ -2,6 +2,16 @@
 
 ## [1.7.0] — 2026-07-18
 
+### Poprawka: spójne wyświetlanie czasu (Europe/Warsaw)
+
+**Problem:** czasy zapisywane są w UTC (poprawnie), ale wyświetlały się niespójnie — rekordy pokazywały UTC (2h za zegarem PL latem), a potwierdzenia „na żywo" po skanie prawdziwy czas lokalny. Przyczyna: API zwracało czasy przez `isoformat()` **bez sufiksu `Z`**, więc `new Date()` w przeglądarce traktował je jako lokalne (bez konwersji), a szablony renderowały UTC wprost.
+
+**Rozwiązanie** (zapis dalej w UTC, wyświetlanie Europe/Warsaw, odporne na DST):
+- Helper `iso_z()` — serializuje datetime z jawnym `Z` (tylko pola datetime; pola DATE bez zmian)
+- Filtr Jinja `localdt('%fmt')` — konwertuje naive-UTC → Europe/Warsaw dla czasów renderowanych serwerowo (paczki: start/koniec/import/edycja; skaner: obecność)
+- `as_of` na dashboardzie w czasie lokalnym (usunięto etykietę „UTC")
+- Naprawia też **dryf przy ręcznej edycji czasów pracy** (`/worker-times`): stara wersja przy każdym zapisie przesuwała czas o −2h; round-trip zweryfikowany (silnik V8, strefa Warszawa) — brak dryfu
+
 ### Dashboard — zakładka „Per zmiana"
 
 #### Backend

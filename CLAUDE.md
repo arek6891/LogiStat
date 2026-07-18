@@ -79,7 +79,7 @@ Both `POST /api/import-csv` (`;`-delimited CSV) and `POST /api/import/excel` (`.
 - **Drag & drop:** Native HTML5 API. Multi-select via click, drag moves all selected.
 - **`GeneralStat.category_data`** and **`CostMapping.rates_data`** store JSON as `db.Text`. Always use `get_category_data()` / `get_rates_data()` accessors.
 - **User soft-delete:** `DELETE /api/users/<id>` sets `is_active_user=False`.
-- **All timestamps in UTC.** Frontend converts to local time via `new Date(iso).toLocaleTimeString('pl')`.
+- **All timestamps stored in UTC (naive `datetime.utcnow()`); displayed in Europe/Warsaw.** Two display paths, both DST-correct: (1) API JSON serializes datetimes via `iso_z()` which appends **`Z`** so the browser's `new Date(iso)` parses them as UTC and `toLocaleTimeString('pl')` converts to local — **datetime fields only, never date-only** columns (`ziel_datum`, `loading_date`, `Shift.date` stay bare `isoformat()`); (2) server-rendered Jinja timestamps use the **`| localdt('%fmt')`** filter (naive-UTC → `Europe/Warsaw`). Manual worker-time edits round-trip cleanly: the browser sends `new Date(local).toISOString().slice(0,19)` (naive UTC) and `fromisoformat` stores it as-is. Never render a stored datetime with bare `strftime` (shows UTC) or feed a Z-less ISO to `new Date()` (parsed as local → 2h off in PL summer).
 - **Break >30 min** highlighted red in `/worker-times` — threshold hardcoded in `worker_times.html`.
 - **SECRET_KEY:** Set via `SECRET_KEY` env var in production.
 

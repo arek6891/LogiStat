@@ -183,7 +183,7 @@
             const res = await fetch('/api/dashboard');
             const d = await res.json();
 
-            document.getElementById('asOf').textContent = d.as_of + ' UTC';
+            document.getElementById('asOf').textContent = d.as_of;
 
             // — Karty —
             document.getElementById('doneTodayVal').textContent = d.done_today;

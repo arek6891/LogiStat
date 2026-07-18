@@ -107,13 +107,13 @@
                 </td>
                 <td style="font-size:.8rem;{% if not item.scan_start_at %}color:var(--text-muted){% endif %};">
                     {% if item.scan_start_at %}
-                    <div>{{ item.scan_start_at.strftime('%d.%m %H:%M:%S') }}</div>
+                    <div>{{ item.scan_start_at | localdt('%d.%m %H:%M:%S') }}</div>
                     {% if item.scan_start_by_user %}<div style="color:var(--text-muted);font-size:.75rem;">{{ item.scan_start_by_user.display_name }}</div>{% endif %}
                     {% else %}—{% endif %}
                 </td>
                 <td style="font-size:.8rem;{% if not item.scan_end_at %}color:var(--text-muted){% endif %};">
                     {% if item.scan_end_at %}
-                    <div>{{ item.scan_end_at.strftime('%d.%m %H:%M:%S') }}</div>
+                    <div>{{ item.scan_end_at | localdt('%d.%m %H:%M:%S') }}</div>
                     {% if item.scan_end_by_user %}<div style="color:var(--text-muted);font-size:.75rem;">{{ item.scan_end_by_user.display_name }}</div>{% endif %}
                     {% else %}—{% endif %}
                 </td>
@@ -129,7 +129,7 @@
                     {% endif %}
                 </td>
                 <td style="color:var(--text-muted);font-size:.8rem;">
-                    <div>{{ item.imported_at.strftime('%d.%m.%Y %H:%M') if item.imported_at else '—' }}</div>
+                    <div>{{ item.imported_at | localdt('%d.%m.%Y %H:%M') }}</div>
                     {% if item.imported_by_user %}<div title="Kto dodał (login)">👤 {{ item.imported_by_user.username }}</div>{% endif %}
                     {% if item.added_manually %}
                     <div style="margin-top:.35rem;display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;">
@@ -147,7 +147,7 @@
                             onclick="openEditPackage(this)" title="Edytuj paczkę">✎ Edytuj</button>
                     </div>
                     {% endif %}
-                    {% if item.modified_at %}<div style="font-size:.7rem;color:var(--text-muted);" title="Ostatnia edycja">✏ {{ item.modified_by_user.username if item.modified_by_user else '' }} · {{ item.modified_at.strftime('%d.%m %H:%M') }}</div>{% endif %}
+                    {% if item.modified_at %}<div style="font-size:.7rem;color:var(--text-muted);" title="Ostatnia edycja">✏ {{ item.modified_by_user.username if item.modified_by_user else '' }} · {{ item.modified_at | localdt('%d.%m %H:%M') }}</div>{% endif %}
                 </td>
             </tr>
             {% endfor %}

@@ -29,7 +29,7 @@
             <div class="user-avatar">{{ a.user.display_name[0] }}</div>
             <div class="user-info">
                 <div class="user-name">{{ a.user.display_name }}</div>
-                <div class="user-time">{{ a.scanned_at.strftime('%H:%M:%S') }}</div>
+                <div class="user-time">{{ a.scanned_at | localdt('%H:%M:%S') }}</div>
             </div>
             <button class="remove-btn" onclick="removeAttendance({{ a.id }})" title="Usuń">✕</button>
         </div>
