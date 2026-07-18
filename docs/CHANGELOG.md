@@ -1,5 +1,48 @@
 # LogiStat — Changelog
 
+## [1.6.0] — 2026-07-18
+
+### Zmiana hasła, Double Rate per-paczka, Podgląd paczek, Blokady czasu paczek
+
+#### Backend — modele / migracje
+- `ImportedCarton.double_rate` (bool) — flaga double rate **per paczka** (checkbox w Paczkach)
+- `GeneralStat.double_rate_category_data` (TEXT JSON) — ręczne ilości per kategoria dla żółtej linii
+- Usunięty legacy mnożnik ×2 (`GeneralStat.double_rate` per-linia) z obliczeń i eksportu — kolumna zostaje jako martwy back-compat
+- `migrate_columns()`: dodane `imported_carton.double_rate`, `general_stat.double_rate_category_data`
+
+#### Backend — nowe / zmienione endpointy
+- `GET /profile` + `POST /profile` — zmiana hasła (walidacja: aktualne, min. 6 znaków, zgodność, różne od starego)
+- `GET /api/package-lookup?barcode=` — **podgląd paczki** (status: przeskanowana / przez kogo / zakończona + dane), tylko do odczytu
+- `PUT /api/packages/<id>/double-rate` — przełączenie double rate na paczce
+- `PUT /api/general-stats/<id>` — przyjmuje teraz `double_rate_category_data`
+- `POST /api/package-time/start|end` — **blokada właścicielska**: paczkę w trakcie obsługuje tylko pracownik, który ją zaczął (start innego → 409, koniec innego → 403); paczka zakończona jest zablokowana (ponowny start/koniec → 409)
+- `POST /api/scan-package` (stare przypisanie) — wycofane, martwy kod (moduł jest teraz podglądem)
+
+#### Frontend
+- `/profile` — ekran zmiany hasła + link „🔑 Zmień hasło" w sidebarze
+- `/scan-package` („Skan paczek") — przerobiony na **podgląd** (skan kodu paczki → karta statusu, bez modyfikacji danych)
+- `paczki.html` — kolumna **Double rate** z checkboxem per paczka
+- `general_stats.html` — druga, **żółta linia (2×)** dla linii z paczkami double rate: Amounts auto z sumy Stückzahl, kategorie wpisywane ręcznie; obie linie ×1 (podwojenie z policzenia paczek dwa razy)
+- Eksport `.xlsx` — zawiera żółte wiersze double rate
+
+## [1.5.0] — 2026-04-24
+
+### Forecast, Czasy paczek, dokumentacja DB/infra
+
+#### Backend
+- Model `Forecast` (prognoza ilości per dzień) + endpointy CRUD
+- `ImportedCarton.scan_start_at/by`, `scan_end_at/by` — pomiar czasu procesowania paczki
+- `POST /api/package-time/start`, `POST /api/package-time/end` — rejestracja startu i końca; `processing_seconds()` = koniec − start
+
+#### Frontend
+- `/forecast` — ekran prognozy
+- `/scan-paczki` („Czasy paczek") — zakładki 🟢 Start / 🔴 Koniec paczki
+- `paczki.html` — kolumny Start / Koniec / Czas procesowania
+- Scroll sidebara przy dużej liczbie pozycji
+
+#### Dokumentacja / infra
+- `docs/DATABASE_SPEC.md`, `docs/postgres_schema.sql`, `docs/nginx-logistat.conf`
+
 ## [1.4.0] — 2026-04-20
 
 ### Skanowanie paczek, Dashboard dzienny, Czas pracy

@@ -138,6 +138,7 @@ CREATE TABLE IF NOT EXISTS imported_carton (
     scan_start_by      INTEGER      REFERENCES "user"(id),
     scan_end_at        TIMESTAMP,
     scan_end_by        INTEGER      REFERENCES "user"(id),
+    double_rate        BOOLEAN      NOT NULL DEFAULT FALSE,
 
     CONSTRAINT uq_carton_barcode UNIQUE (barcode)
 );
@@ -161,7 +162,8 @@ CREATE TABLE IF NOT EXISTS general_stat (
     country_ledger         VARCHAR(150) NOT NULL,
     amounts                INTEGER      DEFAULT 0,
     category_data          JSONB        NOT NULL DEFAULT '{}',
-    double_rate            BOOLEAN      NOT NULL DEFAULT FALSE,
+    double_rate            BOOLEAN      NOT NULL DEFAULT FALSE,  -- legacy, nieużywane
+    double_rate_category_data JSONB     NOT NULL DEFAULT '{}',   -- żółta linia double rate
     created_at             TIMESTAMP    DEFAULT NOW(),
     updated_at             TIMESTAMP,
     updated_by             INTEGER      REFERENCES "user"(id),

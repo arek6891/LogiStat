@@ -156,6 +156,7 @@ Słownik mapowania kraju na numer zlecenia wewnętrznego (Innenauftrag) z system
 | scan_start_by | INTEGER | FK → user.id | |
 | scan_end_at | TIMESTAMP | | Koniec procesowania |
 | scan_end_by | INTEGER | FK → user.id | |
+| double_rate | BOOLEAN | DEFAULT FALSE | Paczka liczona jako double rate (checkbox w Paczkach) → generuje żółtą linię w GeneralStat |
 
 **Indeksy:** `ziel_datum`, `uebergabe_nr`, `processed_by`, `land`, `imported_at`
 
@@ -173,8 +174,9 @@ Dane zagregowane z importów CSV. Grupowanie po `(uebergabe_nr, land, ziel_datum
 | country_of_destination | VARCHAR(150) | | Kraj docelowy (z CountryMapping) |
 | country_ledger | VARCHAR(150) | NOT NULL | = land z ImportedCarton |
 | amounts | INTEGER | DEFAULT 0 | Suma stueckzahl dla grupy |
-| category_data | JSONB | DEFAULT '{}' | Ilości i koszty per kategoria |
-| double_rate | BOOLEAN | DEFAULT FALSE | Podwójna stawka (×2 koszty) — *implementacja odłożona* |
+| category_data | JSONB | DEFAULT '{}' | Ilości i koszty per kategoria (normalna linia) |
+| double_rate | BOOLEAN | DEFAULT FALSE | *Legacy* — stary mnożnik ×2 per-linia, nieużywany (martwy back-compat) |
+| double_rate_category_data | JSONB/TEXT | DEFAULT '{}' | Ilości per kategoria dla **żółtej linii** double rate (wpisywane ręcznie) |
 | created_at | TIMESTAMP | DEFAULT NOW() | |
 | updated_at | TIMESTAMP | | |
 | updated_by | INTEGER | FK → user.id | |
@@ -266,6 +268,8 @@ Eventy czasu pracy pracownika: rozpoczęcie/zakończenie przerwy, koniec pracy. 
 - Przerwa >30 min podświetlana czerwono w widoku Czasy pracowników
 - `ImportedCarton.barcode` deduplikowany przy imporcie CSV — duplikaty pomijane
 - `GeneralStat` tworzona/aktualizowana automatycznie przy imporcie CSV
+- **Double rate:** paczka z `imported_carton.double_rate = TRUE` generuje w GeneralStat drugą, żółtą linię — Amounts = suma `stueckzahl` takich paczek w grupie, kategorie ręcznie w `double_rate_category_data`. Obie linie ×1 (podwojenie z policzenia paczek dwa razy)
+- **Czas paczek:** paczkę w trakcie obsługuje tylko pracownik, który ją rozpoczął; paczka zakończona (`scan_end_at`) jest zablokowana przed ponownym startem/końcem
 - Soft-delete użytkowników: `is_active_user = FALSE` zamiast usunięcia
 - Wszystkie timestamps w UTC; frontend konwertuje do czasu lokalnego przez `new Date(iso).toLocaleTimeString('pl')`
 - Timeout skanera EAN-128: 300 ms (bufferowanie klawiszy HID)
@@ -274,7 +278,6 @@ Eventy czasu pracy pracownika: rozpoczęcie/zakończenie przerwy, koniec pracy. 
 
 ## TODO / Odłożone
 
-- **Double Rate** — pole `general_stat.double_rate` istnieje, UI usunięte. Czeka na informację skąd pochodzi ta flaga (z CSV? ręcznie? per uebergabe_nr?). Patrz `docs/TODO.md`.
 - **Import Excel** — endpoint zarezerwowany (`/api/import/excel`), biblioteka `openpyxl` zainstalowana.
 - **Backup automatyczny** — brak harmonogramu backupu bazy. Do skonfigurowania przed produkcją.
 - **Migracja do PostgreSQL** — aplikacja używa SQLite (dev). Przed wdrożeniem produkcyjnym zalecana migracja.

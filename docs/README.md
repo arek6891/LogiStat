@@ -60,7 +60,15 @@ LogiStat/
 │   ├── admin_panel.html    # Panel Admina (hub)
 │   ├── admin_country_mapping.html # Mapowanie krajów
 │   ├── import_csv.html     # Importowanie pliku CSV
-│   └── general_stats.html  # Statystyki ogólne z CSV
+│   ├── general_stats.html  # Statystyki ogólne z CSV (+ żółta linia double rate)
+│   ├── paczki.html         # Surowe paczki CSV (+ checkbox double rate)
+│   ├── scan_package.html   # Skan paczek — podgląd statusu (read-only)
+│   ├── scan_paczki.html    # Czasy paczek — Start/Koniec
+│   ├── dashboard.html      # Dashboard dzienny
+│   ├── time_tracking.html  # Czas pracy (przerwy/koniec)
+│   ├── worker_times.html   # Czasy pracowników (korekty)
+│   ├── forecast.html       # Prognoza ilości
+│   └── profile.html        # Zmiana hasła
 └── docs/
     ├── README.md           # Ten plik
     ├── API.md              # Dokumentacja API
@@ -87,4 +95,12 @@ LogiStat/
 7. **Panel Admina** (`/admin/panel`) — hub administracyjny (admin)
 8. **Mapowanie krajów** (`/admin/country-mapping`) — tabela Country → Innenauftrag (admin)
 9. **Import CSV** (`/import-csv`) — drag & drop danych wejściowych z automatyczną deduplikacją (admin)
-10. **Statystyki ogólne** (`/general-stats`) — edytowalna tabela zestawień wg listów i dat (admin)
+10. **Statystyki ogólne** (`/general-stats`) — edytowalna tabela zestawień wg listów i dat; żółta linia **double rate** (admin)
+11. **Dashboard dzienny** (`/dashboard`) — karty i podsumowanie dnia, per pracownik
+12. **Paczki** (`/paczki`) — surowe dane CSV z filtrami; checkbox **double rate**; kolumny czasu procesowania
+13. **Skan paczek** (`/scan-package`) — **podgląd** statusu paczki (przeskanowana / przez kogo / zakończona) — tylko odczyt
+14. **Czasy paczek** (`/scan-paczki`) — Start/Koniec procesowania; blokada „kto zaczął, ten kończy"
+15. **Czas pracy** (`/time-tracking`) — skanowanie przerw i końca pracy
+16. **Czasy pracowników** (`/worker-times`) — przegląd i korekta czasów (przerwa >30 min na czerwono)
+17. **Forecast** (`/forecast`) — prognoza ilości per dzień
+18. **Zmiana hasła** (`/profile`) — formularz zmiany hasła zalogowanego użytkownika

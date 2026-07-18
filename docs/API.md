@@ -10,6 +10,7 @@ Wszystkie endpointy API wymagają zalogowania jako leader lub admin (chyba że z
 |--------|-----|------|
 | POST | `/login` | Logowanie (form: `username`, `password`) |
 | GET | `/logout` | Wylogowanie |
+| GET/POST | `/profile` | Zmiana hasła zalogowanego użytkownika (form: `current_password`, `new_password`, `confirm_password`; min. 6 znaków, nowe ≠ stare) |
 
 ---
 
@@ -184,22 +185,50 @@ Parametry query: `activity_id`, `date_from`, `date_to`
 |--------|-----|------|
 | POST | `/api/import-csv` | Wrzucenie pliku CSV (multipart/form-data z kluczem `file`). Zwraca statystyki importowanych, pomiętych i zaaktualizowanych kartonów. |
 | GET | `/api/general-stats` | Lista statystyk z importu CSV do tabeli rozliczeniowej |
-| PUT | `/api/general-stats/<id>` | Edytuj statystykę (pole `category_data` ze słownikiem 10 kategorii) |
+| PUT | `/api/general-stats/<id>` | Edytuj statystykę: `category_data` (normalna linia) lub `double_rate_category_data` (żółta linia double rate); słownik 10 kategorii |
 
-**PUT body dla /api/general-stats:**
+**PUT body dla /api/general-stats** (jedno z pól):
 ```json
 {
   "category_data": {
-    "sorting": {
-      "amount": 25,
-      "cost": 12.50
-    },
-    "textile": {
-      "amount": 0,
-      "cost": 0.00
-    }
+    "sorting": { "amount": 25, "cost": 12.50 },
+    "textile": { "amount": 0,  "cost": 0.00 }
+  }
+}
+```
+```json
+{
+  "double_rate_category_data": {
+    "sorting": { "amount": 10, "cost": 0 }
   }
 }
 ```
 
 > Wszystkie endpointy wymagają roli `admin`.
+
+---
+
+## Paczki — podgląd, przypisanie, czas, double rate
+
+| Method | URL | Opis |
+|--------|-----|------|
+| POST | `/api/scan-employee` | Weryfikacja kodu pracownika (zwraca dane pracownika) |
+| GET | `/api/package-lookup?barcode=` | **Podgląd (read-only)** statusu paczki: `scanned`, `scanned_by`, `finished` + dane (land, stueckzahl, kategorie, ziel_datum, uebergabe_nr, double_rate, czasy) |
+| PUT | `/api/packages/<id>/assign` | Przepisanie paczki do pracownika `{ "user_id": 5 }` (lub `null`) |
+| PUT | `/api/packages/<id>/double-rate` | Oznaczenie paczki jako double rate `{ "double_rate": true }` |
+| POST | `/api/package-time/start` | Rejestracja startu procesowania `{ "employee_barcode", "package_barcode" }` |
+| POST | `/api/package-time/end` | Rejestracja końca + czas procesowania (to samo body) |
+
+**Blokady czasu paczek** (`/api/package-time/*`):
+- Paczkę w trakcie (start bez końca) obsługuje **tylko** pracownik, który ją rozpoczął:
+  - inny pracownik robi start → `409` „nie można podebrać"
+  - inny pracownik robi koniec → `403` „tylko on może zakończyć"
+  - ten sam pracownik robi start ponownie → `200`, start bez zmian
+- Paczka **zakończona** jest zablokowana: ponowny start → `409`, ponowny koniec → `409`
+
+**Definicje statusu w `/api/package-lookup`:**
+- `scanned` = ma `processed_by` **lub** `scan_start_at`
+- `scanned_by` = pracownik z przypisania, w razie braku → kto zrobił start
+- `finished` = ma `scan_end_at`
+
+> `/api/package-lookup` i `/api/package-time/*` wymagają roli `leader`+.
