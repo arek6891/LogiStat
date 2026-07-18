@@ -46,10 +46,14 @@ Leader drags operators to activities → `ActivityAssignment` records saved
 **Daily stats:**
 Leader enters quantities per person → `DailyStat` records with audit trail
 
-**Package scanning:**
-Alternating scan: employee barcode → package barcode → employee → package …
-`ImportedCarton.processed_by` + `processed_at` set on each package. Error 409 if already assigned.
-Reassignment only via `/paczki` screen (leader+).
+**Package scanning — two separate modules:**
+- `/scan-package` ("Skan paczek"): **read-only lookup**. Scan a package barcode → `GET /api/package-lookup` returns status (scanned / by whom / finished) + basic data. `scanned = processed_by OR scan_start_at`; `finished = scan_end_at`; "kto" = `processed_by_name` else `scan_start_by_name`. Does NOT mutate anything.
+- `/scan-paczki` ("Czasy paczek"): time tracking. Tabs Start / Koniec → `POST /api/package-time/start|end` set `scan_start_at`/`scan_end_at` (+ `_by`). `processing_seconds()` = end − start. No dedup guard (re-scan overwrites).
+
+`ImportedCarton.processed_by` + `processed_at` are set only via reassignment on `/paczki` (leader+) now. The old alternating employee→package assignment scan (`/api/scan-package` POST, 409 on duplicate) is retired dead code.
+
+**Double rate (per-package):**
+`ImportedCarton.double_rate` checkbox in `/paczki`. In General Stats, any line with double-rate cartons gets a second **yellow** row: Amounts = auto sum of double-rate `stueckzahl` (`double_rate_amount_map()`), categories entered manually into `GeneralStat.double_rate_category_data`. Both lines bill ×1 — doubling is emergent (packages counted twice). The legacy per-line `GeneralStat.double_rate` ×2 multiplier is removed (column kept as dead back-compat).
 
 **Time tracking:**
 Worker scans barcode on `/time-tracking` to toggle break (`break_start`/`break_end`) or record `work_end`.
@@ -57,7 +61,7 @@ All events stored in `WorkerTimeEvent`. Break state derived from `count(break_st
 Auto-closes open break when `work_end` is scanned.
 
 **CSV import flow:**
-Raw rows → `ImportedCarton` (deduplicated by `barcode`) → aggregated into `GeneralStat` (grouped by `uebergabe_nr` + `land` + `ziel_datum`). Cost calculation uses `CostMapping` (per year/month rates in `rates_data` JSON). `GeneralStat.double_rate` multiplies all category costs ×2.
+Raw rows → `ImportedCarton` (deduplicated by `barcode`) → aggregated into `GeneralStat` (grouped by `uebergabe_nr` + `land` + `ziel_datum`). Cost calculation uses `CostMapping` (per year/month rates in `rates_data` JSON). Cost = category amount × rate (×1); see Double rate above for the yellow-row billing.
 
 **AI suggestions** (`/api/assignment/suggestions`): greedy algorithm using 30-day average `DailyStat.quantity` per user per activity.
 
