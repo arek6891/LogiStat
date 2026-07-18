@@ -270,6 +270,7 @@ Eventy czasu pracy pracownika: rozpoczęcie/zakończenie przerwy, koniec pracy. 
 - `GeneralStat` tworzona/aktualizowana automatycznie przy imporcie CSV
 - **Double rate:** paczka z `imported_carton.double_rate = TRUE` generuje w GeneralStat drugą, żółtą linię — Amounts = suma `stueckzahl` takich paczek w grupie, kategorie ręcznie w `double_rate_category_data`. Obie linie ×1 (podwojenie z policzenia paczek dwa razy)
 - **Czas paczek:** paczkę w trakcie obsługuje tylko pracownik, który ją rozpoczął; paczka zakończona (`scan_end_at`) jest zablokowana przed ponownym startem/końcem
+- **Statystyki:** zakończone paczki (`scan_end_by`) liczą się automatycznie do modułu Statystyki jako pozycje `📦 Paczki` (liczba) i `📦 Paczki (szt.)`, po dacie `scan_end_at` — brak osobnej tabeli, wyliczane w locie
 - Soft-delete użytkowników: `is_active_user = FALSE` zamiast usunięcia
 - Wszystkie timestamps w UTC; frontend konwertuje do czasu lokalnego przez `new Date(iso).toLocaleTimeString('pl')`
 - Timeout skanera EAN-128: 300 ms (bufferowanie klawiszy HID)

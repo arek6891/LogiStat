@@ -1279,6 +1279,51 @@ def api_stats_user(user_id):
         monthly_agg[key]['total'] += stat.quantity
         monthly_agg[key]['days'] += 1
 
+    # Przetworzone (zakończone) paczki jako syntetyczne pozycje — tylko w widoku "Wszystkie"
+    if not activity_id:
+        from sqlalchemy import func
+        pq = db.session.query(
+            func.date(ImportedCarton.scan_end_at).label('d'),
+            func.count(ImportedCarton.id),
+            func.coalesce(func.sum(ImportedCarton.stueckzahl), 0),
+        ).filter(
+            ImportedCarton.scan_end_by == user_id,
+            ImportedCarton.scan_end_at.isnot(None),
+        )
+        if date_from:
+            pq = pq.filter(func.date(ImportedCarton.scan_end_at) >= date_from)
+        if date_to:
+            pq = pq.filter(func.date(ImportedCarton.scan_end_at) <= date_to)
+        pkg_rows = pq.group_by(func.date(ImportedCarton.scan_end_at)).all()
+
+        PKG_METRICS = [('📦 Paczki', lambda cnt, pcs: cnt),
+                       ('📦 Paczki (szt.)', lambda cnt, pcs: pcs)]
+        for d, cnt, pcs in pkg_rows:
+            for label, metric in PKG_METRICS:
+                qty = int(metric(cnt, pcs))
+                daily_stats.append({
+                    'date': d,
+                    'shift_number': None,
+                    'activity': label,
+                    'activity_id': None,
+                    'quantity': qty,
+                    'note': '',
+                    'entered_by': 'auto (skan paczek)',
+                    'modified_by': None,
+                    'modified_at': None,
+                    'stat_id': None,
+                    'is_package': True,
+                })
+                month_key = d[:7]  # 'YYYY-MM'
+                key = (month_key, label)
+                if key not in monthly_agg:
+                    monthly_agg[key] = {'total': 0, 'days': 0}
+                monthly_agg[key]['total'] += qty
+                monthly_agg[key]['days'] += 1
+
+    # Wspólne sortowanie malejąco po dacie (paczki wymieszane z czynnościami)
+    daily_stats.sort(key=lambda x: x['date'], reverse=True)
+
     monthly_stats = [
         {
             'month': k[0],

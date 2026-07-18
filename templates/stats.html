@@ -200,7 +200,22 @@
             tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">Brak danych</td></tr>';
             return;
         }
-        tbody.innerHTML = daily.map(d => `
+        tbody.innerHTML = daily.map(d => {
+            if (d.is_package) {
+                // Wiersz paczek — wyliczany automatycznie, tylko do odczytu
+                return `
+        <tr style="background:rgba(251,146,60,.06);">
+            <td>${d.date}</td>
+            <td style="color:var(--text-muted);">—</td>
+            <td>${d.activity}</td>
+            <td style="text-align:center;"><strong>${d.quantity}</strong></td>
+            <td style="color:var(--text-secondary);font-size:0.85rem;">-</td>
+            <td style="font-size:0.8rem;color:var(--text-muted);">${d.entered_by || '-'}</td>
+            <td style="font-size:0.8rem;color:var(--text-muted);">-</td>
+            <td style="color:var(--text-muted);">🔒</td>
+        </tr>`;
+            }
+            return `
         <tr>
             <td>${d.date}</td>
             <td>Zmiana ${d.shift_number}</td>
@@ -213,17 +228,17 @@
             <td style="font-size:0.8rem;color:var(--text-muted);">${d.entered_by || '-'}</td>
             <td style="font-size:0.8rem;color:var(--text-muted);">${d.modified_by ? d.modified_by + '<br>' + d.modified_at : '-'}</td>
             <td><button class="btn btn-sm btn-ghost" onclick="updateStat(${d.stat_id}, this)">💾</button></td>
-        </tr>
-    `).join('');
+        </tr>`;
+        }).join('');
     }
 
     function renderChart(daily) {
         const ctx = document.getElementById('dailyChart');
         if (dailyChart) dailyChart.destroy();
 
-        // Group by date
+        // Group by date — pomijamy paczki (sztuki/liczba nieporównywalne z ilościami czynności)
         const byDate = {};
-        daily.forEach(d => {
+        daily.filter(d => !d.is_package).forEach(d => {
             if (!byDate[d.date]) byDate[d.date] = 0;
             byDate[d.date] += d.quantity;
         });

@@ -105,6 +105,8 @@ Korekta pojedynczego wpisu.
 ### GET `/api/stats/user/<user_id>`
 Parametry query: `activity_id`, `date_from`, `date_to`
 
+> Gdy brak `activity_id` (widok „Wszystkie"), do `daily`/`monthly` dołączane są syntetyczne pozycje z **zakończonych paczek** pracownika (`scan_end_by`): `📦 Paczki` (liczba) i `📦 Paczki (szt.)` (suma Stückzahl), z `stat_id: null` i `is_package: true`. Grupowane po dacie `scan_end_at`.
+
 **Odpowiedź:**
 ```json
 {
