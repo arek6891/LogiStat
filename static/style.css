@@ -129,6 +129,20 @@ html, body {
     border-radius: 4px;
 }
 
+.sidebar-nav .nav-section {
+    padding: 14px 16px 5px;
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-muted);
+    opacity: 0.75;
+}
+
+.sidebar-nav .nav-section:first-child {
+    padding-top: 2px;
+}
+
 .sidebar-nav a {
     display: flex;
     align-items: center;
