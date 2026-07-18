@@ -55,6 +55,9 @@ Leader enters quantities per person → `DailyStat` records with audit trail
 **Double rate (per-package):**
 `ImportedCarton.double_rate` checkbox in `/paczki`. In General Stats, any line with double-rate cartons gets a second **yellow** row: Amounts = auto sum of double-rate `stueckzahl` (`double_rate_amount_map()`), categories entered manually into `GeneralStat.double_rate_category_data`. Both lines bill ×1 — doubling is emergent (packages counted twice). The legacy per-line `GeneralStat.double_rate` ×2 multiplier is removed (column kept as dead back-compat).
 
+**Dashboard (`/dashboard`):**
+Three tabs — Podsumowanie / Per pracownik (both from `GET /api/dashboard`, today-only, 30s auto-refresh) and **Per zmiana** (`GET /api/dashboard/shifts?date=`, any date). DailyStat is already shift-tagged (`shift_id`) so it aggregates per shift directly; packages have no shift, so they're attributed **by attendance** — a package counts toward the single shift its `scan_end_by` worker was scanned into (`ShiftAttendance`) that day. Workers with no attendance or in both shifts → `unattributed` bucket (each package counted exactly once).
+
 **Time tracking:**
 Worker scans barcode on `/time-tracking` to toggle break (`break_start`/`break_end`) or record `work_end`.
 All events stored in `WorkerTimeEvent`. Break state derived from `count(break_start) - count(break_end)` — no flag on User.

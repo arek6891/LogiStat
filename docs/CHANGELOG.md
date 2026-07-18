@@ -2,6 +2,19 @@
 
 ## [1.7.0] — 2026-07-18
 
+### Dashboard — zakładka „Per zmiana"
+
+#### Backend
+- `GET /api/dashboard/shifts?date=YYYY-MM-DD` — dzienny podział per zmiana (domyślnie dziś)
+- Paczki (bez `shift_id`) przypisywane do zmiany **wg obecności pracownika** (`ShiftAttendance`): paczka liczy się do jedynej zmiany, na którą pracownik był zeskanowany danego dnia
+- Pracownicy bez obecności lub obecni na obu zmianach → kubełek `unattributed` (nic nie ginie, każda paczka liczona raz)
+- DailyStat agregowane per zmiana bezpośrednio przez `shift_id`
+
+#### Frontend
+- `dashboard.html` — trzecia zakładka „Per zmiana" z **wyborem daty** (przeglądanie historii)
+- Dwie karty obok siebie (Zmiana 1 / Zmiana 2): liczba obecnych, paczki, sztuki, rozbicie per czynność
+- Sekcja ostrzegawcza dla paczek nieprzypisanych do zmiany
+
 ### Ręczne dodawanie i edycja paczek (moduł Paczki)
 
 #### Backend — modele / migracje

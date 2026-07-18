@@ -1959,6 +1959,102 @@ def api_dashboard():
     })
 
 
+@app.route('/api/dashboard/shifts')
+@leader_required
+def api_dashboard_shifts():
+    """Per-shift daily breakdown for a chosen date.
+
+    DailyStat is already shift-tagged (shift_id) → aggregated directly.
+    Packages (ImportedCarton) have no shift, so they are attributed by
+    ATTENDANCE: a package finished by a worker counts toward the single shift
+    that worker was scanned into that day. Workers with no attendance (or in
+    both shifts → ambiguous) land in the 'unattributed' bucket so nothing is
+    silently dropped and totals stay exact (each package counted once).
+    """
+    date_str = request.args.get('date', '')
+    try:
+        target = datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else date.today()
+    except ValueError:
+        target = date.today()
+
+    day_start = datetime.combine(target, datetime.min.time())
+    day_end = day_start + timedelta(days=1)
+
+    act_map = {a.id: a.name for a in Activity.query.all()}
+    user_map = {u.id: u.display_name for u in User.query.all()}
+
+    # Shifts that day + attendance (user_id -> set of shift_numbers attended)
+    shifts = {s.shift_number: s for s in Shift.query.filter_by(date=target).all()}
+    user_shifts = {}
+    for snum, sh in shifts.items():
+        for a in ShiftAttendance.query.filter_by(shift_id=sh.id).all():
+            user_shifts.setdefault(a.user_id, set()).add(snum)
+
+    # Packages finished that day, grouped by the worker who ended them
+    pkg_rows = db.session.query(
+        ImportedCarton.scan_end_by.label('user_id'),
+        func.count(ImportedCarton.id).label('packages'),
+        func.coalesce(func.sum(ImportedCarton.stueckzahl), 0).label('pieces'),
+    ).filter(
+        ImportedCarton.scan_end_at >= day_start,
+        ImportedCarton.scan_end_at < day_end,
+        ImportedCarton.scan_end_by.isnot(None),
+    ).group_by(ImportedCarton.scan_end_by).all()
+
+    per_shift_pkg = {1: {'packages': 0, 'pieces': 0}, 2: {'packages': 0, 'pieces': 0}}
+    unattributed = {'packages': 0, 'pieces': 0, 'workers': []}
+
+    for r in pkg_rows:
+        attended = user_shifts.get(r.user_id, set())
+        pkgs, pcs = int(r.packages), int(r.pieces or 0)
+        if len(attended) == 1:
+            snum = next(iter(attended))
+            per_shift_pkg[snum]['packages'] += pkgs
+            per_shift_pkg[snum]['pieces'] += pcs
+        else:
+            unattributed['packages'] += pkgs
+            unattributed['pieces'] += pcs
+            unattributed['workers'].append({
+                'name': user_map.get(r.user_id, '?'),
+                'packages': pkgs, 'pieces': pcs,
+                'reason': 'brak obecności' if not attended else 'obie zmiany',
+            })
+
+    # DailyStat per shift + activity (direct via shift_id)
+    ds_rows = db.session.query(
+        Shift.shift_number,
+        DailyStat.activity_id,
+        func.sum(DailyStat.quantity).label('qty'),
+    ).join(Shift, DailyStat.shift_id == Shift.id)\
+     .filter(Shift.date == target)\
+     .group_by(Shift.shift_number, DailyStat.activity_id).all()
+
+    per_shift_acts = {1: [], 2: []}
+    for r in ds_rows:
+        per_shift_acts.setdefault(r.shift_number, []).append(
+            {'activity': act_map.get(r.activity_id, '?'), 'qty': int(r.qty or 0)}
+        )
+
+    result_shifts = []
+    for snum in (1, 2):
+        sh = shifts.get(snum)
+        present = ShiftAttendance.query.filter_by(shift_id=sh.id).count() if sh else 0
+        result_shifts.append({
+            'shift_number': snum,
+            'exists': sh is not None,
+            'present_count': present,
+            'packages': per_shift_pkg[snum]['packages'],
+            'pieces': per_shift_pkg[snum]['pieces'],
+            'activities': sorted(per_shift_acts.get(snum, []), key=lambda x: x['qty'], reverse=True),
+        })
+
+    return jsonify({
+        'date': target.isoformat(),
+        'shifts': result_shifts,
+        'unattributed': unattributed,
+    })
+
+
 @app.route('/scan-package')
 @leader_required
 def scan_package():

@@ -100,6 +100,13 @@ Korekta pojedynczego wpisu.
 
 ---
 
+## Dashboard
+
+| Method | URL | Opis |
+|--------|-----|------|
+| GET | `/api/dashboard` | Dane dashboardu dziennego (dziś): karty zbiorcze, per pracownik, czynności. |
+| GET | `/api/dashboard/shifts?date=YYYY-MM-DD` | **Podział per zmiana** dla wybranego dnia (domyślnie dziś). Zwraca `shifts[]` (zmiana 1 i 2: `present_count`, `packages`, `pieces`, `activities[]`) oraz `unattributed` (paczki pracowników bez jednoznacznej obecności). Paczki przypisywane do zmiany wg obecności pracownika (`ShiftAttendance`); DailyStat wg `shift_id`. |
+
 ## Statystyki użytkownika
 
 ### GET `/api/stats/user/<user_id>`
