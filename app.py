@@ -3202,10 +3202,37 @@ def migrate_columns():
                 conn.rollback()
 
 
+def init_db():
+    """Create the schema, patch columns and seed — safe to run from every worker.
+
+    Gunicorn imports this module once per worker, so on a fresh Postgres all
+    workers race inside create_all() and the loser dies with a UniqueViolation on
+    pg_class ("worker failed to boot"). A Postgres advisory lock serializes them:
+    the winner does the DDL, the rest wait and then find nothing left to do
+    (create_all and seed_data are both no-ops on an initialized database).
+    SQLite needs no lock — the writer lock plus busy_timeout already serialize it.
+    """
+    if db.engine.dialect.name != 'postgresql':
+        db.create_all()
+        migrate_columns()
+        seed_data()
+        return
+
+    lock_id = 5001  # dowolna stala — byle ta sama we wszystkich workerach
+    with db.engine.connect() as conn:
+        conn.execute(db.text('SELECT pg_advisory_lock(:id)'), {'id': lock_id})
+        conn.commit()
+        try:
+            db.create_all()
+            migrate_columns()
+            seed_data()
+        finally:
+            conn.execute(db.text('SELECT pg_advisory_unlock(:id)'), {'id': lock_id})
+            conn.commit()
+
+
 with app.app_context():
-    db.create_all()
-    migrate_columns()
-    seed_data()
+    init_db()
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)
