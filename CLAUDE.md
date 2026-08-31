@@ -24,9 +24,11 @@ Default admin credentials after seed: `admin` / `admin123`
 
 **Everything is in `app.py`** — models, routes, API endpoints, seed data (~2000 lines). There are no separate modules.
 
-**Database:** SQLite at `instance/logistat.db`. Flask-SQLAlchemy ORM. No Flask-Migrate.
+**Database:** SQLite at `instance/logistat.db` by default; **`DATABASE_URL` overrides it** (test env on `.31` runs `postgresql+psycopg2://…@db:5432/logistat`). Flask-SQLAlchemy ORM. No Flask-Migrate. The schema always comes from `db.create_all()` on both engines — **not** from `docs/postgres_schema.sql`, which is superseded: its `JSONB` columns would break `get_category_data()`'s `json.loads`, and its `DEFAULT NOW()` would write server-local time into columns everything reads as naive UTC.
 - New **tables**: `db.create_all()` at module level handles them automatically on startup.
 - New **columns** on existing tables: add an entry to `migrate_columns()` — uses `ALTER TABLE` with try/except to skip if already present.
+- `migrate_columns()`'s ALTER block is **SQLite-only** (`db.engine.dialect.name`); on Postgres `create_all()` already produces the current schema. Its index block runs on both.
+- **`func.date()` returns `str` on SQLite but `datetime.date` on Postgres** — normalize with `d.isoformat() if hasattr(d, 'isoformat')` before slicing or sorting (see `api_stats_user`).
 
 **Auth:** Flask-Login with three roles enforced by `@leader_required` / `@admin_required` decorators:
 - `operator` — scanned in at shift start, no login
@@ -81,6 +83,7 @@ Both `POST /api/import-csv` (`;`-delimited CSV) and `POST /api/import/excel` (`.
 - **User soft-delete:** `DELETE /api/users/<id>` sets `is_active_user=False`.
 - **All timestamps stored in UTC (naive `datetime.utcnow()`); displayed in Europe/Warsaw.** Two display paths, both DST-correct: (1) API JSON serializes datetimes via `iso_z()` which appends **`Z`** so the browser's `new Date(iso)` parses them as UTC and `toLocaleTimeString('pl')` converts to local — **datetime fields only, never date-only** columns (`ziel_datum`, `loading_date`, `Shift.date` stay bare `isoformat()`); (2) server-rendered Jinja timestamps use the **`| localdt('%fmt')`** filter (naive-UTC → `Europe/Warsaw`). Manual worker-time edits round-trip cleanly: the browser sends `new Date(local).toISOString().slice(0,19)` (naive UTC) and `fromisoformat` stores it as-is. Never render a stored datetime with bare `strftime` (shows UTC) or feed a Z-less ISO to `new Date()` (parsed as local → 2h off in PL summer).
 - **Break threshold** (min) highlighted red in `/worker-times` is **configurable** by admin at `/admin/settings` (`PUT /api/settings`, key `break_threshold_minutes`, default 30). Stored in the generic `AppSetting` key/value table — read via `get_setting_int()`, defaults in `SETTING_DEFAULTS`. The route passes it to the template (`break_threshold`) and JS uses `BREAK_THRESHOLD`.
+- **SQLite pragmas:** `_set_sqlite_pragmas` (a SQLAlchemy `Engine` `connect` listener) sets `journal_mode=WAL` + `busy_timeout=5000` on every connection, so concurrent leaders don't hit `database is locked`. WAL adds `logistat.db-wal` / `-shm` next to the DB — **back up with `sqlite3.Connection.backup()` or `VACUUM INTO`, never a bare `cp`** (torn snapshot). The listener no-ops on non-SQLite DBAPI connections, so the Postgres migration stays unaffected.
 - **SECRET_KEY:** Set via `SECRET_KEY` env var in production.
 
 ## Pending work (from TODO.md)

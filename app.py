@@ -1,5 +1,6 @@
 import os
 import csv
+import sqlite3
 import io
 import json
 from datetime import datetime, date, timedelta, timezone
@@ -16,15 +17,40 @@ from flask_login import (
     logout_user, current_user
 )
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, event
+from sqlalchemy.engine import Engine
 
 # ── App Config ───────────────────────────────────────────────────────────────
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'logistat-dev-key-change-me')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///logistat.db'
+# SQLite domyslnie (dev); produkcyjnie/testowo Postgres przez DATABASE_URL,
+# np. postgresql+psycopg2://logistat:...@db:5432/logistat
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///logistat.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Sprawdz polaczenie przed uzyciem: po restarcie kontenera bazy workery trzymaja
+# martwe polaczenia z puli i pierwsze zadanie na kazdym zwracalo 500
+# ("server closed the connection unexpectedly"). Dla SQLite bez znaczenia.
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_pre_ping': True}
 
 db = SQLAlchemy(app)
+
+
+@event.listens_for(Engine, 'connect')
+def _set_sqlite_pragmas(dbapi_connection, connection_record):
+    """SQLite: WAL + busy timeout, so concurrent leaders don't hit "database is locked".
+
+    WAL lets readers work while one writer commits (rollback-journal mode locks the
+    whole file); busy_timeout makes a blocked writer wait 5s instead of failing at once.
+    No-op on any other engine — see docs/postgres_schema.sql for the Postgres migration.
+    """
+    if not isinstance(dbapi_connection, sqlite3.Connection):
+        return
+    cursor = dbapi_connection.cursor()
+    cursor.execute('PRAGMA journal_mode=WAL')
+    cursor.execute('PRAGMA busy_timeout=5000')
+    cursor.close()
+
+
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
@@ -1397,6 +1423,8 @@ def api_stats_user(user_id):
         PKG_METRICS = [('📦 Paczki', lambda cnt, pcs: cnt),
                        ('📦 Paczki (szt.)', lambda cnt, pcs: pcs)]
         for d, cnt, pcs in pkg_rows:
+            # func.date() daje str w SQLite, a datetime.date w Postgresie
+            d = d.isoformat() if hasattr(d, 'isoformat') else str(d)
             for label, metric in PKG_METRICS:
                 qty = int(metric(cnt, pcs))
                 daily_stats.append({
@@ -3128,9 +3156,17 @@ def seed_data():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def migrate_columns():
-    """Add missing columns to existing tables without dropping data."""
+    """Add missing columns to existing tables without dropping data.
+
+    The ALTER TABLE block is SQLite-only: it patches databases created before a
+    column existed. On Postgres the schema always comes from db.create_all(), so
+    there is nothing to patch — and a failed statement there aborts the whole
+    transaction, hence the rollback in the except branches. Indexes are created
+    on both engines (CREATE INDEX IF NOT EXISTS works on either).
+    """
+    is_sqlite = db.engine.dialect.name == 'sqlite'
     with db.engine.connect() as conn:
-        migrations = [
+        migrations = [] if not is_sqlite else [
             ("imported_carton", "processed_by",   "INTEGER REFERENCES user(id)"),
             ("imported_carton", "processed_at",   "DATETIME"),
             ("general_stat",    "double_rate",     "BOOLEAN DEFAULT 0"),
@@ -3149,7 +3185,7 @@ def migrate_columns():
                 conn.execute(db.text(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}"))
                 conn.commit()
             except Exception:
-                pass  # column already exists
+                conn.rollback()  # column already exists
 
         indexes = [
             "CREATE INDEX IF NOT EXISTS ix_carton_ziel_datum   ON imported_carton (ziel_datum)",
@@ -3167,13 +3203,40 @@ def migrate_columns():
                 conn.execute(db.text(sql))
                 conn.commit()
             except Exception:
-                pass
+                conn.rollback()
+
+
+def init_db():
+    """Create the schema, patch columns and seed — safe to run from every worker.
+
+    Gunicorn imports this module once per worker, so on a fresh Postgres all
+    workers race inside create_all() and the loser dies with a UniqueViolation on
+    pg_class ("worker failed to boot"). A Postgres advisory lock serializes them:
+    the winner does the DDL, the rest wait and then find nothing left to do
+    (create_all and seed_data are both no-ops on an initialized database).
+    SQLite needs no lock — the writer lock plus busy_timeout already serialize it.
+    """
+    if db.engine.dialect.name != 'postgresql':
+        db.create_all()
+        migrate_columns()
+        seed_data()
+        return
+
+    lock_id = 5001  # dowolna stala — byle ta sama we wszystkich workerach
+    with db.engine.connect() as conn:
+        conn.execute(db.text('SELECT pg_advisory_lock(:id)'), {'id': lock_id})
+        conn.commit()
+        try:
+            db.create_all()
+            migrate_columns()
+            seed_data()
+        finally:
+            conn.execute(db.text('SELECT pg_advisory_unlock(:id)'), {'id': lock_id})
+            conn.commit()
 
 
 with app.app_context():
-    db.create_all()
-    migrate_columns()
-    seed_data()
+    init_db()
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)

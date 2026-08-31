@@ -1,0 +1,44 @@
+# Wzor nadpisan dla konkretnego srodowiska (test/prod).
+#
+# Skopiuj jako `docker-compose.override.yml` NA SERWERZE, wpisz wlasne hasla
+# i ustaw `chmod 600`. Compose scala override z `docker-compose.yml`
+# automatycznie, a wartosci z override wygrywaja.
+#
+# WAZNE: `docker-compose.override.yml` jest w .gitignore i NIE moze trafic do
+# repo — trzyma hasla. Dzieki temu aktualizacja kodu
+# (`git archive HEAD | ssh ... tar -x`) nie nadpisuje konfiguracji serwera.
+services:
+  app:
+    container_name: logistat-test          # logistat-prod na produkcji
+    environment:
+      - SECRET_KEY=WSTAW_LOSOWY_64_HEX     # python3 -c "import secrets; print(secrets.token_hex(32))"
+      - TZ=Europe/Warsaw
+      # Bez DATABASE_URL aplikacja zostaje na SQLite (instance/logistat.db).
+      - DATABASE_URL=postgresql+psycopg2://logistat:WSTAW_HASLO@db:5432/logistat
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    container_name: logistat-test-db       # logistat-prod-db na produkcji
+    restart: always
+    environment:
+      - POSTGRES_USER=logistat
+      - POSTGRES_PASSWORD=WSTAW_HASLO      # to samo co w DATABASE_URL
+      - POSTGRES_DB=logistat
+      - TZ=Europe/Warsaw
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Bez portu na hoscie — baza dostepna tylko po wewnetrznej sieci Dockera.
+    healthcheck:
+      # -U/-d jawnie: `docker exec` dziala jako root, a roli "root" w bazie nie ma,
+      # wiec samo `pg_isready` nigdy nie zwrocilo by "healthy".
+      test: ["CMD-SHELL", "pg_isready -U logistat -d logistat"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  pgdata:
