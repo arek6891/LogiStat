@@ -26,6 +26,7 @@ Thumbs.db
 desktop.ini
 
 # Docker
+docker-compose.override.yml   # konfiguracja srodowiska z haslami
 deploy.tar
 deployment.tar.gz
 

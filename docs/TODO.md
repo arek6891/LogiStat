@@ -2,30 +2,28 @@
 
 ## 🔴 Do zrobienia (priorytetowe)
 
-- [ ] **Zbudować bazę PostgreSQL na serwerze developerskim (10.153.1.32)**
-  - Baza: kontener `wave-planning-postgres-1`, host `127.0.0.1:5432`, user `app`, db `appdb`
-  - Uruchomić `docs/postgres_schema.sql` na bazie `appdb`
-  - Wygenerować hash hasła admina i wstawić do seeda
-  - Zmienić `SQLALCHEMY_DATABASE_URI` w `docker-compose.yml` na `postgresql://app:change_me@127.0.0.1:5432/appdb`
-  - Dodać `psycopg2-binary` do `requirements.txt`
-  - Usunąć `migrate_columns()` z `app.py` — niepotrzebna przy PostgreSQL
-  - Przetestować wszystkie moduły po migracji
+- [x] **PostgreSQL** — wdrożony na środowisku TESTOWYM (`.31`) 2026-08-31
+  - Własny kontener `logistat-test-db` (`postgres:16-alpine`), bez portu na hoście
+  - `DATABASE_URL` przełącza silnik; brak zmiennej = SQLite (dev bez zmian)
+  - Schemat z `db.create_all()`. ⚠️ `docs/postgres_schema.sql` **nieaktualny** —
+    `JSONB` psuje `json.loads` w `get_category_data()`, `DEFAULT NOW()` psuje naive UTC
+  - `migrate_columns()` **została**: blok `ALTER` jest SQLite-only, indeksy lecą na obu
+  - Przetestowane: import CSV 595 paczek, dedup, czasy paczek, `/api/stats/user`,
+    dashboard, per zmiana, sekwencje, `pg_dump` + odtworzenie
+  - Szczegóły i procedura: `docs/DEPLOY.md`
 
-- [ ] **Nginx + domena: https://logistat.logwin-logistics.com/**
-  - [x] Nginx zainstalowany i działa
-  - [x] Config: `/etc/nginx/sites-available/logistat` (proxy → localhost:5001)
-  - [x] Tymczasowy HTTP działa — gotowy na DNS od IT
-  - [ ] IT: dodać rekord DNS `logistat.logwin-logistics.com → 10.153.1.32`
-  - [ ] IT: dostarczyć certyfikat SSL dla `logistat.logwin-logistics.com` (lub wildcard `*.logwin-logistics.com`)
-        — format PEM: plik `cert.crt` (certyfikat + łańcuch pośredni) i `cert.key` (klucz prywatny)
-        — przesłać bezpiecznym kanałem (nie email)
-        — jeśli dostarczą `.pfx`/`.p12` (format Windows) — trzeba przekonwertować (możemy to zrobić)
-  - [ ] Po otrzymaniu certyfikatów:
-        `sudo mkdir -p /etc/nginx/ssl/logistat`
-        `sudo cp cert.crt /etc/nginx/ssl/logistat/cert.crt`
-        `sudo cp cert.key /etc/nginx/ssl/logistat/cert.key`
-        `sudo chmod 600 /etc/nginx/ssl/logistat/cert.key`
-        następnie odkomentować blok HTTPS w `/etc/nginx/sites-available/logistat` i `sudo systemctl reload nginx`
+- [ ] **PROD na `10.153.1.30`** — te same kroki co na `.31`
+  - [ ] IT: dostęp SSH dla `optmtst_user` (klucz jak na `.31`; teraz `Permission denied`)
+  - [ ] Własne hasła w `docker-compose.override.yml` (nie kopiować testowych)
+  - [ ] Backup + cron, weryfikacja odtworzenia kopii
+
+- [x] **Domena + HTTPS** — `https://logistat-test.logwin-logistics.com.pl/` działa
+  - IT opublikowało nazwy przez **Cloudflare**, nie przez firmowe proxy `10.15.12.67`
+  - Własny Nginx i certyfikat **niepotrzebne** — `docs/nginx-logistat.conf` zostaje jako zapas
+  - [ ] IT: potwierdzić, czy przed tymi nazwami jest reguła WAF / allowlista IP
+        (Cloudflare Access **nie ma** — sprawdzone; do tego czasu zakładamy, że
+        strona logowania jest osiągalna z internetu)
+  - [ ] IT: `logistat-prod` → `.30:5001` zadziała dopiero po wdrożeniu na produkcji
 
 - [x] **Import danych z Excela** — `POST /api/import/excel` (openpyxl), ten sam pipeline co CSV
   - Kolumny jak w CSV: `Barcode`, `Land`, `Stückzahl`, `Kategorie`, `Ziel-Datum`, `Übergabe Nr.`
@@ -80,10 +78,15 @@
 ## 💡 Tipy dla developera
 
 ### Baza danych
-- SQLite plik: `instance/logistat.db`
-- Nowe kolumny do istniejących tabel: dodaj do `migrate_columns()` w `app.py`
+- SQLite plik: `instance/logistat.db` (dev). Test/prod: PostgreSQL przez `DATABASE_URL`
+- Nowe kolumny do istniejących tabel: dodaj do `migrate_columns()` w `app.py` (SQLite);
+  na Postgresie `db.create_all()` już daje aktualny schemat
 - Nowe tabele: `db.create_all()` tworzy automatycznie przy starcie
-- Backup: skopiuj plik `instance/logistat.db`
+- Backup: **nie** `cp` pliku SQLite — przy `journal_mode=WAL` część zmian jest w `-wal`.
+  Użyj `sqlite3.Connection.backup()` / `VACUUM INTO`, a na Postgresie `pg_dump`
+  (`scripts/backup-logistat.sh`)
+- `func.date()` zwraca `str` na SQLite, a `datetime.date` na Postgresie — normalizuj
+  przed slicowaniem/sortowaniem
 
 ### Czas pracy
 - Model `WorkerTimeEvent(user_id, shift_id, event_type, timestamp, recorded_by, is_manual, note)`
@@ -112,6 +115,8 @@
 - Gunicorn z 2 workerami (wystarczające dla <50 użytkowników)
 
 ### Deployment
-- `docker compose up --build -d`
-- Nginx reverse proxy: `/logistat/ → localhost:5001`
+- Pełna procedura: **`docs/DEPLOY.md`**
+- `docker compose up --build -d`; konfiguracja środowiska w `docker-compose.override.yml`
+  (wzór: `docker-compose.override.example.yml`, `chmod 600`, poza repo)
+- Publikacja przez Cloudflare/proxy IT — własny Nginx niepotrzebny
 - Pamiętaj o `SECRET_KEY` w zmiennych środowiskowych na produkcji!
