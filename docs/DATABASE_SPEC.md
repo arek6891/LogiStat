@@ -2,13 +2,22 @@
 
 ## Środowiska
 
-| Środowisko | Host | Baza | Użytkownik |
-|---|---|---|---|
-| Development | 10.153.1.32 | appdb | app |
-| Test | *(do uzupełnienia)* | logistat_test | logistat |
-| Production | *(do uzupełnienia)* | logistat_prod | logistat |
+| Środowisko | Host | Silnik | Baza | Użytkownik |
+|---|---|---|---|---|
+| Development | 10.153.1.32 | SQLite | `instance/logistat.db` | — |
+| Test | 10.153.1.31 | **PostgreSQL 16** (kontener `logistat-test-db`) | `logistat` | `logistat` |
+| Production | 10.153.1.30 | PostgreSQL 16 *(nie wdrożone)* | `logistat` | `logistat` |
 
-Hasła przechowywane w zmiennych środowiskowych — nigdy w kodzie ani w repozytorium.
+Silnik wybiera zmienna **`DATABASE_URL`**; bez niej aplikacja działa na SQLite.
+Hasła w `docker-compose.override.yml` na serwerze (`chmod 600`, poza repozytorium) —
+nigdy w kodzie ani w repozytorium. Procedura: `docs/DEPLOY.md`.
+
+> ⚠️ **`docs/postgres_schema.sql` nie jest używany i nie wolno go uruchomić bez poprawek.**
+> Schemat na obu silnikach tworzy `db.create_all()` (ORM = źródło prawdy). W tym pliku
+> `category_data`/`rates_data` są `JSONB` — psycopg2 zwraca wtedy dict, a `get_category_data()`
+> robi na tym `json.loads`; a `DEFAULT NOW()` na `TIMESTAMP` wpisuje czas lokalny serwera do
+> kolumn, które aplikacja czyta jako naive UTC (2 h błędu w PL latem). Do decyzji: poprawić
+> (JSONB→TEXT, usunąć `DEFAULT NOW()`) albo usunąć plik.
 
 ---
 
@@ -279,6 +288,16 @@ Eventy czasu pracy pracownika: rozpoczęcie/zakończenie przerwy, koniec pracy. 
 
 ## TODO / Odłożone
 
-- **Import Excel** — endpoint zarezerwowany (`/api/import/excel`), biblioteka `openpyxl` zainstalowana.
-- **Backup automatyczny** — brak harmonogramu backupu bazy. Do skonfigurowania przed produkcją.
-- **Migracja do PostgreSQL** — aplikacja używa SQLite (dev). Przed wdrożeniem produkcyjnym zalecana migracja.
+- ✅ **Import Excel** — zrobione: `POST /api/import/excel` (openpyxl), wspólny pipeline z CSV.
+- ✅ **Backup automatyczny** — `scripts/backup-logistat.sh` (`pg_dump`, gzip, retencja 14 dni,
+  kontrola kompletności zrzutu) + cron 22:30 na `.31`. Odtworzenie: patrz `docs/DEPLOY.md`.
+- ✅ **Migracja do PostgreSQL** — zrobione na teście (`.31`) 2026-08-31. Zostaje produkcja
+  na `.30` (blokada: brak dostępu SSH).
+- **Zmierzony przyrost** (2026-08-31, `dbstat` + kontener Postgresa, ten sam zestaw danych):
+  `imported_carton` 278 B/wiersz w SQLite vs **248 B w Postgresie** (Postgres mniejszy —
+  SQLite trzyma 7 kolumn DATETIME jako 26-znakowy TEXT, Postgres jako 8-bajtowy `timestamp`);
+  `worker_time_event` 77 → 128 B, `daily_stat` 63 → 138 B, `general_stat` 648 → 899 B.
+  Cały zestaw: 41,6 MB (SQLite) vs 56 MB (Postgres) ≈ ×1,35. Przy 500–1000 paczek/dzień
+  i 250 dniach roboczych to **~50–90 MB/rok**; pusty klaster Postgresa to dodatkowo 38,6 MB,
+  a `pg_wal` może dobić do 1 GB (`max_wal_size`). Szacunek 2–3 GB / 5 lat z tabeli powyżej
+  był zawyżony ~3× (zakładał 1 500 paczek/dzień).

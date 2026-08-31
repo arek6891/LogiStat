@@ -7,7 +7,7 @@ System do zarządzania pracownikami, przydzielania czynności i śledzenia staty
 | Warstwa | Technologia |
 |---------|-------------|
 | Backend | Python 3.13 + Flask 3.1 |
-| Baza danych | SQLite (via Flask-SQLAlchemy) |
+| Baza danych | SQLite (dev) / PostgreSQL 16 (test, prod) — przełącznik `DATABASE_URL` |
 | Autentykacja | Flask-Login |
 | Frontend | Vanilla HTML/CSS/JS + Chart.js |
 | Deploy | Docker + Gunicorn |
@@ -24,9 +24,20 @@ python app.py
 ## Uruchomienie Docker
 
 ```bash
-docker-compose up --build -d
+docker compose up --build -d
 # → http://localhost:5001
 ```
+
+Bez `DATABASE_URL` aplikacja działa na SQLite. Wdrożenie na serwer (Postgres, domena,
+backupy) opisuje **`docs/DEPLOY.md`**.
+
+## Środowiska
+
+| Środowisko | Adres | Baza |
+|---|---|---|
+| dev (`10.153.1.32`) | `http://10.153.1.32:5001` | SQLite |
+| test (`10.153.1.31`) | `https://logistat-test.logwin-logistics.com.pl/` | PostgreSQL 16 |
+| prod (`10.153.1.30`) | `https://logistat-prod.logwin-logistics.com.pl/` | *(nie wdrożone)* |
 
 ## Domyślne konto
 
@@ -44,8 +55,11 @@ LogiStat/
 ├── requirements.txt        # Zależności Python
 ├── Dockerfile              # Obraz Docker
 ├── docker-compose.yml      # Docker Compose (port 5001)
+├── docker-compose.override.example.yml  # Wzór konfiguracji środowiska (hasła, Postgres)
+├── scripts/
+│   └── backup-logistat.sh  # Kopia zapasowa (pg_dump, retencja 14 dni)
 ├── instance/
-│   └── logistat.db         # Baza SQLite (generowana automatycznie)
+│   └── logistat.db         # Baza SQLite (dev; generowana automatycznie)
 ├── static/
 │   └── style.css           # Design system (dark theme)
 ├── templates/

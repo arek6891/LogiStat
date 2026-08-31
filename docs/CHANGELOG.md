@@ -1,5 +1,70 @@
 # LogiStat — Changelog
 
+## [1.8.0] — 2026-08-31
+
+### PostgreSQL na środowisku testowym
+
+Powód: SQLite serializuje pisarzy, a przy dwóch zmianach kilku liderów skanuje jednocześnie
+przez VPN — to kończy się `database is locked`. Rozmiar nie był argumentem (patrz niżej).
+
+- **`DATABASE_URL` wybiera silnik**; bez zmiennej zostaje `sqlite:///logistat.db`, więc dev
+  jest nietknięty, a rollback to usunięcie zmiennej
+- `psycopg2-binary` w `requirements.txt`
+- Schemat na obu silnikach z `db.create_all()` — **nie** z `docs/postgres_schema.sql`
+  (jego `JSONB` psuje `json.loads` w `get_category_data()`, a `DEFAULT NOW()` wpisuje czas
+  lokalny serwera do kolumn czytanych jako naive UTC)
+- Test (`10.153.1.31`): własny kontener `logistat-test-db` (`postgres:16-alpine`), bez portu
+  na hoście, healthcheck `pg_isready -U logistat -d logistat`, `app` czeka na `service_healthy`
+
+#### Naprawione różnice między silnikami
+
+- **`func.date()`** zwraca `str` na SQLite, a `datetime.date` na Postgresie — `api_stats_user`
+  wywalał się na `d[:7]`. Ujawnia się tylko gdy pracownik ma zakończone paczki
+- **Wyścig przy pierwszym boocie na pustej bazie:** oba workery gunicorna wchodziły w
+  `db.create_all()` naraz, przegrany padał na `UniqueViolation ... pg_class (user_id_seq)`
+  i gunicorn wyłączał mastera; maskował to `restart: always`. Dodane `init_db()` z
+  `pg_advisory_lock(5001)`
+- **`pool_pre_ping`** — po restarcie kontenera bazy workery trzymały martwe połączenia
+  i pierwsze żądanie zwracało 500 (`server closed the connection unexpectedly`)
+- **`migrate_columns()`** — blok `ALTER TABLE` tylko dla SQLite (`db.engine.dialect.name`),
+  blok `CREATE INDEX` na obu; `except` robi `conn.rollback()`, bo na Postgresie nieudane
+  zapytanie psuje całą transakcję
+
+Wszystkie `GROUP BY` były już zgodne ze strict-mode Postgresa, a każdy handler
+`IntegrityError` już robił `rollback` — tam nie było co zmieniać.
+
+### SQLite: WAL + busy_timeout
+
+- `_set_sqlite_pragmas` (listener `connect` na `Engine`): `journal_mode=WAL`,
+  `busy_timeout=5000`; no-op dla nie-SQLite, więc Postgres nietknięty
+- ⚠️ WAL dokłada `logistat.db-wal` / `-shm` — **backup nie może być zwykłym `cp`**;
+  trzeba `sqlite3.Connection.backup()` albo `VACUUM INTO`
+
+### Backupy i wdrożenie
+
+- `scripts/backup-logistat.sh` — `pg_dump --clean --if-exists`, gzip, retencja 14 dni,
+  kontrola kompletności zrzutu (`gzip` w potoku sam by błędu nie zgłosił). Cron 22:30 na `.31`
+- `docs/DEPLOY.md` — środowiska, publikacja, pierwsze wdrożenie, aktualizacja kodu, baza,
+  backupy, znane zachowania
+- `docker-compose.override.example.yml` — wzór konfiguracji środowiska; prawdziwy plik jest
+  w `.gitignore`, dzięki czemu aktualizacja kodu nie nadpisuje konfiguracji serwera
+
+### Domena
+
+- `https://logistat-test.logwin-logistics.com.pl/` działa. IT opublikowało nazwy przez
+  **Cloudflare**, a nie przez firmowe proxy `10.15.12.67` z `docs/IT_REQUEST.md`
+- Cloudflare Access przed tymi nazwami nie stoi — do potwierdzenia przez IT zostaje tylko
+  reguła WAF / allowlista IP. Własny Nginx i certyfikat niepotrzebne
+- `ProxyFix` niepotrzebny — Werkzeug zwraca relatywny `Location`
+
+### Zmierzony rozmiar bazy (SQLite vs PostgreSQL)
+
+Ten sam zestaw danych po obu stronach: `imported_carton` 278 B/wiersz w SQLite vs **248 B
+w Postgresie** (Postgres mniejszy — SQLite trzyma DATETIME jako 26-znakowy TEXT),
+`worker_time_event` 77 → 128 B, `daily_stat` 63 → 138 B, `general_stat` 648 → 899 B.
+Cały zestaw 41,6 MB vs 56 MB (≈ ×1,35). Realnie **~50–90 MB/rok** plus 38,6 MB pustego
+klastra i `pg_wal` do 1 GB. Szczegóły w `docs/DATABASE_SPEC.md`.
+
 ## [1.7.0] — 2026-07-18
 
 ### Konfigurowalny próg przerwy
