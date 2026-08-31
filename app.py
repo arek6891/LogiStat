@@ -27,6 +27,10 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'logistat-dev-key-change
 # np. postgresql+psycopg2://logistat:...@db:5432/logistat
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///logistat.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Sprawdz polaczenie przed uzyciem: po restarcie kontenera bazy workery trzymaja
+# martwe polaczenia z puli i pierwsze zadanie na kazdym zwracalo 500
+# ("server closed the connection unexpectedly"). Dla SQLite bez znaczenia.
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_pre_ping': True}
 
 db = SQLAlchemy(app)
 
