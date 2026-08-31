@@ -24,9 +24,11 @@ Default admin credentials after seed: `admin` / `admin123`
 
 **Everything is in `app.py`** — models, routes, API endpoints, seed data (~2000 lines). There are no separate modules.
 
-**Database:** SQLite at `instance/logistat.db`. Flask-SQLAlchemy ORM. No Flask-Migrate.
+**Database:** SQLite at `instance/logistat.db` by default; **`DATABASE_URL` overrides it** (test env on `.31` runs `postgresql+psycopg2://…@db:5432/logistat`). Flask-SQLAlchemy ORM. No Flask-Migrate. The schema always comes from `db.create_all()` on both engines — **not** from `docs/postgres_schema.sql`, which is superseded: its `JSONB` columns would break `get_category_data()`'s `json.loads`, and its `DEFAULT NOW()` would write server-local time into columns everything reads as naive UTC.
 - New **tables**: `db.create_all()` at module level handles them automatically on startup.
 - New **columns** on existing tables: add an entry to `migrate_columns()` — uses `ALTER TABLE` with try/except to skip if already present.
+- `migrate_columns()`'s ALTER block is **SQLite-only** (`db.engine.dialect.name`); on Postgres `create_all()` already produces the current schema. Its index block runs on both.
+- **`func.date()` returns `str` on SQLite but `datetime.date` on Postgres** — normalize with `d.isoformat() if hasattr(d, 'isoformat')` before slicing or sorting (see `api_stats_user`).
 
 **Auth:** Flask-Login with three roles enforced by `@leader_required` / `@admin_required` decorators:
 - `operator` — scanned in at shift start, no login

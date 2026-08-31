@@ -23,7 +23,9 @@ from sqlalchemy.engine import Engine
 # ── App Config ───────────────────────────────────────────────────────────────
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'logistat-dev-key-change-me')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///logistat.db'
+# SQLite domyslnie (dev); produkcyjnie/testowo Postgres przez DATABASE_URL,
+# np. postgresql+psycopg2://logistat:...@db:5432/logistat
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///logistat.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -1417,6 +1419,8 @@ def api_stats_user(user_id):
         PKG_METRICS = [('📦 Paczki', lambda cnt, pcs: cnt),
                        ('📦 Paczki (szt.)', lambda cnt, pcs: pcs)]
         for d, cnt, pcs in pkg_rows:
+            # func.date() daje str w SQLite, a datetime.date w Postgresie
+            d = d.isoformat() if hasattr(d, 'isoformat') else str(d)
             for label, metric in PKG_METRICS:
                 qty = int(metric(cnt, pcs))
                 daily_stats.append({
@@ -3148,9 +3152,17 @@ def seed_data():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def migrate_columns():
-    """Add missing columns to existing tables without dropping data."""
+    """Add missing columns to existing tables without dropping data.
+
+    The ALTER TABLE block is SQLite-only: it patches databases created before a
+    column existed. On Postgres the schema always comes from db.create_all(), so
+    there is nothing to patch — and a failed statement there aborts the whole
+    transaction, hence the rollback in the except branches. Indexes are created
+    on both engines (CREATE INDEX IF NOT EXISTS works on either).
+    """
+    is_sqlite = db.engine.dialect.name == 'sqlite'
     with db.engine.connect() as conn:
-        migrations = [
+        migrations = [] if not is_sqlite else [
             ("imported_carton", "processed_by",   "INTEGER REFERENCES user(id)"),
             ("imported_carton", "processed_at",   "DATETIME"),
             ("general_stat",    "double_rate",     "BOOLEAN DEFAULT 0"),
@@ -3169,7 +3181,7 @@ def migrate_columns():
                 conn.execute(db.text(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}"))
                 conn.commit()
             except Exception:
-                pass  # column already exists
+                conn.rollback()  # column already exists
 
         indexes = [
             "CREATE INDEX IF NOT EXISTS ix_carton_ziel_datum   ON imported_carton (ziel_datum)",
@@ -3187,7 +3199,7 @@ def migrate_columns():
                 conn.execute(db.text(sql))
                 conn.commit()
             except Exception:
-                pass
+                conn.rollback()
 
 
 with app.app_context():
