@@ -1,5 +1,6 @@
 import os
 import csv
+import sqlite3
 import io
 import json
 from datetime import datetime, date, timedelta, timezone
@@ -16,7 +17,8 @@ from flask_login import (
     logout_user, current_user
 )
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, event
+from sqlalchemy.engine import Engine
 
 # ── App Config ───────────────────────────────────────────────────────────────
 app = Flask(__name__)
@@ -25,6 +27,24 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///logistat.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
+
+
+@event.listens_for(Engine, 'connect')
+def _set_sqlite_pragmas(dbapi_connection, connection_record):
+    """SQLite: WAL + busy timeout, so concurrent leaders don't hit "database is locked".
+
+    WAL lets readers work while one writer commits (rollback-journal mode locks the
+    whole file); busy_timeout makes a blocked writer wait 5s instead of failing at once.
+    No-op on any other engine — see docs/postgres_schema.sql for the Postgres migration.
+    """
+    if not isinstance(dbapi_connection, sqlite3.Connection):
+        return
+    cursor = dbapi_connection.cursor()
+    cursor.execute('PRAGMA journal_mode=WAL')
+    cursor.execute('PRAGMA busy_timeout=5000')
+    cursor.close()
+
+
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
