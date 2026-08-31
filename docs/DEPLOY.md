@@ -54,10 +54,10 @@ ssh -i ~/.ssh/id_ed25519 optmtst_user@10.153.1.31
 # 4. start
   docker compose up --build -d
 
-# 5. backupy
-  cp scripts/backup-logistat.sh ~/logistat-test/backup-logistat.sh
-  chmod +x ~/logistat-test/backup-logistat.sh
-  ( crontab -l 2>/dev/null; echo "30 22 * * * /home/optmtst_user/logistat-test/backup-logistat.sh >> /home/optmtst_user/logistat-test/backups/backup.log 2>&1" ) | crontab -
+# 5. backupy — cron wskazuje PROSTO na skrypt z repo, bez kopii obok
+#    (kopia obok rozjechalaby sie z repo przy nastepnej aktualizacji kodu)
+  chmod +x ~/logistat-test/scripts/backup-logistat.sh
+  ( crontab -l 2>/dev/null; echo "30 22 * * * /home/optmtst_user/logistat-test/scripts/backup-logistat.sh >> /home/optmtst_user/logistat-test/backups/backup.log 2>&1" ) | crontab -
 ```
 
 Hasło admina po pierwszym starcie to `admin / admin123` z seeda —
