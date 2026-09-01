@@ -119,7 +119,7 @@ def _set_sqlite_pragmas(dbapi_connection, connection_record):
 
     WAL lets readers work while one writer commits (rollback-journal mode locks the
     whole file); busy_timeout makes a blocked writer wait 5s instead of failing at once.
-    No-op on any other engine — see docs/postgres_schema.sql for the Postgres migration.
+    No-op on any other engine, so the Postgres setup is unaffected.
     """
     if not isinstance(dbapi_connection, sqlite3.Connection):
         return

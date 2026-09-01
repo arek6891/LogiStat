@@ -12,7 +12,7 @@ Silnik wybiera zmienna **`DATABASE_URL`**; bez niej aplikacja działa na SQLite.
 Hasła w `docker-compose.override.yml` na serwerze (`chmod 600`, poza repozytorium) —
 nigdy w kodzie ani w repozytorium. Procedura: `docs/DEPLOY.md`.
 
-> ⚠️ **`docs/postgres_schema.sql` nie jest używany i nie wolno go uruchomić bez poprawek.**
+> ⚠️ **Nie ma ręcznie pisanego pliku DDL i nie należy go zakładać.**
 > Schemat na obu silnikach tworzy `db.create_all()` (ORM = źródło prawdy). W tym pliku
 > `category_data`/`rates_data` są `JSONB` — psycopg2 zwraca wtedy dict, a `get_category_data()`
 > robi na tym `json.loads`; a `DEFAULT NOW()` na `TIMESTAMP` wpisuje czas lokalny serwera do

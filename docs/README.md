@@ -130,8 +130,7 @@ LogiStat/
     ├── CHANGELOG.md        # Historia zmian
     ├── TODO.md             # Co zostało do zrobienia
     ├── IT_REQUEST.md       # Zgłoszenie do IT (domeny, porty)
-    ├── nginx-logistat.conf # Konfiguracja Nginx (zapas — dziś idzie przez Cloudflare)
-    └── postgres_schema.sql # ⚠️ Nieaktualny, superseded przez db.create_all() — patrz TODO
+    └── nginx-logistat.conf # Konfiguracja Nginx (zapas — dziś idzie przez Cloudflare)
 ```
 
 ## Role użytkowników

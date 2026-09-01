@@ -93,11 +93,16 @@ ich nie nadpisuje. Nowe kolumny w modelach: patrz `migrate_columns()` (SQLite)
 Domyślnie SQLite (`instance/logistat.db`). **`DATABASE_URL` przełącza na Postgresa** —
 i to jedyna zmiana potrzebna do migracji; brak zmiennej = powrót na SQLite.
 
-Schemat na obu silnikach tworzy `db.create_all()`. **`docs/postgres_schema.sql`
-jest nieaktualny i nie wolno go użyć bez poprawek:** jego `JSONB` w
-`category_data` / `rates_data` psuje `json.loads` w `get_category_data()`
-(psycopg2 zwraca dict), a `DEFAULT NOW()` na `TIMESTAMP` wpisałby czas lokalny
-serwera do kolumn, które aplikacja czyta jako naive UTC (2 h błędu w PL latem).
+Schemat na obu silnikach tworzy `db.create_all()` — **modele w `app.py` są jedynym
+źródłem prawdy**. Nie ma ręcznie pisanego pliku DDL i nie należy go zakładać: poprzedni
+(`docs/postgres_schema.sql`, usunięty 2026-09-01) rozjechał się z modelami tak, że jego
+użycie zepsułoby aplikację — `JSONB` w `category_data` / `rates_data` psuł `json.loads`
+w `get_category_data()` (psycopg2 zwraca dict), a `DEFAULT NOW()` na `TIMESTAMP` wpisywał
+czas lokalny serwera do kolumn czytanych jako naive UTC (2 h błędu w PL latem).
+
+Pierwszy start jest serializowany — `pg_advisory_lock(5001)` na Postgresie, `flock` na
+`instance/.init.lock` na SQLite — bo inaczej workery gunicorna ścigają się w
+`create_all()` i przegrany ubija cały kontener.
 
 Przeniesienie ustawień z SQLite do Postgresa: aktywności i mapowania krajów
 odtwarza `seed_data()` (są identyczne z seedem), więc kopiuje się tylko hash
@@ -133,8 +138,8 @@ zmian siedzi w `logistat.db-wal`. Trzeba `sqlite3.Connection.backup()` albo
   to się samo naprawia.
 - **Postgres wymusza długości `VARCHAR`**, które SQLite ignorował: zniekształcony
   import, który wcześniej po cichu przechodził, teraz zwróci błąd.
-- **`imported_carton.id` to 4-bajtowy `INTEGER`** (`db.create_all()`), nie
-  `BIGSERIAL` z `postgres_schema.sql` — zapas 2,1 mld wierszy.
+- **`imported_carton.id` to 4-bajtowy `INTEGER`** (tak zakłada `db.create_all()`,
+  nie `BIGSERIAL`) — zapas 2,1 mld wierszy.
 
 ## Zasoby na `.31` (2026-08-31)
 

@@ -5,8 +5,8 @@
 - [x] **PostgreSQL** — wdrożony na środowisku TESTOWYM (`.31`) 2026-08-31
   - Własny kontener `logistat-test-db` (`postgres:16-alpine`), bez portu na hoście
   - `DATABASE_URL` przełącza silnik; brak zmiennej = SQLite (dev bez zmian)
-  - Schemat z `db.create_all()`. ⚠️ `docs/postgres_schema.sql` **nieaktualny** —
-    `JSONB` psuje `json.loads` w `get_category_data()`, `DEFAULT NOW()` psuje naive UTC
+  - Schemat z `db.create_all()` (ORM = jedyne źródło prawdy). Ręcznie pisany
+    `docs/postgres_schema.sql` rozjechał się z modelami i został usunięty 2026-09-01
   - `migrate_columns()` **została**: blok `ALTER` jest SQLite-only, indeksy lecą na obu
   - Przetestowane: import CSV 595 paczek, dedup, czasy paczek, `/api/stats/user`,
     dashboard, per zmiana, sekwencje, `pg_dump` + odtworzenie
@@ -43,9 +43,10 @@
       zwykłe formularze bez tokenu. Do rozważenia Flask-WTF, jeśli aplikacja
       zostanie na stałe wystawiona publicznie.
 
-- [ ] **`docs/postgres_schema.sql`** — plik jest nieaktualny i mylący
-      (JSONB psuje `json.loads`, `NOW()` psuje naive UTC). Albo usunąć,
-      albo wygenerować na nowo z `db.create_all()`.
+- [x] **`docs/postgres_schema.sql`** — **usunięty 2026-09-01**. Był nieaktualny i mylący
+      (JSONB psuje `json.loads`, `NOW()` psuje naive UTC), a po usunięciu kolumny
+      `general_stat.double_rate` rozjechał się jeszcze bardziej. Schemat bierze się
+      wyłącznie z `db.create_all()` — ORM jest jedynym źródłem prawdy.
 
 - [ ] **Rozbicie `app.py`** (~3200 linii) — modele / API / widoki do osobnych
       modułów. Teraz jest to bezpieczniejsze niż wcześniej, bo testy pokrywają
