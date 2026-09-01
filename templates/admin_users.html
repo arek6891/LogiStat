@@ -72,11 +72,19 @@
         </div>
         <div class="form-group">
             <label>Rola</label>
+            {# Konta z logowaniem zaklada tylko admin — API odrzuca to samo (403). #}
             <select id="userRole" class="form-control">
                 <option value="operator">Operator</option>
+                {% if current_user.role == 'admin' %}
                 <option value="leader">Lider</option>
                 <option value="admin">Administrator</option>
+                {% endif %}
             </select>
+            {% if current_user.role != 'admin' %}
+            <small style="color:var(--text-muted);">
+                Konta lidera i administratora zakłada administrator.
+            </small>
+            {% endif %}
         </div>
         <div class="form-group" id="passwordGroup">
             <label>Hasło <span style="color:var(--text-muted);font-size:0.8rem;">(wymagane dla

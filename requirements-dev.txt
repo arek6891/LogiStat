@@ -1,0 +1,3 @@
+# Zaleznosci deweloperskie (testy). Produkcja: requirements.txt
+-r requirements.txt
+pytest==9.1.1

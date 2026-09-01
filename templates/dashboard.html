@@ -121,7 +121,7 @@
     function renderShiftCard(s) {
         const actRows = s.activities.length
             ? s.activities.map(a => `<tr>
-                <td style="padding:7px 16px;font-size:.85rem;color:var(--text-secondary);">${a.activity}</td>
+                <td style="padding:7px 16px;font-size:.85rem;color:var(--text-secondary);">${escapeHtml(a.activity)}</td>
                 <td style="padding:7px 16px;text-align:right;font-weight:600;color:var(--text-primary);">${a.qty.toLocaleString('pl')}</td></tr>`).join('')
             : `<tr><td colspan="2" style="padding:12px 16px;color:var(--text-muted);font-size:.85rem;">Brak wpisów ilości.</td></tr>`;
         const badge = s.exists ? '' : ' <span style="font-size:.72rem;color:var(--warning);font-weight:400;">(brak utworzonej zmiany)</span>';
@@ -167,7 +167,7 @@
                 box.innerHTML = `<div class="card" style="border-left:3px solid var(--warning);">
                     <div style="font-weight:600;margin-bottom:.35rem;">⚠️ Paczki nieprzypisane do zmiany: ${u.packages} (${u.pieces.toLocaleString('pl')} szt.)</div>
                     <div style="font-size:.85rem;color:var(--text-muted);margin-bottom:.5rem;">Pracownicy bez zeskanowanej obecności lub obecni na obu zmianach:</div>
-                    <div style="font-size:.85rem;line-height:1.6;">${u.workers.map(w => `${w.name} — ${w.packages} pacz. / ${w.pieces.toLocaleString('pl')} szt. <span style="color:var(--text-muted);">(${w.reason})</span>`).join('<br>')}</div>
+                    <div style="font-size:.85rem;line-height:1.6;">${u.workers.map(w => `${escapeHtml(w.name)} — ${w.packages} pacz. / ${w.pieces.toLocaleString('pl')} szt. <span style="color:var(--text-muted);">(${w.reason})</span>`).join('<br>')}</div>
                 </div>`;
             } else {
                 box.innerHTML = '';
@@ -221,7 +221,7 @@
                                         display:flex;align-items:center;justify-content:center;
                                         font-size:.75rem;font-weight:700;color:#fff;flex-shrink:0;">${w.name[0]}</div>
                                     <div>
-                                        <div style="font-weight:600;font-size:.9rem;">${w.name}</div>
+                                        <div style="font-weight:600;font-size:.9rem;">${escapeHtml(w.name)}</div>
                                         <div style="height:4px;background:var(--bg-hover);border-radius:2px;width:100px;margin-top:4px;overflow:hidden;">
                                             <div style="height:100%;border-radius:2px;background:var(--accent);width:${Math.round(w.packages/maxPkg*100)}%;"></div>
                                         </div>
@@ -250,7 +250,7 @@
                     <tbody>${d.activities_today.map(a => `
                         <tr style="border-top:1px solid var(--border);">
                             <td style="padding:10px 16px;">
-                                <div style="font-weight:500;font-size:.9rem;margin-bottom:4px;">${a.activity}</div>
+                                <div style="font-weight:500;font-size:.9rem;margin-bottom:4px;">${escapeHtml(a.activity)}</div>
                                 <div style="height:4px;background:var(--bg-hover);border-radius:2px;overflow:hidden;">
                                     <div style="height:100%;border-radius:2px;background:var(--success);width:${Math.round(a.total_qty/maxQty*100)}%;"></div>
                                 </div>
@@ -269,7 +269,7 @@
                     const actRows = w.activities.length
                         ? w.activities.map(a => `
                             <tr>
-                                <td style="padding:7px 16px;font-size:.85rem;color:var(--text-secondary);">${a.activity}</td>
+                                <td style="padding:7px 16px;font-size:.85rem;color:var(--text-secondary);">${escapeHtml(a.activity)}</td>
                                 <td style="padding:7px 16px;text-align:right;font-weight:600;color:var(--text-primary);">${a.qty.toLocaleString('pl')}</td>
                             </tr>`).join('')
                         : `<tr><td colspan="2" style="padding:12px 16px;color:var(--text-muted);font-size:.85rem;">Brak wpisów ilości.</td></tr>`;
@@ -284,7 +284,7 @@
                                 display:flex;align-items:center;justify-content:center;
                                 font-weight:700;font-size:1rem;color:#fff;">${w.name[0]}</div>
                             <div style="flex:1;min-width:0;">
-                                <div style="font-weight:700;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${w.name}</div>
+                                <div style="font-weight:700;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(w.name)}</div>
                                 <div style="font-size:.75rem;color:var(--text-muted);">na zmianie dziś</div>
                             </div>
                         </div>

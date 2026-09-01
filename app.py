@@ -1,16 +1,24 @@
 import os
 import csv
 import sqlite3
+from contextlib import contextmanager
 import io
 import json
-from datetime import datetime, date, timedelta, timezone
+import calendar
+from datetime import datetime, date, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 from functools import wraps
 
+try:
+    import fcntl  # POSIX; brak na Windows — wtedy blokada plikowa jest no-opem
+except ImportError:
+    fcntl = None
+
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    flash, jsonify, session
+    flash, jsonify, session, g, has_request_context, abort, make_response
 )
+from werkzeug.exceptions import HTTPException
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import (
     LoginManager, UserMixin, login_user, login_required,
@@ -18,11 +26,50 @@ from flask_login import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import func, and_, event
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import joinedload
+
+import openpyxl
+from openpyxl.chart import BarChart, Reference
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 # ── App Config ───────────────────────────────────────────────────────────────
+
+DEV_SECRET_KEY = 'logistat-dev-key-change-me'
+# Gorny limit uploadu (import CSV/Excel czyta plik do pamieci przez file.read(),
+# a gunicorn ma 2 workery — bez limitu jeden plik potrafi wywalic kontener).
+DEFAULT_MAX_UPLOAD_MB = 32
+# Haslo konta 'admin' zakladanego przy pierwszym starcie; nadpisywalne
+# zmienna ADMIN_PASSWORD (patrz docs/DEPLOY.md).
+DEFAULT_ADMIN_PASSWORD = 'admin123'
+
+
+def resolve_secret_key(env=None):
+    """Zwroc SECRET_KEY albo rzuc, jesli tryb serwerowy leci na kluczu dev.
+
+    Obecnosc DATABASE_URL = srodowisko test/prod (tak ustawia
+    docker-compose.override.yml). Dotad brak SECRET_KEY cicho spadal na staly
+    klucz dev — czyli sesje kazdego admina dalyby sie podrobic, i nikt by sie
+    o tym nie dowiedzial. Awaryjnie: LOGISTAT_ALLOW_DEV_SECRET=1.
+    """
+    env = os.environ if env is None else env
+    key = env.get('SECRET_KEY', '').strip()
+    if key:
+        return key
+    tryb_serwerowy = bool(env.get('DATABASE_URL', '').strip())
+    if tryb_serwerowy and env.get('LOGISTAT_ALLOW_DEV_SECRET') != '1':
+        raise RuntimeError(
+            'SECRET_KEY nie jest ustawiony, a DATABASE_URL wskazuje srodowisko '
+            'serwerowe. Ustaw SECRET_KEY w docker-compose.override.yml '
+            '(python3 -c "import secrets; print(secrets.token_hex(32))"). '
+            'Swiadome pominiecie: LOGISTAT_ALLOW_DEV_SECRET=1.'
+        )
+    return DEV_SECRET_KEY
+
+
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'logistat-dev-key-change-me')
+app.config['SECRET_KEY'] = resolve_secret_key()
 # SQLite domyslnie (dev); produkcyjnie/testowo Postgres przez DATABASE_URL,
 # np. postgresql+psycopg2://logistat:...@db:5432/logistat
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///logistat.db')
@@ -31,8 +78,39 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # martwe polaczenia z puli i pierwsze zadanie na kazdym zwracalo 500
 # ("server closed the connection unexpectedly"). Dla SQLite bez znaczenia.
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_pre_ping': True}
+app.config['MAX_CONTENT_LENGTH'] = int(
+    os.environ.get('MAX_UPLOAD_MB', DEFAULT_MAX_UPLOAD_MB)) * 1024 * 1024
+# SameSite=Lax: przegladarka nie dosle ciasteczka przy POST z obcej strony.
+# Endpointy JSON byly chronione ubocznie (wymagaja Content-Type: application/json,
+# co wymusza preflight), ale /api/import-csv jest multipart, czyli bylo osiagalne
+# CSRF-em. Secure wlaczamy zmienna, bo do .31 wchodzi sie tez po HTTP z LAN-u.
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE') == '1'
 
 db = SQLAlchemy(app)
+
+
+@app.errorhandler(HTTPException)
+def _blad_http(e):
+    """Na /api/ zwracaj JSON — front wszedzie czyta `data.error`.
+
+    Domyslnie Flask oddaje strone HTML, wiec `await r.json()` w JS wybuchalo i
+    uzytkownik widzial "Blad polaczenia" zamiast tresci bledu.
+    """
+    if request.path.startswith('/api/'):
+        return jsonify({'error': e.description}), e.code
+    return e
+
+
+@app.errorhandler(413)
+def _upload_za_duzy(e):
+    """Domyslna odpowiedz 413 to HTML — front na /import-csv czyta JSON."""
+    limit_mb = app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024)
+    komunikat = f'Plik jest za duzy (limit {limit_mb} MB).'
+    if request.path.startswith('/api/'):
+        return jsonify({'error': komunikat}), 413
+    return komunikat, 413
 
 
 @event.listens_for(Engine, 'connect')
@@ -72,12 +150,57 @@ def iso_z(dt):
     return dt.isoformat() + 'Z' if dt else None
 
 
+def local_today():
+    """Dzisiejsza data w Europe/Warsaw — niezaleznie od strefy serwera.
+
+    `date.today()` zwraca date wedlug TZ procesu: w kontenerze bez TZ jest to
+    UTC, wiec miedzy 00:00 a 02:00 czasu polskiego oddawalo jeszcze wczoraj.
+    """
+    return datetime.now(LOCAL_TZ).date()
+
+
+def utc_to_local(dt):
+    """Naive UTC -> aware datetime w Europe/Warsaw."""
+    return dt.replace(tzinfo=timezone.utc).astimezone(LOCAL_TZ)
+
+
+def local_day_bounds(d):
+    """Granice doby lokalnej `d` jako naive UTC: [start, koniec).
+
+    Timestampy trzymamy jako naive UTC, a doba pracy jest liczona po Warszawie
+    (dwie zmiany, druga pracuje przez polnoc). Polnoc lokalna to 22:00 UTC
+    latem i 23:00 UTC zima — DST liczy ZoneInfo, nie staly offset.
+    """
+    start = datetime.combine(d, time.min, tzinfo=LOCAL_TZ)
+    end = datetime.combine(d + timedelta(days=1), time.min, tzinfo=LOCAL_TZ)
+    to_naive_utc = lambda dt: dt.astimezone(timezone.utc).replace(tzinfo=None)  # noqa: E731
+    return to_naive_utc(start), to_naive_utc(end)
+
+
+@app.context_processor
+def _static_version():
+    """`static_v('style.css')` dokleja mtime pliku jako ?v=.
+
+    Dotad w base.html siedzialo recznie wpisane ?v=6 — trzeba bylo pamietac o
+    bumpie przy kazdej zmianie CSS, inaczej przegladarka trzymala stary plik.
+    """
+    def static_v(filename):
+        url = url_for('static', filename=filename)
+        try:
+            mtime = int(os.path.getmtime(os.path.join(app.static_folder, filename)))
+        except OSError:
+            return url
+        return f'{url}?v={mtime}'
+
+    return {'static_v': static_v}
+
+
 @app.template_filter('localdt')
 def localdt_filter(dt, fmt='%d.%m.%Y %H:%M'):
     """Jinja filter: render a naive-UTC datetime in Europe/Warsaw (DST-correct)."""
     if not dt:
         return '—'
-    return dt.replace(tzinfo=timezone.utc).astimezone(LOCAL_TZ).strftime(fmt)
+    return utc_to_local(dt).strftime(fmt)
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  MODELS
@@ -367,7 +490,6 @@ class GeneralStat(db.Model):
     country_ledger = db.Column(db.String(150), nullable=False)
     amounts = db.Column(db.Integer, default=0)
     category_data = db.Column(db.Text, default='{}')
-    double_rate = db.Column(db.Boolean, default=False)  # legacy per-line flag (unused; kept for back-compat)
     double_rate_category_data = db.Column(db.Text, default='{}')  # yellow row: manual per-category amounts for double-rate packages
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=True)
@@ -398,20 +520,15 @@ class GeneralStat(db.Model):
     def set_double_rate_category_data(self, data):
         self.double_rate_category_data = json.dumps(data)
 
-    def total_cost(self):
-        cd = self.get_category_data()
-        return sum(v.get('amount', 0) * v.get('cost', 0) for v in cd.values())
-
     def to_dict(self):
+        """Serializacja linii razem z kosztem policzonym ze stawek jej miesiaca.
+
+        Front nie zapisuje kosztow — sa wyliczane z `CostMapping` przy kazdym
+        odczycie. Stawki idą przez `rates_for()` (cache na zadanie), bo inaczej
+        kazdy wiersz odpalalby wlasne SELECT-y (N+1 na calej liscie).
+        """
         cd = self.get_category_data()
-        
-        # When serializing, we also calculate the actual cost based on mapped rates for that month/year
-        ym = (self.loading_date.year, self.loading_date.month)
-        # We need the global rates dictionary or fetch it. To be efficient, we can fetch the mapping here
-        # or rely on the frontend multiplying. The prompt said backend should trust the relational calculation,
-        # but the frontend doesn't save costs. We will fetch the mapping for this month.
-        mapping = CostMapping.query.filter_by(year=ym[0], month=ym[1]).first()
-        rates = mapping.get_rates_data() if mapping else {}
+        rates = rates_for(self.loading_date.year, self.loading_date.month)
 
         total_cost = 0.0
         for cat, data in cd.items():
@@ -429,8 +546,7 @@ class GeneralStat(db.Model):
             'country_ledger': self.country_ledger,
             'amounts': self.amounts,
             'category_data': cd,
-            'double_rate': self.double_rate or False,
-            'total_cost': total_cost
+            'total_cost': total_cost,
         }
 
 
@@ -465,11 +581,29 @@ class CostMapping(db.Model):
         }
 
 
+def rates_for(year, month):
+    """Stawki kategorii na dany miesiac, z cache na jedno zadanie.
+
+    `GeneralStat.to_dict()` jest wolane per wiersz, a stawek jest kilka na rok —
+    bez cache lista statystyk robila jedno SELECT na wiersz.
+    """
+    klucz = (year, month)
+    cache = g.get('_rates_cache') if has_request_context() else None
+    if cache is None:
+        cache = {}
+        if has_request_context():
+            g._rates_cache = cache
+    if klucz not in cache:
+        mapping = CostMapping.query.filter_by(year=year, month=month).first()
+        cache[klucz] = mapping.get_rates_data() if mapping else {}
+    return cache[klucz]
+
+
 class WorkerTimeEvent(db.Model):
     id           = db.Column(db.Integer, primary_key=True)
     user_id      = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     shift_id     = db.Column(db.Integer, db.ForeignKey('shift.id'), nullable=False)
-    event_type   = db.Column(db.String(20), nullable=False)  # break_start | break_end | work_end
+    event_type   = db.Column(db.String(20), nullable=False)  # patrz EVENT_TYPES
     timestamp    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     recorded_by  = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     is_manual    = db.Column(db.Boolean, default=False)
@@ -499,6 +633,9 @@ class WorkerTimeEvent(db.Model):
         }
 
 
+EVENT_TYPES = ('break_start', 'break_end', 'work_end')
+
+
 class AppSetting(db.Model):
     """Generic key/value store for app-wide configurable settings."""
     key = db.Column(db.String(100), primary_key=True)
@@ -513,7 +650,7 @@ SETTING_DEFAULTS = {
 
 def get_setting(key, default=None):
     """Return a stored setting value, else its known default, else `default`."""
-    row = AppSetting.query.get(key)
+    row = db.session.get(AppSetting, key)
     if row is not None and row.value is not None:
         return row.value
     return SETTING_DEFAULTS.get(key, default)
@@ -527,7 +664,7 @@ def get_setting_int(key, default=0):
 
 
 def set_setting(key, value):
-    row = AppSetting.query.get(key)
+    row = db.session.get(AppSetting, key)
     if row is None:
         row = AppSetting(key=key, value=str(value))
         db.session.add(row)
@@ -539,9 +676,35 @@ def set_setting(key, value):
 #  AUTH HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 
+ROLES = ('operator', 'leader', 'admin')
+# Role z dostepem do logowania i ekranow — konta uprzywilejowane. Zakladac je,
+# zmieniac im role/haslo i dezaktywowac moze wylacznie admin.
+PRIVILEGED_ROLES = ('leader', 'admin')
+
+
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    """Zwraca None dla konta nieaktywnego, wiec dezaktywacja wyrzuca tez z
+    trwajacej sesji (nie tylko blokuje kolejne logowanie)."""
+    try:
+        user = db.session.get(User, int(user_id))
+    except (TypeError, ValueError):
+        return None
+    if user is None or not user.is_active_user:
+        return None
+    return user
+
+
+def acting_as_admin():
+    return current_user.is_authenticated and current_user.role == 'admin'
+
+
+def active_admin_count(exclude_id=None):
+    """Ilu aktywnych adminow zostanie, jesli pominac `exclude_id`."""
+    q = User.query.filter_by(role='admin', is_active_user=True)
+    if exclude_id is not None:
+        q = q.filter(User.id != exclude_id)
+    return q.count()
 
 
 def leader_required(f):
@@ -572,6 +735,48 @@ def admin_required(f):
 #  HELPER: get or create shift
 # ══════════════════════════════════════════════════════════════════════════════
 
+def json_body():
+    """Cialo JSON jako dict. Brak ciala albo zly Content-Type -> {}, zeby
+    walidacja pol dala czytelne 400 zamiast 415/500."""
+    return request.get_json(silent=True) or {}
+
+
+def parse_shift_number(value, default=1):
+    """Numer zmiany: 1 albo 2. Cokolwiek innego -> `default`."""
+    try:
+        numer = int(value)
+    except (TypeError, ValueError):
+        return default
+    return numer if numer in (1, 2) else default
+
+
+def parse_date(value, pole='date'):
+    """Data ISO z requestu. Puste -> dzis lokalnie, zle sformatowana -> 400.
+
+    Dotad `date.fromisoformat()` lecialo bez zabezpieczenia i literowka w URL-u
+    konczyla sie 500-ka w logach.
+
+    UWAGA: puste daje DZIS, nie None — to jest wlasciwe dla parametrow typu
+    "ktora zmiane pokazac", ale NIE dla filtrow zakresu (`date_from`/`date_to`),
+    gdzie brak parametru ma znaczyc "bez filtra". Tam wywoluj warunkowo:
+    `parse_date(v, 'date_from') if v else None` (patrz api_stats_user).
+    """
+    if not value:
+        return local_today()
+    try:
+        return date.fromisoformat(str(value).strip())
+    except ValueError:
+        abort(400, f'Nieprawidłowa data w "{pole}" (oczekiwano YYYY-MM-DD).')
+
+
+def require_int(value, pole):
+    """Liczba calkowita albo 400 z nazwa pola."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        abort(400, f'Pole "{pole}" musi być liczbą całkowitą.')
+
+
 def get_or_create_shift(shift_date, shift_number):
     """Get existing shift or create new one."""
     shift = Shift.query.filter_by(date=shift_date, shift_number=shift_number).first()
@@ -599,7 +804,8 @@ def login():
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
         user = User.query.filter_by(username=username).first()
-        if user and user.role in ('leader', 'admin') and user.check_password(password):
+        if (user and user.is_active_user and user.role in PRIVILEGED_ROLES
+                and user.check_password(password)):
             login_user(user)
             next_page = request.args.get('next')
             return redirect(next_page or url_for('index'))
@@ -642,7 +848,7 @@ def profile():
 def scanner(shift_number):
     if shift_number not in (1, 2):
         shift_number = 1
-    today = date.today()
+    today = local_today()
     shift = get_or_create_shift(today, shift_number)
     attendances = ShiftAttendance.query.filter_by(shift_id=shift.id)\
         .order_by(ShiftAttendance.scanned_at.desc()).all()
@@ -722,7 +928,7 @@ def admin_settings():
 @app.route('/api/settings', methods=['PUT'])
 @admin_required
 def api_settings_update():
-    data = request.get_json() or {}
+    data = json_body()
     if 'break_threshold_minutes' in data:
         try:
             val = int(data['break_threshold_minutes'])
@@ -792,9 +998,6 @@ def paczki_view():
 @app.route('/general-stats/export')
 @admin_required
 def general_stats_export():
-    import openpyxl
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from flask import make_response
 
     date_from_str = request.args.get('date_from', '')
     date_to_str = request.args.get('date_to', '')
@@ -965,7 +1168,6 @@ def general_stats_export():
 def double_rate_amount_map():
     """Sum of Stückzahl of double-rate cartons, keyed by
     (uebergabe_nr, land, ziel_datum) == (list_id, country_ledger, loading_date)."""
-    from sqlalchemy import func
     rows = db.session.query(
         ImportedCarton.uebergabe_nr,
         ImportedCarton.land,
@@ -983,10 +1185,9 @@ def double_rate_amount_map():
 @admin_required
 def general_stats_page():
     # If parameters not provided, use first and last day of current month
-    today = datetime.today()
+    today = local_today()
     default_from = today.replace(day=1).strftime('%Y-%m-%d')
     # Calculate last day of month
-    import calendar
     last_day = calendar.monthrange(today.year, today.month)[1]
     default_to = today.replace(day=last_day).strftime('%Y-%m-%d')
 
@@ -1039,10 +1240,10 @@ def general_stats_page():
 @app.route('/api/scan', methods=['POST'])
 @leader_required
 def api_scan():
-    data = request.get_json()
-    barcode = data.get('barcode', '').strip()
-    shift_number = data.get('shift_number', 1)
-    scan_date = data.get('date', date.today().isoformat())
+    data = json_body()
+    barcode = str(data.get('barcode') or '').strip()
+    shift_number = parse_shift_number(data.get('shift_number', 1))
+    shift_date = parse_date(data.get('date'))
 
     if not barcode:
         return jsonify({'error': 'Brak kodu kreskowego.'}), 400
@@ -1055,7 +1256,6 @@ def api_scan():
         }), 404
 
     # Get or create shift
-    shift_date = date.fromisoformat(scan_date)
     shift = get_or_create_shift(shift_date, shift_number)
 
     # Check if already scanned
@@ -1084,7 +1284,7 @@ def api_scan():
 @app.route('/api/scan/<int:attendance_id>', methods=['DELETE'])
 @leader_required
 def api_unscan(attendance_id):
-    attendance = ShiftAttendance.query.get_or_404(attendance_id)
+    attendance = db.get_or_404(ShiftAttendance, attendance_id)
     db.session.delete(attendance)
     db.session.commit()
     return jsonify({'message': 'Usunięto rejestrację.'}), 200
@@ -1093,15 +1293,16 @@ def api_unscan(attendance_id):
 @app.route('/api/shift/attendances', methods=['GET'])
 @leader_required
 def api_shift_attendances():
-    shift_date = request.args.get('date', date.today().isoformat())
-    shift_number = int(request.args.get('shift_number', 1))
+    shift_date = request.args.get('date', local_today().isoformat())
+    shift_number = parse_shift_number(request.args.get('shift_number', 1))
     shift = Shift.query.filter_by(
-        date=date.fromisoformat(shift_date),
+        date=parse_date(shift_date),
         shift_number=shift_number
     ).first()
     if not shift:
         return jsonify({'attendances': [], 'shift': None}), 200
     attendances = ShiftAttendance.query.filter_by(shift_id=shift.id)\
+        .options(joinedload(ShiftAttendance.user))\
         .order_by(ShiftAttendance.scanned_at.desc()).all()
     return jsonify({
         'attendances': [a.to_dict() for a in attendances],
@@ -1117,11 +1318,11 @@ def api_shift_attendances():
 @leader_required
 def api_assignment_data():
     """Get all assignment data for a given date and shift."""
-    shift_date = request.args.get('date', date.today().isoformat())
-    shift_number = int(request.args.get('shift_number', 1))
+    shift_date = request.args.get('date', local_today().isoformat())
+    shift_number = parse_shift_number(request.args.get('shift_number', 1))
 
     shift = Shift.query.filter_by(
-        date=date.fromisoformat(shift_date),
+        date=parse_date(shift_date),
         shift_number=shift_number
     ).first()
 
@@ -1136,8 +1337,13 @@ def api_assignment_data():
             'activities': [a.to_dict() for a in activities]
         }), 200
 
-    attendances = ShiftAttendance.query.filter_by(shift_id=shift.id).all()
-    assignments = ActivityAssignment.query.filter_by(shift_id=shift.id).all()
+    # joinedload: to_dict() kazdego wiersza siega po user/activity — bez tego
+    # lista robila SELECT na kazdego pracownika i kazda czynnosc osobno.
+    attendances = ShiftAttendance.query.filter_by(shift_id=shift.id)\
+        .options(joinedload(ShiftAttendance.user)).all()
+    assignments = ActivityAssignment.query.filter_by(shift_id=shift.id)\
+        .options(joinedload(ActivityAssignment.user),
+                 joinedload(ActivityAssignment.activity)).all()
 
     # Build set of already-assigned user IDs
     assigned_user_ids = {a.user_id for a in assignments}
@@ -1156,11 +1362,11 @@ def api_assignment_data():
 @leader_required
 def api_assignment_suggestions():
     """Generate AI-based assignment suggestions based on user statistics."""
-    shift_date = request.args.get('date', date.today().isoformat())
-    shift_number = int(request.args.get('shift_number', 1))
+    shift_date = request.args.get('date', local_today().isoformat())
+    shift_number = parse_shift_number(request.args.get('shift_number', 1))
 
     shift = Shift.query.filter_by(
-        date=date.fromisoformat(shift_date),
+        date=parse_date(shift_date),
         shift_number=shift_number
     ).first()
     if not shift:
@@ -1175,7 +1381,7 @@ def api_assignment_suggestions():
         .order_by(Activity.sort_order).all()
 
     # Calculate average quantity per user per activity (last 30 days)
-    thirty_days_ago = date.fromisoformat(shift_date) - timedelta(days=30)
+    thirty_days_ago = parse_date(shift_date) - timedelta(days=30)
     stats = db.session.query(
         DailyStat.user_id,
         DailyStat.activity_id,
@@ -1245,25 +1451,41 @@ def api_assignment_suggestions():
 @leader_required
 def api_assignment_save():
     """Save drag & drop assignments."""
-    data = request.get_json()
-    shift_date = data.get('date', date.today().isoformat())
-    shift_number = data.get('shift_number', 1)
-    assignments = data.get('assignments', [])
+    data = json_body()
+    shift_number = parse_shift_number(data.get('shift_number', 1))
+    assignments = data.get('assignments') or []
+    if not isinstance(assignments, list):
+        return jsonify({'error': 'Pole "assignments" musi być listą.'}), 400
 
-    shift = get_or_create_shift(date.fromisoformat(shift_date), shift_number)
+    shift = get_or_create_shift(parse_date(data.get('date')), shift_number)
+
+    # Sprawdz FK przed czyszczeniem, zeby bledne cialo nie wyczyscilo przydzialu
+    # i nie zostawilo zmiany pustej.
+    znani = {u.id for u in User.query.with_entities(User.id).all()}
+    czynnosci = {a.id for a in Activity.query.with_entities(Activity.id).all()}
+    nowe = []
+    for a in assignments:
+        if not isinstance(a, dict):
+            return jsonify({'error': 'Każde przydzielenie musi być obiektem.'}), 400
+        user_id = require_int(a.get('user_id'), 'user_id')
+        activity_id = require_int(a.get('activity_id'), 'activity_id')
+        if user_id not in znani:
+            return jsonify({'error': f'Nieznany pracownik (id {user_id}).'}), 400
+        if activity_id not in czynnosci:
+            return jsonify({'error': f'Nieznana czynność (id {activity_id}).'}), 400
+        nowe.append((user_id, activity_id, bool(a.get('is_suggestion', False))))
 
     # Clear existing assignments for this shift
     ActivityAssignment.query.filter_by(shift_id=shift.id).delete()
 
-    for a in assignments:
-        assignment = ActivityAssignment(
+    for user_id, activity_id, is_suggestion in nowe:
+        db.session.add(ActivityAssignment(
             shift_id=shift.id,
-            user_id=a['user_id'],
-            activity_id=a['activity_id'],
-            is_suggestion=a.get('is_suggestion', False),
+            user_id=user_id,
+            activity_id=activity_id,
+            is_suggestion=is_suggestion,
             assigned_by=current_user.id
-        )
-        db.session.add(assignment)
+        ))
 
     db.session.commit()
     return jsonify({'message': 'Przydzielenie zapisane.'}), 200
@@ -1277,19 +1499,22 @@ def api_assignment_save():
 @leader_required
 def api_daily_stats_get():
     """Get stats for a given date and shift."""
-    shift_date = request.args.get('date', date.today().isoformat())
-    shift_number = int(request.args.get('shift_number', 1))
+    shift_date = request.args.get('date', local_today().isoformat())
+    shift_number = parse_shift_number(request.args.get('shift_number', 1))
 
     shift = Shift.query.filter_by(
-        date=date.fromisoformat(shift_date),
+        date=parse_date(shift_date),
         shift_number=shift_number
     ).first()
     if not shift:
         return jsonify({'stats': [], 'shift': None}), 200
 
     # Get assignments for this shift
-    assignments = ActivityAssignment.query.filter_by(shift_id=shift.id).all()
-    stats = DailyStat.query.filter_by(shift_id=shift.id).all()
+    assignments = ActivityAssignment.query.filter_by(shift_id=shift.id)\
+        .options(joinedload(ActivityAssignment.user),
+                 joinedload(ActivityAssignment.activity)).all()
+    stats = DailyStat.query.filter_by(shift_id=shift.id)\
+        .options(joinedload(DailyStat.user), joinedload(DailyStat.activity)).all()
 
     return jsonify({
         'shift': shift.to_dict(),
@@ -1302,35 +1527,41 @@ def api_daily_stats_get():
 @leader_required
 def api_daily_stats_save():
     """Save or update daily statistics."""
-    data = request.get_json()
-    shift_date = data.get('date', date.today().isoformat())
-    shift_number = data.get('shift_number', 1)
-    entries = data.get('entries', [])
+    data = json_body()
+    shift_number = parse_shift_number(data.get('shift_number', 1))
+    entries = data.get('entries') or []
+    if not isinstance(entries, list):
+        return jsonify({'error': 'Pole "entries" musi być listą.'}), 400
 
-    shift = get_or_create_shift(date.fromisoformat(shift_date), shift_number)
+    shift = get_or_create_shift(parse_date(data.get('date')), shift_number)
 
     for entry in entries:
+        if not isinstance(entry, dict):
+            return jsonify({'error': 'Każdy wpis musi być obiektem.'}), 400
+        user_id = require_int(entry.get('user_id'), 'user_id')
+        activity_id = require_int(entry.get('activity_id'), 'activity_id')
+        quantity = require_int(entry.get('quantity', 0) or 0, 'quantity')
+
         existing = DailyStat.query.filter_by(
             shift_id=shift.id,
-            user_id=entry['user_id'],
-            activity_id=entry['activity_id']
+            user_id=user_id,
+            activity_id=activity_id
         ).first()
 
         if existing:
-            existing.quantity = entry.get('quantity', 0)
+            existing.quantity = quantity
             existing.note = entry.get('note', '')
             existing.modified_by = current_user.id
             existing.modified_at = datetime.utcnow()
         else:
-            stat = DailyStat(
+            db.session.add(DailyStat(
                 shift_id=shift.id,
-                user_id=entry['user_id'],
-                activity_id=entry['activity_id'],
-                quantity=entry.get('quantity', 0),
+                user_id=user_id,
+                activity_id=activity_id,
+                quantity=quantity,
                 note=entry.get('note', ''),
                 entered_by=current_user.id
-            )
-            db.session.add(stat)
+            ))
 
     db.session.commit()
     return jsonify({'message': 'Statystyki zapisane.'}), 200
@@ -1340,8 +1571,8 @@ def api_daily_stats_save():
 @leader_required
 def api_daily_stat_update(stat_id):
     """Update a single daily stat (mistake correction)."""
-    stat = DailyStat.query.get_or_404(stat_id)
-    data = request.get_json()
+    stat = db.get_or_404(DailyStat, stat_id)
+    data = json_body()
 
     stat.quantity = data.get('quantity', stat.quantity)
     stat.note = data.get('note', stat.note)
@@ -1360,10 +1591,12 @@ def api_daily_stat_update(stat_id):
 @leader_required
 def api_stats_user(user_id):
     """Get per-user statistics, grouped by day and month."""
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
     activity_id = request.args.get('activity_id', type=int)
-    date_from = request.args.get('date_from')
-    date_to = request.args.get('date_to')
+    date_from = parse_date(request.args.get('date_from'), 'date_from') \
+        if request.args.get('date_from') else None
+    date_to = parse_date(request.args.get('date_to'), 'date_to') \
+        if request.args.get('date_to') else None
 
     query = db.session.query(
         DailyStat, Shift
@@ -1372,9 +1605,9 @@ def api_stats_user(user_id):
     if activity_id:
         query = query.filter(DailyStat.activity_id == activity_id)
     if date_from:
-        query = query.filter(Shift.date >= date.fromisoformat(date_from))
+        query = query.filter(Shift.date >= date_from)
     if date_to:
-        query = query.filter(Shift.date <= date.fromisoformat(date_to))
+        query = query.filter(Shift.date <= date_to)
 
     results = query.order_by(Shift.date.desc()).all()
 
@@ -1405,26 +1638,34 @@ def api_stats_user(user_id):
 
     # Przetworzone (zakończone) paczki jako syntetyczne pozycje — tylko w widoku "Wszystkie"
     if not activity_id:
-        from sqlalchemy import func
+        # Grupujemy po DOBIE LOKALNEJ, tak samo jak dashboard. `func.date()`
+        # cielo po dacie UTC, wiec paczka zakonczona po lokalnej polnocy trafiala
+        # na inny dzien tutaj niz na dashboardzie. Konwersja jest w Pythonie —
+        # SQLite i Postgres licza strefy zupelnie inaczej, a zakres jest maly
+        # (paczki jednego pracownika w wybranym okresie).
         pq = db.session.query(
-            func.date(ImportedCarton.scan_end_at).label('d'),
-            func.count(ImportedCarton.id),
-            func.coalesce(func.sum(ImportedCarton.stueckzahl), 0),
+            ImportedCarton.scan_end_at,
+            ImportedCarton.stueckzahl,
         ).filter(
             ImportedCarton.scan_end_by == user_id,
             ImportedCarton.scan_end_at.isnot(None),
         )
         if date_from:
-            pq = pq.filter(func.date(ImportedCarton.scan_end_at) >= date_from)
+            pq = pq.filter(ImportedCarton.scan_end_at >= local_day_bounds(date_from)[0])
         if date_to:
-            pq = pq.filter(func.date(ImportedCarton.scan_end_at) <= date_to)
-        pkg_rows = pq.group_by(func.date(ImportedCarton.scan_end_at)).all()
+            pq = pq.filter(ImportedCarton.scan_end_at < local_day_bounds(date_to)[1])
+
+        per_day = {}
+        for scan_end_at, stueckzahl in pq.all():
+            d = utc_to_local(scan_end_at).date().isoformat()
+            agg = per_day.setdefault(d, {'cnt': 0, 'pcs': 0})
+            agg['cnt'] += 1
+            agg['pcs'] += stueckzahl or 0
 
         PKG_METRICS = [('📦 Paczki', lambda cnt, pcs: cnt),
                        ('📦 Paczki (szt.)', lambda cnt, pcs: pcs)]
-        for d, cnt, pcs in pkg_rows:
-            # func.date() daje str w SQLite, a datetime.date w Postgresie
-            d = d.isoformat() if hasattr(d, 'isoformat') else str(d)
+        for d, agg in per_day.items():
+            cnt, pcs = agg['cnt'], agg['pcs']
             for label, metric in PKG_METRICS:
                 qty = int(metric(cnt, pcs))
                 daily_stats.append({
@@ -1482,7 +1723,7 @@ def api_activities():
 @app.route('/api/activities', methods=['POST'])
 @admin_required
 def api_activity_create():
-    data = request.get_json()
+    data = json_body()
     name = data.get('name', '').strip()
     if not name:
         return jsonify({'error': 'Nazwa wymagana.'}), 400
@@ -1497,11 +1738,11 @@ def api_activity_create():
 @app.route('/api/activities/<int:activity_id>', methods=['PUT'])
 @admin_required
 def api_activity_update(activity_id):
-    activity = Activity.query.get_or_404(activity_id)
-    data = request.get_json()
+    activity = db.get_or_404(Activity, activity_id)
+    data = json_body()
 
     if 'name' in data:
-        activity.name = data['name'].strip()
+        activity.name = str(data['name'] or '').strip()
     if 'sort_order' in data:
         activity.sort_order = data['sort_order']
     if 'is_active' in data:
@@ -1514,7 +1755,7 @@ def api_activity_update(activity_id):
 @app.route('/api/activities/<int:activity_id>', methods=['DELETE'])
 @admin_required
 def api_activity_delete(activity_id):
-    activity = Activity.query.get_or_404(activity_id)
+    activity = db.get_or_404(Activity, activity_id)
     db.session.delete(activity)
     db.session.commit()
     return jsonify({'message': 'Usunięto.'}), 200
@@ -1523,10 +1764,10 @@ def api_activity_delete(activity_id):
 @app.route('/api/activities/reorder', methods=['POST'])
 @admin_required
 def api_activities_reorder():
-    data = request.get_json()
+    data = json_body()
     order = data.get('order', [])
     for i, activity_id in enumerate(order):
-        act = Activity.query.get(activity_id)
+        act = db.session.get(Activity, activity_id)
         if act:
             act.sort_order = i
     db.session.commit()
@@ -1547,7 +1788,7 @@ def api_users():
 @app.route('/api/users', methods=['POST'])
 @leader_required
 def api_user_create():
-    data = request.get_json()
+    data = json_body()
     username = data.get('username', '').strip()
     display_name = data.get('display_name', '').strip()
     barcode_id = data.get('barcode_id', '').strip()
@@ -1556,6 +1797,16 @@ def api_user_create():
 
     if not username or not display_name:
         return jsonify({'error': 'Login i nazwa wyświetlana są wymagane.'}), 400
+
+    if role not in ROLES:
+        return jsonify({'error': 'Nieprawidłowa rola.'}), 400
+
+    # Lider zaklada operatorow na zmianie; kont z logowaniem nie moze zalozyc,
+    # bo inaczej dorobilby sobie admina.
+    if role in PRIVILEGED_ROLES and not acting_as_admin():
+        return jsonify({
+            'error': 'Tylko administrator może zakładać konta lidera i administratora.'
+        }), 403
 
     if User.query.filter_by(username=username).first():
         return jsonify({'error': 'Taki login już istnieje.'}), 400
@@ -1580,13 +1831,38 @@ def api_user_create():
 @app.route('/api/users/<int:user_id>', methods=['PUT'])
 @leader_required
 def api_user_update(user_id):
-    user = User.query.get_or_404(user_id)
-    data = request.get_json()
+    user = db.get_or_404(User, user_id)
+    data = json_body()
+
+    # Lider edytuje wylacznie operatorow i tylko ich dane opisowe. Bez tego
+    # moglby podniesc sobie role albo przestawic haslo adminowi i wejsc na jego
+    # konto.
+    if not acting_as_admin():
+        if user.role in PRIVILEGED_ROLES:
+            return jsonify({
+                'error': 'Konta lidera i administratora może zmieniać tylko administrator.'
+            }), 403
+        if 'role' in data and data['role'] != user.role:
+            return jsonify({'error': 'Tylko administrator może zmieniać rolę.'}), 403
+        if data.get('password'):
+            return jsonify({'error': 'Tylko administrator może zmieniać hasło.'}), 403
+
+    if 'role' in data and data['role'] not in ROLES:
+        return jsonify({'error': 'Nieprawidłowa rola.'}), 400
+
+    # Nie pozwol zdjac uprawnien ostatniemu aktywnemu adminowi — inaczej nikt
+    # nie wejdzie juz do panelu.
+    degraduje = 'role' in data and user.role == 'admin' and data['role'] != 'admin'
+    dezaktywuje = user.role == 'admin' and data.get('is_active_user') is False
+    if (degraduje or dezaktywuje) and active_admin_count(exclude_id=user.id) == 0:
+        return jsonify({
+            'error': 'To ostatnie aktywne konto administratora — najpierw utwórz inne.'
+        }), 400
 
     if 'display_name' in data:
-        user.display_name = data['display_name'].strip()
+        user.display_name = str(data['display_name'] or '').strip()
     if 'barcode_id' in data:
-        new_barcode = data['barcode_id'].strip()
+        new_barcode = str(data['barcode_id'] or '').strip()
         if new_barcode:
             existing = User.query.filter(
                 User.barcode_id == new_barcode, User.id != user_id
@@ -1610,8 +1886,19 @@ def api_user_update(user_id):
 @app.route('/api/users/<int:user_id>', methods=['DELETE'])
 @leader_required
 def api_user_delete(user_id):
-    user = User.query.get_or_404(user_id)
-    user.is_active_user = False  # soft delete
+    user = db.get_or_404(User, user_id)
+
+    if user.role in PRIVILEGED_ROLES and not acting_as_admin():
+        return jsonify({
+            'error': 'Konta lidera i administratora może dezaktywować tylko administrator.'
+        }), 403
+
+    if user.role == 'admin' and active_admin_count(exclude_id=user.id) == 0:
+        return jsonify({
+            'error': 'To ostatnie aktywne konto administratora — najpierw utwórz inne.'
+        }), 400
+
+    user.is_active_user = False  # soft delete — load_user odbiera tez trwajaca sesje
     db.session.commit()
     return jsonify({'message': 'Dezaktywowano.'}), 200
 
@@ -1630,7 +1917,7 @@ def api_country_mappings():
 @app.route('/api/country-mappings', methods=['POST'])
 @admin_required
 def api_country_mapping_create():
-    data = request.get_json()
+    data = json_body()
     country = data.get('country', '').strip()
     innenauftrag = data.get('innenauftrag', '').strip()
     if not country or not innenauftrag:
@@ -1645,12 +1932,12 @@ def api_country_mapping_create():
 @app.route('/api/country-mappings/<int:mapping_id>', methods=['PUT'])
 @admin_required
 def api_country_mapping_update(mapping_id):
-    mapping = CountryMapping.query.get_or_404(mapping_id)
-    data = request.get_json()
+    mapping = db.get_or_404(CountryMapping, mapping_id)
+    data = json_body()
     if 'country' in data:
-        mapping.country = data['country'].strip()
+        mapping.country = str(data['country'] or '').strip()
     if 'innenauftrag' in data:
-        mapping.innenauftrag = data['innenauftrag'].strip()
+        mapping.innenauftrag = str(data['innenauftrag'] or '').strip()
     db.session.commit()
     return jsonify(mapping.to_dict()), 200
 
@@ -1658,7 +1945,7 @@ def api_country_mapping_update(mapping_id):
 @app.route('/api/country-mappings/<int:mapping_id>', methods=['DELETE'])
 @admin_required
 def api_country_mapping_delete(mapping_id):
-    mapping = CountryMapping.query.get_or_404(mapping_id)
+    mapping = db.get_or_404(CountryMapping, mapping_id)
     db.session.delete(mapping)
     db.session.commit()
     return jsonify({'message': 'Usunięto mapowanie.'}), 200
@@ -1761,6 +2048,24 @@ def _cell_to_str(val):
     return str(val).strip()
 
 
+# Wiersze importu przetwarzamy partiami: dedup barcode'ow idzie jednym
+# zapytaniem `IN (...)` na partie, a nie jednym na wiersz. Rozmiar ograniczony,
+# zeby duzy plik nie wchodzil caly do pamieci.
+IMPORT_CHUNK = 500
+
+
+def _partiami(iterable, rozmiar):
+    """Dziel iterowalne (moze byc generator) na listy po `rozmiar` elementow."""
+    partia = []
+    for element in iterable:
+        partia.append(element)
+        if len(partia) >= rozmiar:
+            yield partia
+            partia = []
+    if partia:
+        yield partia
+
+
 def process_import_rows(rows):
     """Shared import pipeline for CSV and Excel.
 
@@ -1776,51 +2081,70 @@ def process_import_rows(rows):
     skipped_barcodes = []
     aggregation = {}  # key: (list_id, land, date_str) -> sum of stueckzahl
 
-    for row in rows:
-        barcode = _cell_to_barcode(row.get('barcode'))
-        land = _cell_to_str(row.get('land'))
-        kategorie = _cell_to_str(row.get('kategorie'))
-        uebergabe_nr = _cell_to_str(row.get('uebergabe_nr'))
-        stueckzahl = _cell_to_int(row.get('stueckzahl'))
-        ziel_datum = _cell_to_date(row.get('ziel_datum'))
+    # Mapowania krajow to kilkadziesiat rekordow — jeden odczyt zamiast SELECT-a
+    # na kazdy wiersz pliku.
+    mapowania = {m.innenauftrag: m for m in CountryMapping.query.all()}
+    # Barcode'y widziane w TYM imporcie — lapie duplikaty wewnatrz pliku bez
+    # polegania na autoflushu.
+    widziane = set()
 
-        if not barcode:
-            continue
+    for partia in _partiami(rows, IMPORT_CHUNK):
+        parsed = []
+        for row in partia:
+            barcode = _cell_to_barcode(row.get('barcode'))
+            if not barcode:
+                continue
+            parsed.append((barcode, row))
 
-        # Check barcode uniqueness
-        if ImportedCarton.query.filter_by(barcode=barcode).first():
-            skipped += 1
-            skipped_barcodes.append(barcode)
-            continue
+        # Jedno zapytanie na partie zamiast jednego na wiersz.
+        istniejace = set()
+        if parsed:
+            kandydaci = [b for b, _ in parsed]
+            istniejace = {
+                b for (b,) in db.session.query(ImportedCarton.barcode)
+                .filter(ImportedCarton.barcode.in_(kandydaci)).all()
+            }
 
-        # Match Land to CountryMapping
-        mapping = CountryMapping.query.filter_by(innenauftrag=land).first()
+        for barcode, row in parsed:
+            if barcode in istniejace or barcode in widziane:
+                skipped += 1
+                skipped_barcodes.append(barcode)
+                continue
+            widziane.add(barcode)
 
-        carton = ImportedCarton(
-            barcode=barcode,
-            land=land,
-            stueckzahl=stueckzahl,
-            kategorie=kategorie,
-            ziel_datum=ziel_datum,
-            uebergabe_nr=uebergabe_nr,
-            country_mapping_id=mapping.id if mapping else None,
-            double_rate=bool(row.get('double_rate')),
-            added_manually=bool(row.get('added_manually')),
-            imported_by=current_user.id
-        )
-        db.session.add(carton)
-        imported += 1
+            land = _cell_to_str(row.get('land'))
+            kategorie = _cell_to_str(row.get('kategorie'))
+            uebergabe_nr = _cell_to_str(row.get('uebergabe_nr'))
+            stueckzahl = _cell_to_int(row.get('stueckzahl'))
+            ziel_datum = _cell_to_date(row.get('ziel_datum'))
 
-        # Aggregate for GeneralStat
-        if uebergabe_nr and ziel_datum:
-            agg_key = (uebergabe_nr, land, ziel_datum.isoformat())
-            if agg_key not in aggregation:
-                aggregation[agg_key] = {
-                    'stueckzahl': 0,
-                    'country': mapping.country if mapping else None,
-                    'date': ziel_datum
-                }
-            aggregation[agg_key]['stueckzahl'] += stueckzahl
+            mapping = mapowania.get(land)
+
+            carton = ImportedCarton(
+                barcode=barcode,
+                land=land,
+                stueckzahl=stueckzahl,
+                kategorie=kategorie,
+                ziel_datum=ziel_datum,
+                uebergabe_nr=uebergabe_nr,
+                country_mapping_id=mapping.id if mapping else None,
+                double_rate=bool(row.get('double_rate')),
+                added_manually=bool(row.get('added_manually')),
+                imported_by=current_user.id
+            )
+            db.session.add(carton)
+            imported += 1
+
+            # Aggregate for GeneralStat
+            if uebergabe_nr and ziel_datum:
+                agg_key = (uebergabe_nr, land, ziel_datum.isoformat())
+                if agg_key not in aggregation:
+                    aggregation[agg_key] = {
+                        'stueckzahl': 0,
+                        'country': mapping.country if mapping else None,
+                        'date': ziel_datum
+                    }
+                aggregation[agg_key]['stueckzahl'] += stueckzahl
 
     # Create/update GeneralStat entries
     stats_created = 0
@@ -1891,8 +2215,6 @@ def api_import_csv():
 @app.route('/api/import/excel', methods=['POST'])
 @admin_required
 def api_import_excel():
-    import openpyxl
-
     if 'file' not in request.files:
         return jsonify({'error': 'Brak pliku.'}), 400
 
@@ -1936,15 +2258,26 @@ def api_import_excel():
 @app.route('/api/general-stats', methods=['GET'])
 @admin_required
 def api_general_stats():
-    stats = GeneralStat.query.order_by(GeneralStat.loading_date.desc()).all()
+    """Lista linii rozliczeniowych. Opcjonalne `date_from` / `date_to`
+    (YYYY-MM-DD) — bez nich zwraca wszystko, jak dotad."""
+    query = GeneralStat.query
+    for param, warunek in (('date_from', GeneralStat.loading_date.__ge__),
+                           ('date_to', GeneralStat.loading_date.__le__)):
+        wartosc = request.args.get(param, '')
+        if wartosc:
+            try:
+                query = query.filter(warunek(date.fromisoformat(wartosc)))
+            except ValueError:
+                return jsonify({'error': f'Nieprawidłowa data w {param}.'}), 400
+    stats = query.order_by(GeneralStat.loading_date.desc()).all()
     return jsonify([s.to_dict() for s in stats]), 200
 
 
 @app.route('/api/general-stats/<int:stat_id>', methods=['PUT'])
 @admin_required
 def api_general_stat_update(stat_id):
-    stat = GeneralStat.query.get_or_404(stat_id)
-    data = request.get_json()
+    stat = db.get_or_404(GeneralStat, stat_id)
+    data = json_body()
 
     if 'category_data' in data:
         stat.set_category_data(data['category_data'])
@@ -1975,8 +2308,8 @@ def dashboard():
 @app.route('/api/dashboard')
 @leader_required
 def api_dashboard():
-    today = date.today()
-    today_start = datetime.combine(today, datetime.min.time())
+    today = local_today()
+    today_start, today_end = local_day_bounds(today)
 
     # Paczki — ogólne (przetworzona = ZAKOŃCZONA, scan_end)
     total_cartons = ImportedCarton.query.count()
@@ -1984,10 +2317,11 @@ def api_dashboard():
     remaining_cartons = total_cartons - done_cartons
 
     # Paczki zakończone dziś
-    done_today_q = ImportedCarton.query.filter(ImportedCarton.scan_end_at >= today_start)
-    done_today = done_today_q.count()
+    dzis = and_(ImportedCarton.scan_end_at >= today_start,
+                ImportedCarton.scan_end_at < today_end)
+    done_today = ImportedCarton.query.filter(dzis).count()
     pieces_today = db.session.query(func.sum(ImportedCarton.stueckzahl))\
-        .filter(ImportedCarton.scan_end_at >= today_start).scalar() or 0
+        .filter(dzis).scalar() or 0
 
     # Breakdown per pracownik — dziś (kto zakończył paczki)
     worker_rows = db.session.query(
@@ -1995,7 +2329,7 @@ def api_dashboard():
         func.count(ImportedCarton.id).label('packages'),
         func.sum(ImportedCarton.stueckzahl).label('pieces')
     ).join(ImportedCarton, ImportedCarton.scan_end_by == User.id)\
-     .filter(ImportedCarton.scan_end_at >= today_start)\
+     .filter(dzis)\
      .group_by(User.id, User.display_name)\
      .order_by(func.count(ImportedCarton.id).desc()).all()
 
@@ -2088,12 +2422,11 @@ def api_dashboard_shifts():
     """
     date_str = request.args.get('date', '')
     try:
-        target = datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else date.today()
+        target = datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else local_today()
     except ValueError:
-        target = date.today()
+        target = local_today()
 
-    day_start = datetime.combine(target, datetime.min.time())
-    day_end = day_start + timedelta(days=1)
+    day_start, day_end = local_day_bounds(target)
 
     act_map = {a.id: a.name for a in Activity.query.all()}
     user_map = {u.id: u.display_name for u in User.query.all()}
@@ -2196,56 +2529,6 @@ def api_package_lookup():
     return jsonify({'carton': d}), 200
 
 
-@app.route('/api/scan-package', methods=['POST'])
-@leader_required
-def api_scan_package():
-    data = request.get_json()
-    employee_barcode = (data.get('employee_barcode') or '').strip()
-    package_barcode = (data.get('package_barcode') or '').strip()
-
-    if not employee_barcode:
-        return jsonify({'error': 'Brak kodu pracownika.'}), 400
-    if not package_barcode:
-        return jsonify({'error': 'Brak kodu paczki.'}), 400
-
-    user = User.query.filter_by(barcode_id=employee_barcode, is_active_user=True).first()
-    if not user:
-        return jsonify({'error': 'Nieznany kod pracownika.'}), 404
-
-    carton = ImportedCarton.query.filter_by(barcode=package_barcode).first()
-    if not carton:
-        return jsonify({'error': 'Nieznany kod paczki. Upewnij się, że paczka została zaimportowana.'}), 404
-
-    if carton.processed_by:
-        existing = carton.processed_by_user
-        return jsonify({
-            'error': f'Paczka już zeskanowana!',
-            'existing_worker': existing.display_name if existing else '—'
-        }), 409
-
-    carton.processed_by = user.id
-    carton.processed_at = datetime.utcnow()
-    db.session.commit()
-
-    return jsonify({
-        'message': f'Paczka {package_barcode} przypisana do {user.display_name}.',
-        'carton': carton.to_dict()
-    }), 200
-
-
-@app.route('/api/scan-employee', methods=['POST'])
-@leader_required
-def api_scan_employee():
-    data = request.get_json()
-    barcode = (data.get('barcode') or '').strip()
-    if not barcode:
-        return jsonify({'error': 'Brak kodu.'}), 400
-    user = User.query.filter_by(barcode_id=barcode, is_active_user=True).first()
-    if not user:
-        return jsonify({'error': 'Nieznany kod pracownika.'}), 404
-    return jsonify({'user': user.to_dict()}), 200
-
-
 @app.route('/api/packages', methods=['POST'])
 @leader_required
 def api_package_create():
@@ -2256,9 +2539,7 @@ def api_package_create():
     like an imported one. Duplicate barcode → 409; missing required fields or
     bad values → 400.
     """
-    from sqlalchemy.exc import IntegrityError
-
-    data = request.get_json() or {}
+    data = json_body()
     barcode = (data.get('barcode') or '').strip()
     land = (data.get('land') or '').strip()
     kategorie = (data.get('kategorie') or '').strip()
@@ -2380,13 +2661,11 @@ def api_package_update(carton_id):
     GeneralStat groups — both the old and new lines are recomputed from carton
     sums so billing stays exact.
     """
-    from sqlalchemy.exc import IntegrityError
-
-    carton = ImportedCarton.query.get_or_404(carton_id)
+    carton = db.get_or_404(ImportedCarton, carton_id)
     if not carton.added_manually:
         return jsonify({'error': 'Edytować można tylko paczki dodane ręcznie.'}), 403
 
-    data = request.get_json() or {}
+    data = json_body()
     barcode = (data.get('barcode') or '').strip()
     land = (data.get('land') or '').strip()
     kategorie = (data.get('kategorie') or '').strip()
@@ -2453,14 +2732,14 @@ def api_package_update(carton_id):
 @app.route('/api/packages/<int:carton_id>/assign', methods=['PUT'])
 @leader_required
 def api_package_reassign(carton_id):
-    carton = ImportedCarton.query.get_or_404(carton_id)
-    data = request.get_json()
+    carton = db.get_or_404(ImportedCarton, carton_id)
+    data = json_body()
     user_id = data.get('user_id')
     if user_id is None:
         carton.processed_by = None
         carton.processed_at = None
     else:
-        user = User.query.get_or_404(user_id)
+        user = db.get_or_404(User, user_id)
         carton.processed_by = user.id
         carton.processed_at = datetime.utcnow()
     db.session.commit()
@@ -2470,8 +2749,8 @@ def api_package_reassign(carton_id):
 @app.route('/api/packages/<int:carton_id>/double-rate', methods=['PUT'])
 @leader_required
 def api_package_double_rate(carton_id):
-    carton = ImportedCarton.query.get_or_404(carton_id)
-    data = request.get_json() or {}
+    carton = db.get_or_404(ImportedCarton, carton_id)
+    data = json_body()
     carton.double_rate = bool(data.get('double_rate'))
     db.session.commit()
     return jsonify({'carton': carton.to_dict()}), 200
@@ -2480,7 +2759,7 @@ def api_package_double_rate(carton_id):
 @app.route('/api/cost-mapping/<int:year>/<int:month>', methods=['PUT', 'POST'])
 @admin_required
 def api_cost_mapping_save(year, month):
-    data = request.get_json()
+    data = json_body()
     rates = data.get('rates', {})
 
     mapping = CostMapping.query.filter_by(year=year, month=month).first()
@@ -2514,7 +2793,7 @@ def scan_paczki():
 @app.route('/api/package-time/start', methods=['POST'])
 @leader_required
 def api_package_time_start():
-    data = request.get_json()
+    data = json_body()
     employee_barcode = (data.get('employee_barcode') or '').strip()
     package_barcode = (data.get('package_barcode') or '').strip()
 
@@ -2542,7 +2821,7 @@ def api_package_time_start():
                 'message': f'Paczka {package_barcode} już rozpoczęta przez Ciebie — start bez zmian.',
                 'carton': carton.to_dict()
             }), 200
-        starter = User.query.get(carton.scan_start_by) if carton.scan_start_by else None
+        starter = db.session.get(User, carton.scan_start_by) if carton.scan_start_by else None
         return jsonify({
             'error': f'Paczka już rozpoczęta przez {starter.display_name if starter else "innego pracownika"}. Nie można jej podebrać.'
         }), 409
@@ -2561,7 +2840,7 @@ def api_package_time_start():
 @app.route('/api/package-time/end', methods=['POST'])
 @leader_required
 def api_package_time_end():
-    data = request.get_json()
+    data = json_body()
     employee_barcode = (data.get('employee_barcode') or '').strip()
     package_barcode = (data.get('package_barcode') or '').strip()
 
@@ -2586,7 +2865,7 @@ def api_package_time_end():
 
     # Tylko pracownik, który rozpoczął paczkę, może ją zakończyć
     if carton.scan_start_by and carton.scan_start_by != user.id:
-        starter = User.query.get(carton.scan_start_by)
+        starter = db.session.get(User, carton.scan_start_by)
         return jsonify({
             'error': f'Paczkę rozpoczął {starter.display_name if starter else "inny pracownik"} — tylko on może ją zakończyć.'
         }), 403
@@ -2603,26 +2882,6 @@ def api_package_time_end():
         'message': f'Koniec zarejestrowany — czas procesowania: {time_str}.',
         'carton': carton.to_dict()
     }), 200
-
-
-@app.route('/api/packages/uebergabe-double-rate', methods=['PUT'])
-@leader_required
-def api_uebergabe_double_rate():
-    data = request.get_json()
-    uebergabe_nr = (data.get('uebergabe_nr') or '').strip()
-    double_rate = bool(data.get('double_rate'))
-
-    if not uebergabe_nr:
-        return jsonify({'error': 'Brak uebergabe_nr.'}), 400
-
-    stats = GeneralStat.query.filter_by(list_id=uebergabe_nr).all()
-    for stat in stats:
-        stat.double_rate = double_rate
-        stat.updated_at = datetime.utcnow()
-        stat.updated_by = current_user.id
-    db.session.commit()
-
-    return jsonify({'message': f'Double rate {"włączony" if double_rate else "wyłączony"} dla {uebergabe_nr} ({len(stats)} rekordów).'})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2685,7 +2944,7 @@ def worker_times():
 @app.route('/api/time/scan', methods=['POST'])
 @leader_required
 def api_time_scan():
-    data = request.get_json()
+    data = json_body()
     barcode = (data.get('barcode') or '').strip()
     mode    = data.get('mode', 'break')   # 'break' | 'work_end'
 
@@ -2697,7 +2956,7 @@ def api_time_scan():
         return jsonify({'error': 'Nieznany kod pracownika.'}), 404
 
     # Najnowsza obecność dziś
-    today = date.today()
+    today = local_today()
     attendance = ShiftAttendance.query.join(Shift).filter(
         ShiftAttendance.user_id == user.id,
         Shift.date == today
@@ -2758,11 +3017,11 @@ def api_time_scan():
 @app.route('/api/worker-times')
 @leader_required
 def api_worker_times():
-    date_str = request.args.get('date', date.today().isoformat())
+    date_str = request.args.get('date', local_today().isoformat())
     try:
         query_date = date.fromisoformat(date_str)
     except ValueError:
-        query_date = date.today()
+        query_date = local_today()
 
     shifts = Shift.query.filter_by(date=query_date).all()
     if not shifts:
@@ -2771,7 +3030,8 @@ def api_worker_times():
     shift_ids = [s.id for s in shifts]
     attendances = ShiftAttendance.query.filter(
         ShiftAttendance.shift_id.in_(shift_ids)
-    ).all()
+    ).options(joinedload(ShiftAttendance.user),
+              joinedload(ShiftAttendance.shift)).all()
 
     # One entry per user — earliest attendance_in
     by_user = {}
@@ -2799,7 +3059,7 @@ def api_worker_times():
 @app.route('/api/worker-times/event', methods=['POST'])
 @leader_required
 def api_time_event_create():
-    data = request.get_json()
+    data = json_body()
     user_id    = data.get('user_id')
     shift_id   = data.get('shift_id')
     event_type = data.get('event_type')
@@ -2808,12 +3068,21 @@ def api_time_event_create():
 
     if not all([user_id, shift_id, event_type, ts_str]):
         return jsonify({'error': 'Brakuje wymaganych pól.'}), 400
-    if event_type not in ('break_start', 'break_end', 'work_end'):
+    if event_type not in EVENT_TYPES:
         return jsonify({'error': 'Nieprawidłowy typ zdarzenia.'}), 400
     try:
-        ts = datetime.fromisoformat(ts_str)
-    except ValueError:
+        ts = datetime.fromisoformat(str(ts_str))
+    except (TypeError, ValueError):
         return jsonify({'error': 'Nieprawidłowy format czasu.'}), 400
+
+    # Bez tego bledne id konczylo sie naruszeniem klucza obcego i 500-ka
+    # (na Postgresie transakcja padala w commicie).
+    user_id = require_int(user_id, 'user_id')
+    shift_id = require_int(shift_id, 'shift_id')
+    if db.session.get(User, user_id) is None:
+        return jsonify({'error': f'Nieznany pracownik (id {user_id}).'}), 400
+    if db.session.get(Shift, shift_id) is None:
+        return jsonify({'error': f'Nieznana zmiana (id {shift_id}).'}), 400
 
     event = WorkerTimeEvent(
         user_id=user_id, shift_id=shift_id, event_type=event_type,
@@ -2827,10 +3096,10 @@ def api_time_event_create():
 @app.route('/api/worker-times/event/<int:event_id>', methods=['PUT'])
 @leader_required
 def api_time_event_update(event_id):
-    event = WorkerTimeEvent.query.get_or_404(event_id)
-    data  = request.get_json()
+    event = db.get_or_404(WorkerTimeEvent, event_id)
+    data  = json_body()
     if 'event_type' in data:
-        if data['event_type'] not in ('break_start', 'break_end', 'work_end'):
+        if data['event_type'] not in EVENT_TYPES:
             return jsonify({'error': 'Nieprawidłowy typ.'}), 400
         event.event_type = data['event_type']
     if 'timestamp' in data:
@@ -2849,7 +3118,7 @@ def api_time_event_update(event_id):
 @app.route('/api/worker-times/event/<int:event_id>', methods=['DELETE'])
 @leader_required
 def api_time_event_delete(event_id):
-    event = WorkerTimeEvent.query.get_or_404(event_id)
+    event = db.get_or_404(WorkerTimeEvent, event_id)
     db.session.delete(event)
     db.session.commit()
     return jsonify({'message': 'Usunięto.'}), 200
@@ -2862,7 +3131,7 @@ def api_time_event_delete(event_id):
 @app.route('/forecast')
 @leader_required
 def forecast_page():
-    today = date.today()
+    today = local_today()
     date_from = (today - timedelta(days=7)).isoformat()
     date_to = (today + timedelta(days=14)).isoformat()
     return render_template('forecast.html', date_from=date_from, date_to=date_to)
@@ -2877,12 +3146,12 @@ def api_forecast_chart_data():
     try:
         date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date()
     except (ValueError, TypeError):
-        date_from = date.today() - timedelta(days=7)
+        date_from = local_today() - timedelta(days=7)
 
     try:
         date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date()
     except (ValueError, TypeError):
-        date_to = date.today() + timedelta(days=14)
+        date_to = local_today() + timedelta(days=14)
 
     actual_rows = db.session.query(
         ImportedCarton.ziel_datum,
@@ -2922,18 +3191,20 @@ def api_forecast_chart_data():
 @app.route('/api/forecast/save', methods=['POST'])
 @leader_required
 def api_forecast_save():
-    data = request.get_json()
-    entries = data if isinstance(data, list) else [data]
+    data = request.get_json(silent=True)
+    entries = data if isinstance(data, list) else [data or {}]
 
     saved = 0
     for entry in entries:
-        date_str = (entry.get('date') or '').strip()
+        if not isinstance(entry, dict):
+            continue
+        date_str = str(entry.get('date') or '').strip()
         try:
             d = datetime.strptime(date_str, '%Y-%m-%d').date()
         except (ValueError, TypeError):
             continue
 
-        qty = int(entry.get('quantity') or 0)
+        qty = require_int(entry.get('quantity') or 0, 'quantity')
         notes = (entry.get('notes') or '').strip()
 
         existing = Forecast.query.filter_by(date=d).first()
@@ -2958,11 +3229,6 @@ def api_forecast_save():
 @app.route('/api/forecast/export')
 @leader_required
 def api_forecast_export():
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment
-    from openpyxl.chart import BarChart, Reference
-    from flask import make_response
-    import io as _io
 
     date_from_str = request.args.get('date_from', '')
     date_to_str = request.args.get('date_to', '')
@@ -2970,12 +3236,12 @@ def api_forecast_export():
     try:
         date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date()
     except (ValueError, TypeError):
-        date_from = date.today() - timedelta(days=7)
+        date_from = local_today() - timedelta(days=7)
 
     try:
         date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date()
     except (ValueError, TypeError):
-        date_to = date.today() + timedelta(days=14)
+        date_to = local_today() + timedelta(days=14)
 
     actual_rows = db.session.query(
         ImportedCarton.ziel_datum,
@@ -3001,7 +3267,7 @@ def api_forecast_export():
         days.append(current)
         current += timedelta(days=1)
 
-    wb = Workbook()
+    wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = 'Forecast vs Actual'
 
@@ -3063,7 +3329,7 @@ def api_forecast_export():
 
         ws.add_chart(chart, 'G2')
 
-    buf = _io.BytesIO()
+    buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
 
@@ -3134,15 +3400,22 @@ def seed_data():
         print("[SEED] Default activities created.")
 
     if User.query.filter_by(role='admin').count() == 0:
+        haslo = os.environ.get('ADMIN_PASSWORD', '').strip() or DEFAULT_ADMIN_PASSWORD
         admin = User(
             username='admin',
             display_name='Administrator',
             role='admin'
         )
-        admin.set_password('admin123')
+        admin.set_password(haslo)
         db.session.add(admin)
         db.session.commit()
-        print("[SEED] Admin user created (login: admin / password: admin123)")
+        if haslo == DEFAULT_ADMIN_PASSWORD:
+            print("[SEED] Admin user created (login: admin / password: "
+                  f"{DEFAULT_ADMIN_PASSWORD})")
+            print("[SEED] !!! ZMIEN TO HASLO PRZY PIERWSZYM LOGOWANIU (/profile) "
+                  "albo ustaw ADMIN_PASSWORD przed pierwszym startem.")
+        else:
+            print("[SEED] Admin user created (login: admin / haslo z ADMIN_PASSWORD)")
 
     if CountryMapping.query.count() == 0:
         for country, innenauftrag in DEFAULT_COUNTRY_MAPPINGS:
@@ -3169,7 +3442,6 @@ def migrate_columns():
         migrations = [] if not is_sqlite else [
             ("imported_carton", "processed_by",   "INTEGER REFERENCES user(id)"),
             ("imported_carton", "processed_at",   "DATETIME"),
-            ("general_stat",    "double_rate",     "BOOLEAN DEFAULT 0"),
             ("general_stat",    "double_rate_category_data", "TEXT DEFAULT '{}'"),
             ("imported_carton", "double_rate",     "BOOLEAN DEFAULT 0"),
             ("imported_carton", "scan_start_at",  "DATETIME"),
@@ -3206,6 +3478,33 @@ def migrate_columns():
                 conn.rollback()
 
 
+@contextmanager
+def _sqlite_init_lock():
+    """Serializuje inicjalizacje schematu miedzy workerami gunicorna.
+
+    Odpowiednik pg_advisory_lock dla SQLite. Gdyby flocka nie dalo sie zalozyc
+    (brak fcntl, egzotyczny filesystem), lecimy dalej bez blokady — gorzej niz
+    z nia, ale nie gorzej niz przed ta zmiana.
+    """
+    if fcntl is None:
+        yield
+        return
+    try:
+        os.makedirs(app.instance_path, exist_ok=True)
+        uchwyt = open(os.path.join(app.instance_path, '.init.lock'), 'w')
+    except OSError:
+        yield
+        return
+    try:
+        fcntl.flock(uchwyt, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(uchwyt, fcntl.LOCK_UN)
+        finally:
+            uchwyt.close()
+
+
 def init_db():
     """Create the schema, patch columns and seed — safe to run from every worker.
 
@@ -3214,12 +3513,19 @@ def init_db():
     pg_class ("worker failed to boot"). A Postgres advisory lock serializes them:
     the winner does the DDL, the rest wait and then find nothing left to do
     (create_all and seed_data are both no-ops on an initialized database).
-    SQLite needs no lock — the writer lock plus busy_timeout already serialize it.
+    SQLite ma DOKLADNIE ten sam problem, wbrew temu, co bylo tu wczesniej
+    napisane: przy pustej bazie dwa workery wchodza rownolegle w create_all()
+    i przegrany dostaje "table user already exists" -> "Worker failed to boot"
+    i gunicorn ubija caly kontener. Writer lock tego nie ratuje, bo kazde CREATE
+    TABLE to osobna, poprawnie zakonczona transakcja — wyscig jest miedzy
+    sprawdzeniem "czy tabela istnieje" a jej utworzeniem. Zamiast advisory locka
+    uzywamy flocka na pliku w instance/.
     """
     if db.engine.dialect.name != 'postgresql':
-        db.create_all()
-        migrate_columns()
-        seed_data()
+        with _sqlite_init_lock():
+            db.create_all()
+            migrate_columns()
+            seed_data()
         return
 
     lock_id = 5001  # dowolna stala — byle ta sama we wszystkich workerach
@@ -3239,4 +3545,11 @@ with app.app_context():
     init_db()
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    # Debugger Werkzeuga pozwala wykonac dowolny kod, wiec domyslnie sluchamy
+    # tylko na loopbacku. Dostep z LAN-u w dev: HOST=0.0.0.0 python app.py
+    # (produkcja i tak chodzi na gunicornie z Dockerfile, nie tedy).
+    app.run(
+        debug=os.environ.get('FLASK_DEBUG', '1') == '1',
+        host=os.environ.get('HOST', '127.0.0.1'),
+        port=int(os.environ.get('PORT', 5001)),
+    )

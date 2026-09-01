@@ -45,6 +45,9 @@ backupy) opisuje **`docs/DEPLOY.md`**.
 |-------|-------|------|
 | admin | admin123 | admin |
 
+> Hasło konta `admin` ustawia się zmienną `ADMIN_PASSWORD` **przed pierwszym startem**
+> (patrz `docs/DEPLOY.md`). Bez niej seed używa `admin123` i wypisuje ostrzeżenie w logu.
+
 > ⚠️ Zmień hasło admina po pierwszym logowaniu!
 
 ## Struktura projektu

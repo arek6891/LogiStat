@@ -33,6 +33,24 @@
 
 ## 🟡 Planowane usprawnienia
 
+- [x] **Testy** — `tests/` (pytest, 178 testów), nacisk na ścieżki rozliczeniowe
+  - `pip install -r requirements-dev.txt && pytest`
+  - Ten sam zestaw na Postgresie: `LOGISTAT_TEST_DATABASE_URL=... pytest`
+  - Zestaw przechodzi pod `TZ=UTC`, `Europe/Warsaw` i `America/New_York`
+
+- [ ] **CSRF na formularzach** — `SameSite=Lax` zamyka najgorszy przypadek
+      (multipartowy `/api/import-csv`), ale `/login` i `/profile` to nadal
+      zwykłe formularze bez tokenu. Do rozważenia Flask-WTF, jeśli aplikacja
+      zostanie na stałe wystawiona publicznie.
+
+- [ ] **`docs/postgres_schema.sql`** — plik jest nieaktualny i mylący
+      (JSONB psuje `json.loads`, `NOW()` psuje naive UTC). Albo usunąć,
+      albo wygenerować na nowo z `db.create_all()`.
+
+- [ ] **Rozbicie `app.py`** (~3200 linii) — modele / API / widoki do osobnych
+      modułów. Teraz jest to bezpieczniejsze niż wcześniej, bo testy pokrywają
+      ścieżki rozliczeniowe i uprawnienia.
+
 - [ ] **Touch/tablet support** — drag & drop na tablecie wymaga touch events
   - Rozwiązanie: dodać `touchstart`, `touchmove`, `touchend` listenery
   - Albo użyć biblioteki jak Sortable.js / interact.js

@@ -48,7 +48,7 @@ git archive --format=tar HEAD | ssh -i ~/.ssh/id_ed25519 optmtst_user@10.153.1.3
 ssh -i ~/.ssh/id_ed25519 optmtst_user@10.153.1.31
   cd ~/logistat-test
   cp docker-compose.override.example.yml docker-compose.override.yml
-  vi docker-compose.override.yml        # SECRET_KEY, POSTGRES_PASSWORD, DATABASE_URL
+  vi docker-compose.override.yml        # SECRET_KEY, ADMIN_PASSWORD, POSTGRES_PASSWORD, DATABASE_URL
   chmod 600 docker-compose.override.yml
 
 # 4. start
@@ -60,8 +60,20 @@ ssh -i ~/.ssh/id_ed25519 optmtst_user@10.153.1.31
   ( crontab -l 2>/dev/null; echo "30 22 * * * /home/optmtst_user/logistat-test/scripts/backup-logistat.sh >> /home/optmtst_user/logistat-test/backups/backup.log 2>&1" ) | crontab -
 ```
 
-Hasło admina po pierwszym starcie to `admin / admin123` z seeda —
-**zmienić natychmiast** na `/profile`.
+Hasło admina: ustaw `ADMIN_PASSWORD` w override **przed pierwszym startem**.
+Bez tej zmiennej seed zakłada `admin / admin123` i wypisuje ostrzeżenie w logu —
+wtedy zmienić natychmiast na `/profile`.
+
+### Zmienne środowiskowe
+
+| Zmienna | Wymagana | Domyślnie | Opis |
+|---|---|---|---|
+| `SECRET_KEY` | **tak** (gdy jest `DATABASE_URL`) | — | Klucz sesji. Bez niego aplikacja **nie wystartuje** w trybie serwerowym. Awaryjny bypass: `LOGISTAT_ALLOW_DEV_SECRET=1`. |
+| `DATABASE_URL` | nie | SQLite w `instance/` | `postgresql+psycopg2://…`. Jego obecność oznacza tryb serwerowy. |
+| `ADMIN_PASSWORD` | nie | `admin123` | Hasło konta `admin` przy **pierwszym** starcie. |
+| `TZ` | nie | UTC | Nie wpływa już na liczenie doby — od `local_day_bounds()` doba jest zawsze liczona po `Europe/Warsaw`. |
+| `SESSION_COOKIE_SECURE` | nie | off | `1` tylko gdy dostęp wyłącznie po HTTPS. Przy HTTP z LAN-u zepsuje logowanie. |
+| `MAX_UPLOAD_MB` | nie | `32` | Limit rozmiaru importu CSV/Excel. Powyżej → `413` z JSON-em. |
 
 ## Aktualizacja kodu
 

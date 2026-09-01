@@ -230,7 +230,6 @@ Parametry query: `activity_id`, `date_from`, `date_to`
 
 | Method | URL | Opis |
 |--------|-----|------|
-| POST | `/api/scan-employee` | Weryfikacja kodu pracownika (zwraca dane pracownika) |
 | GET | `/api/package-lookup?barcode=` | **Podgląd (read-only)** statusu paczki: `scanned`, `scanned_by`, `finished` + dane (land, stueckzahl, kategorie, ziel_datum, uebergabe_nr, double_rate, czasy) |
 | PUT | `/api/packages/<id>/assign` | Przepisanie paczki do pracownika `{ "user_id": 5 }` (lub `null`) |
 | PUT | `/api/packages/<id>/double-rate` | Oznaczenie paczki jako double rate `{ "double_rate": true }` |
