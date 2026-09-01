@@ -9,8 +9,9 @@ from functools import wraps
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    flash, jsonify, session, g, has_request_context
+    flash, jsonify, session, g, has_request_context, abort
 )
+from werkzeug.exceptions import HTTPException
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import (
     LoginManager, UserMixin, login_user, login_required,
@@ -76,6 +77,18 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE') == '1'
 
 db = SQLAlchemy(app)
+
+
+@app.errorhandler(HTTPException)
+def _blad_http(e):
+    """Na /api/ zwracaj JSON — front wszedzie czyta `data.error`.
+
+    Domyslnie Flask oddaje strone HTML, wiec `await r.json()` w JS wybuchalo i
+    uzytkownik widzial "Blad polaczenia" zamiast tresci bledu.
+    """
+    if request.path.startswith('/api/'):
+        return jsonify({'error': e.description}), e.code
+    return e
 
 
 @app.errorhandler(413)
@@ -560,7 +573,7 @@ class WorkerTimeEvent(db.Model):
     id           = db.Column(db.Integer, primary_key=True)
     user_id      = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     shift_id     = db.Column(db.Integer, db.ForeignKey('shift.id'), nullable=False)
-    event_type   = db.Column(db.String(20), nullable=False)  # break_start | break_end | work_end
+    event_type   = db.Column(db.String(20), nullable=False)  # patrz EVENT_TYPES
     timestamp    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     recorded_by  = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     is_manual    = db.Column(db.Boolean, default=False)
@@ -588,6 +601,9 @@ class WorkerTimeEvent(db.Model):
             'note':           self.note or '',
             'recorded_by_name': self.recorder.display_name if self.recorder else None,
         }
+
+
+EVENT_TYPES = ('break_start', 'break_end', 'work_end')
 
 
 class AppSetting(db.Model):
@@ -688,6 +704,43 @@ def admin_required(f):
 # ══════════════════════════════════════════════════════════════════════════════
 #  HELPER: get or create shift
 # ══════════════════════════════════════════════════════════════════════════════
+
+def json_body():
+    """Cialo JSON jako dict. Brak ciala albo zly Content-Type -> {}, zeby
+    walidacja pol dala czytelne 400 zamiast 415/500."""
+    return request.get_json(silent=True) or {}
+
+
+def parse_shift_number(value, default=1):
+    """Numer zmiany: 1 albo 2. Cokolwiek innego -> `default`."""
+    try:
+        numer = int(value)
+    except (TypeError, ValueError):
+        return default
+    return numer if numer in (1, 2) else default
+
+
+def parse_date(value, pole='date'):
+    """Data ISO z requestu. Puste -> dzis lokalnie, zle sformatowana -> 400.
+
+    Dotad `date.fromisoformat()` lecialo bez zabezpieczenia i literowka w URL-u
+    konczyla sie 500-ka w logach.
+    """
+    if not value:
+        return local_today()
+    try:
+        return date.fromisoformat(str(value).strip())
+    except ValueError:
+        abort(400, f'Nieprawidłowa data w "{pole}" (oczekiwano YYYY-MM-DD).')
+
+
+def require_int(value, pole):
+    """Liczba calkowita albo 400 z nazwa pola."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        abort(400, f'Pole "{pole}" musi być liczbą całkowitą.')
+
 
 def get_or_create_shift(shift_date, shift_number):
     """Get existing shift or create new one."""
@@ -840,7 +893,7 @@ def admin_settings():
 @app.route('/api/settings', methods=['PUT'])
 @admin_required
 def api_settings_update():
-    data = request.get_json() or {}
+    data = json_body()
     if 'break_threshold_minutes' in data:
         try:
             val = int(data['break_threshold_minutes'])
@@ -1157,10 +1210,10 @@ def general_stats_page():
 @app.route('/api/scan', methods=['POST'])
 @leader_required
 def api_scan():
-    data = request.get_json()
-    barcode = data.get('barcode', '').strip()
-    shift_number = data.get('shift_number', 1)
-    scan_date = data.get('date', local_today().isoformat())
+    data = json_body()
+    barcode = str(data.get('barcode') or '').strip()
+    shift_number = parse_shift_number(data.get('shift_number', 1))
+    shift_date = parse_date(data.get('date'))
 
     if not barcode:
         return jsonify({'error': 'Brak kodu kreskowego.'}), 400
@@ -1173,7 +1226,6 @@ def api_scan():
         }), 404
 
     # Get or create shift
-    shift_date = date.fromisoformat(scan_date)
     shift = get_or_create_shift(shift_date, shift_number)
 
     # Check if already scanned
@@ -1212,9 +1264,9 @@ def api_unscan(attendance_id):
 @leader_required
 def api_shift_attendances():
     shift_date = request.args.get('date', local_today().isoformat())
-    shift_number = int(request.args.get('shift_number', 1))
+    shift_number = parse_shift_number(request.args.get('shift_number', 1))
     shift = Shift.query.filter_by(
-        date=date.fromisoformat(shift_date),
+        date=parse_date(shift_date),
         shift_number=shift_number
     ).first()
     if not shift:
@@ -1237,10 +1289,10 @@ def api_shift_attendances():
 def api_assignment_data():
     """Get all assignment data for a given date and shift."""
     shift_date = request.args.get('date', local_today().isoformat())
-    shift_number = int(request.args.get('shift_number', 1))
+    shift_number = parse_shift_number(request.args.get('shift_number', 1))
 
     shift = Shift.query.filter_by(
-        date=date.fromisoformat(shift_date),
+        date=parse_date(shift_date),
         shift_number=shift_number
     ).first()
 
@@ -1281,10 +1333,10 @@ def api_assignment_data():
 def api_assignment_suggestions():
     """Generate AI-based assignment suggestions based on user statistics."""
     shift_date = request.args.get('date', local_today().isoformat())
-    shift_number = int(request.args.get('shift_number', 1))
+    shift_number = parse_shift_number(request.args.get('shift_number', 1))
 
     shift = Shift.query.filter_by(
-        date=date.fromisoformat(shift_date),
+        date=parse_date(shift_date),
         shift_number=shift_number
     ).first()
     if not shift:
@@ -1299,7 +1351,7 @@ def api_assignment_suggestions():
         .order_by(Activity.sort_order).all()
 
     # Calculate average quantity per user per activity (last 30 days)
-    thirty_days_ago = date.fromisoformat(shift_date) - timedelta(days=30)
+    thirty_days_ago = parse_date(shift_date) - timedelta(days=30)
     stats = db.session.query(
         DailyStat.user_id,
         DailyStat.activity_id,
@@ -1369,25 +1421,41 @@ def api_assignment_suggestions():
 @leader_required
 def api_assignment_save():
     """Save drag & drop assignments."""
-    data = request.get_json()
-    shift_date = data.get('date', local_today().isoformat())
-    shift_number = data.get('shift_number', 1)
-    assignments = data.get('assignments', [])
+    data = json_body()
+    shift_number = parse_shift_number(data.get('shift_number', 1))
+    assignments = data.get('assignments') or []
+    if not isinstance(assignments, list):
+        return jsonify({'error': 'Pole "assignments" musi być listą.'}), 400
 
-    shift = get_or_create_shift(date.fromisoformat(shift_date), shift_number)
+    shift = get_or_create_shift(parse_date(data.get('date')), shift_number)
+
+    # Sprawdz FK przed czyszczeniem, zeby bledne cialo nie wyczyscilo przydzialu
+    # i nie zostawilo zmiany pustej.
+    znani = {u.id for u in User.query.with_entities(User.id).all()}
+    czynnosci = {a.id for a in Activity.query.with_entities(Activity.id).all()}
+    nowe = []
+    for a in assignments:
+        if not isinstance(a, dict):
+            return jsonify({'error': 'Każde przydzielenie musi być obiektem.'}), 400
+        user_id = require_int(a.get('user_id'), 'user_id')
+        activity_id = require_int(a.get('activity_id'), 'activity_id')
+        if user_id not in znani:
+            return jsonify({'error': f'Nieznany pracownik (id {user_id}).'}), 400
+        if activity_id not in czynnosci:
+            return jsonify({'error': f'Nieznana czynność (id {activity_id}).'}), 400
+        nowe.append((user_id, activity_id, bool(a.get('is_suggestion', False))))
 
     # Clear existing assignments for this shift
     ActivityAssignment.query.filter_by(shift_id=shift.id).delete()
 
-    for a in assignments:
-        assignment = ActivityAssignment(
+    for user_id, activity_id, is_suggestion in nowe:
+        db.session.add(ActivityAssignment(
             shift_id=shift.id,
-            user_id=a['user_id'],
-            activity_id=a['activity_id'],
-            is_suggestion=a.get('is_suggestion', False),
+            user_id=user_id,
+            activity_id=activity_id,
+            is_suggestion=is_suggestion,
             assigned_by=current_user.id
-        )
-        db.session.add(assignment)
+        ))
 
     db.session.commit()
     return jsonify({'message': 'Przydzielenie zapisane.'}), 200
@@ -1402,10 +1470,10 @@ def api_assignment_save():
 def api_daily_stats_get():
     """Get stats for a given date and shift."""
     shift_date = request.args.get('date', local_today().isoformat())
-    shift_number = int(request.args.get('shift_number', 1))
+    shift_number = parse_shift_number(request.args.get('shift_number', 1))
 
     shift = Shift.query.filter_by(
-        date=date.fromisoformat(shift_date),
+        date=parse_date(shift_date),
         shift_number=shift_number
     ).first()
     if not shift:
@@ -1429,35 +1497,41 @@ def api_daily_stats_get():
 @leader_required
 def api_daily_stats_save():
     """Save or update daily statistics."""
-    data = request.get_json()
-    shift_date = data.get('date', local_today().isoformat())
-    shift_number = data.get('shift_number', 1)
-    entries = data.get('entries', [])
+    data = json_body()
+    shift_number = parse_shift_number(data.get('shift_number', 1))
+    entries = data.get('entries') or []
+    if not isinstance(entries, list):
+        return jsonify({'error': 'Pole "entries" musi być listą.'}), 400
 
-    shift = get_or_create_shift(date.fromisoformat(shift_date), shift_number)
+    shift = get_or_create_shift(parse_date(data.get('date')), shift_number)
 
     for entry in entries:
+        if not isinstance(entry, dict):
+            return jsonify({'error': 'Każdy wpis musi być obiektem.'}), 400
+        user_id = require_int(entry.get('user_id'), 'user_id')
+        activity_id = require_int(entry.get('activity_id'), 'activity_id')
+        quantity = require_int(entry.get('quantity', 0) or 0, 'quantity')
+
         existing = DailyStat.query.filter_by(
             shift_id=shift.id,
-            user_id=entry['user_id'],
-            activity_id=entry['activity_id']
+            user_id=user_id,
+            activity_id=activity_id
         ).first()
 
         if existing:
-            existing.quantity = entry.get('quantity', 0)
+            existing.quantity = quantity
             existing.note = entry.get('note', '')
             existing.modified_by = current_user.id
             existing.modified_at = datetime.utcnow()
         else:
-            stat = DailyStat(
+            db.session.add(DailyStat(
                 shift_id=shift.id,
-                user_id=entry['user_id'],
-                activity_id=entry['activity_id'],
-                quantity=entry.get('quantity', 0),
+                user_id=user_id,
+                activity_id=activity_id,
+                quantity=quantity,
                 note=entry.get('note', ''),
                 entered_by=current_user.id
-            )
-            db.session.add(stat)
+            ))
 
     db.session.commit()
     return jsonify({'message': 'Statystyki zapisane.'}), 200
@@ -1468,7 +1542,7 @@ def api_daily_stats_save():
 def api_daily_stat_update(stat_id):
     """Update a single daily stat (mistake correction)."""
     stat = DailyStat.query.get_or_404(stat_id)
-    data = request.get_json()
+    data = json_body()
 
     stat.quantity = data.get('quantity', stat.quantity)
     stat.note = data.get('note', stat.note)
@@ -1489,8 +1563,10 @@ def api_stats_user(user_id):
     """Get per-user statistics, grouped by day and month."""
     user = User.query.get_or_404(user_id)
     activity_id = request.args.get('activity_id', type=int)
-    date_from = request.args.get('date_from')
-    date_to = request.args.get('date_to')
+    date_from = parse_date(request.args.get('date_from'), 'date_from') \
+        if request.args.get('date_from') else None
+    date_to = parse_date(request.args.get('date_to'), 'date_to') \
+        if request.args.get('date_to') else None
 
     query = db.session.query(
         DailyStat, Shift
@@ -1499,9 +1575,9 @@ def api_stats_user(user_id):
     if activity_id:
         query = query.filter(DailyStat.activity_id == activity_id)
     if date_from:
-        query = query.filter(Shift.date >= date.fromisoformat(date_from))
+        query = query.filter(Shift.date >= date_from)
     if date_to:
-        query = query.filter(Shift.date <= date.fromisoformat(date_to))
+        query = query.filter(Shift.date <= date_to)
 
     results = query.order_by(Shift.date.desc()).all()
 
@@ -1545,11 +1621,9 @@ def api_stats_user(user_id):
             ImportedCarton.scan_end_at.isnot(None),
         )
         if date_from:
-            pq = pq.filter(ImportedCarton.scan_end_at >= local_day_bounds(
-                date.fromisoformat(date_from))[0])
+            pq = pq.filter(ImportedCarton.scan_end_at >= local_day_bounds(date_from)[0])
         if date_to:
-            pq = pq.filter(ImportedCarton.scan_end_at < local_day_bounds(
-                date.fromisoformat(date_to))[1])
+            pq = pq.filter(ImportedCarton.scan_end_at < local_day_bounds(date_to)[1])
 
         per_day = {}
         for scan_end_at, stueckzahl in pq.all():
@@ -1619,7 +1693,7 @@ def api_activities():
 @app.route('/api/activities', methods=['POST'])
 @admin_required
 def api_activity_create():
-    data = request.get_json()
+    data = json_body()
     name = data.get('name', '').strip()
     if not name:
         return jsonify({'error': 'Nazwa wymagana.'}), 400
@@ -1635,10 +1709,10 @@ def api_activity_create():
 @admin_required
 def api_activity_update(activity_id):
     activity = Activity.query.get_or_404(activity_id)
-    data = request.get_json()
+    data = json_body()
 
     if 'name' in data:
-        activity.name = data['name'].strip()
+        activity.name = str(data['name'] or '').strip()
     if 'sort_order' in data:
         activity.sort_order = data['sort_order']
     if 'is_active' in data:
@@ -1660,7 +1734,7 @@ def api_activity_delete(activity_id):
 @app.route('/api/activities/reorder', methods=['POST'])
 @admin_required
 def api_activities_reorder():
-    data = request.get_json()
+    data = json_body()
     order = data.get('order', [])
     for i, activity_id in enumerate(order):
         act = Activity.query.get(activity_id)
@@ -1684,7 +1758,7 @@ def api_users():
 @app.route('/api/users', methods=['POST'])
 @leader_required
 def api_user_create():
-    data = request.get_json()
+    data = json_body()
     username = data.get('username', '').strip()
     display_name = data.get('display_name', '').strip()
     barcode_id = data.get('barcode_id', '').strip()
@@ -1728,7 +1802,7 @@ def api_user_create():
 @leader_required
 def api_user_update(user_id):
     user = User.query.get_or_404(user_id)
-    data = request.get_json() or {}
+    data = json_body()
 
     # Lider edytuje wylacznie operatorow i tylko ich dane opisowe. Bez tego
     # moglby podniesc sobie role albo przestawic haslo adminowi i wejsc na jego
@@ -1756,9 +1830,9 @@ def api_user_update(user_id):
         }), 400
 
     if 'display_name' in data:
-        user.display_name = data['display_name'].strip()
+        user.display_name = str(data['display_name'] or '').strip()
     if 'barcode_id' in data:
-        new_barcode = data['barcode_id'].strip()
+        new_barcode = str(data['barcode_id'] or '').strip()
         if new_barcode:
             existing = User.query.filter(
                 User.barcode_id == new_barcode, User.id != user_id
@@ -1813,7 +1887,7 @@ def api_country_mappings():
 @app.route('/api/country-mappings', methods=['POST'])
 @admin_required
 def api_country_mapping_create():
-    data = request.get_json()
+    data = json_body()
     country = data.get('country', '').strip()
     innenauftrag = data.get('innenauftrag', '').strip()
     if not country or not innenauftrag:
@@ -1829,11 +1903,11 @@ def api_country_mapping_create():
 @admin_required
 def api_country_mapping_update(mapping_id):
     mapping = CountryMapping.query.get_or_404(mapping_id)
-    data = request.get_json()
+    data = json_body()
     if 'country' in data:
-        mapping.country = data['country'].strip()
+        mapping.country = str(data['country'] or '').strip()
     if 'innenauftrag' in data:
-        mapping.innenauftrag = data['innenauftrag'].strip()
+        mapping.innenauftrag = str(data['innenauftrag'] or '').strip()
     db.session.commit()
     return jsonify(mapping.to_dict()), 200
 
@@ -2175,7 +2249,7 @@ def api_general_stats():
 @admin_required
 def api_general_stat_update(stat_id):
     stat = GeneralStat.query.get_or_404(stat_id)
-    data = request.get_json()
+    data = json_body()
 
     if 'category_data' in data:
         stat.set_category_data(data['category_data'])
@@ -2439,7 +2513,7 @@ def api_package_create():
     """
     from sqlalchemy.exc import IntegrityError
 
-    data = request.get_json() or {}
+    data = json_body()
     barcode = (data.get('barcode') or '').strip()
     land = (data.get('land') or '').strip()
     kategorie = (data.get('kategorie') or '').strip()
@@ -2567,7 +2641,7 @@ def api_package_update(carton_id):
     if not carton.added_manually:
         return jsonify({'error': 'Edytować można tylko paczki dodane ręcznie.'}), 403
 
-    data = request.get_json() or {}
+    data = json_body()
     barcode = (data.get('barcode') or '').strip()
     land = (data.get('land') or '').strip()
     kategorie = (data.get('kategorie') or '').strip()
@@ -2635,7 +2709,7 @@ def api_package_update(carton_id):
 @leader_required
 def api_package_reassign(carton_id):
     carton = ImportedCarton.query.get_or_404(carton_id)
-    data = request.get_json()
+    data = json_body()
     user_id = data.get('user_id')
     if user_id is None:
         carton.processed_by = None
@@ -2652,7 +2726,7 @@ def api_package_reassign(carton_id):
 @leader_required
 def api_package_double_rate(carton_id):
     carton = ImportedCarton.query.get_or_404(carton_id)
-    data = request.get_json() or {}
+    data = json_body()
     carton.double_rate = bool(data.get('double_rate'))
     db.session.commit()
     return jsonify({'carton': carton.to_dict()}), 200
@@ -2661,7 +2735,7 @@ def api_package_double_rate(carton_id):
 @app.route('/api/cost-mapping/<int:year>/<int:month>', methods=['PUT', 'POST'])
 @admin_required
 def api_cost_mapping_save(year, month):
-    data = request.get_json()
+    data = json_body()
     rates = data.get('rates', {})
 
     mapping = CostMapping.query.filter_by(year=year, month=month).first()
@@ -2695,7 +2769,7 @@ def scan_paczki():
 @app.route('/api/package-time/start', methods=['POST'])
 @leader_required
 def api_package_time_start():
-    data = request.get_json()
+    data = json_body()
     employee_barcode = (data.get('employee_barcode') or '').strip()
     package_barcode = (data.get('package_barcode') or '').strip()
 
@@ -2742,7 +2816,7 @@ def api_package_time_start():
 @app.route('/api/package-time/end', methods=['POST'])
 @leader_required
 def api_package_time_end():
-    data = request.get_json()
+    data = json_body()
     employee_barcode = (data.get('employee_barcode') or '').strip()
     package_barcode = (data.get('package_barcode') or '').strip()
 
@@ -2846,7 +2920,7 @@ def worker_times():
 @app.route('/api/time/scan', methods=['POST'])
 @leader_required
 def api_time_scan():
-    data = request.get_json()
+    data = json_body()
     barcode = (data.get('barcode') or '').strip()
     mode    = data.get('mode', 'break')   # 'break' | 'work_end'
 
@@ -2961,7 +3035,7 @@ def api_worker_times():
 @app.route('/api/worker-times/event', methods=['POST'])
 @leader_required
 def api_time_event_create():
-    data = request.get_json()
+    data = json_body()
     user_id    = data.get('user_id')
     shift_id   = data.get('shift_id')
     event_type = data.get('event_type')
@@ -2970,12 +3044,21 @@ def api_time_event_create():
 
     if not all([user_id, shift_id, event_type, ts_str]):
         return jsonify({'error': 'Brakuje wymaganych pól.'}), 400
-    if event_type not in ('break_start', 'break_end', 'work_end'):
+    if event_type not in EVENT_TYPES:
         return jsonify({'error': 'Nieprawidłowy typ zdarzenia.'}), 400
     try:
-        ts = datetime.fromisoformat(ts_str)
-    except ValueError:
+        ts = datetime.fromisoformat(str(ts_str))
+    except (TypeError, ValueError):
         return jsonify({'error': 'Nieprawidłowy format czasu.'}), 400
+
+    # Bez tego bledne id konczylo sie naruszeniem klucza obcego i 500-ka
+    # (na Postgresie transakcja padala w commicie).
+    user_id = require_int(user_id, 'user_id')
+    shift_id = require_int(shift_id, 'shift_id')
+    if db.session.get(User, user_id) is None:
+        return jsonify({'error': f'Nieznany pracownik (id {user_id}).'}), 400
+    if db.session.get(Shift, shift_id) is None:
+        return jsonify({'error': f'Nieznana zmiana (id {shift_id}).'}), 400
 
     event = WorkerTimeEvent(
         user_id=user_id, shift_id=shift_id, event_type=event_type,
@@ -2990,9 +3073,9 @@ def api_time_event_create():
 @leader_required
 def api_time_event_update(event_id):
     event = WorkerTimeEvent.query.get_or_404(event_id)
-    data  = request.get_json()
+    data  = json_body()
     if 'event_type' in data:
-        if data['event_type'] not in ('break_start', 'break_end', 'work_end'):
+        if data['event_type'] not in EVENT_TYPES:
             return jsonify({'error': 'Nieprawidłowy typ.'}), 400
         event.event_type = data['event_type']
     if 'timestamp' in data:
@@ -3084,18 +3167,20 @@ def api_forecast_chart_data():
 @app.route('/api/forecast/save', methods=['POST'])
 @leader_required
 def api_forecast_save():
-    data = request.get_json()
-    entries = data if isinstance(data, list) else [data]
+    data = request.get_json(silent=True)
+    entries = data if isinstance(data, list) else [data or {}]
 
     saved = 0
     for entry in entries:
-        date_str = (entry.get('date') or '').strip()
+        if not isinstance(entry, dict):
+            continue
+        date_str = str(entry.get('date') or '').strip()
         try:
             d = datetime.strptime(date_str, '%Y-%m-%d').date()
         except (ValueError, TypeError):
             continue
 
-        qty = int(entry.get('quantity') or 0)
+        qty = require_int(entry.get('quantity') or 0, 'quantity')
         notes = (entry.get('notes') or '').strip()
 
         existing = Forecast.query.filter_by(date=d).first()
