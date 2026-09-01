@@ -9,7 +9,7 @@ from functools import wraps
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    flash, jsonify, session
+    flash, jsonify, session, g, has_request_context
 )
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import (
@@ -19,6 +19,7 @@ from flask_login import (
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import func, and_, event
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import joinedload
 
 # ── App Config ───────────────────────────────────────────────────────────────
 
@@ -477,15 +478,14 @@ class GeneralStat(db.Model):
         self.double_rate_category_data = json.dumps(data)
 
     def to_dict(self):
+        """Serializacja linii razem z kosztem policzonym ze stawek jej miesiaca.
+
+        Front nie zapisuje kosztow — sa wyliczane z `CostMapping` przy kazdym
+        odczycie. Stawki idą przez `rates_for()` (cache na zadanie), bo inaczej
+        kazdy wiersz odpalalby wlasne SELECT-y (N+1 na calej liscie).
+        """
         cd = self.get_category_data()
-        
-        # When serializing, we also calculate the actual cost based on mapped rates for that month/year
-        ym = (self.loading_date.year, self.loading_date.month)
-        # We need the global rates dictionary or fetch it. To be efficient, we can fetch the mapping here
-        # or rely on the frontend multiplying. The prompt said backend should trust the relational calculation,
-        # but the frontend doesn't save costs. We will fetch the mapping for this month.
-        mapping = CostMapping.query.filter_by(year=ym[0], month=ym[1]).first()
-        rates = mapping.get_rates_data() if mapping else {}
+        rates = rates_for(self.loading_date.year, self.loading_date.month)
 
         total_cost = 0.0
         for cat, data in cd.items():
@@ -536,6 +536,24 @@ class CostMapping(db.Model):
             'month': self.month,
             'rates_data': self.get_rates_data()
         }
+
+
+def rates_for(year, month):
+    """Stawki kategorii na dany miesiac, z cache na jedno zadanie.
+
+    `GeneralStat.to_dict()` jest wolane per wiersz, a stawek jest kilka na rok —
+    bez cache lista statystyk robila jedno SELECT na wiersz.
+    """
+    klucz = (year, month)
+    cache = g.get('_rates_cache') if has_request_context() else None
+    if cache is None:
+        cache = {}
+        if has_request_context():
+            g._rates_cache = cache
+    if klucz not in cache:
+        mapping = CostMapping.query.filter_by(year=year, month=month).first()
+        cache[klucz] = mapping.get_rates_data() if mapping else {}
+    return cache[klucz]
 
 
 class WorkerTimeEvent(db.Model):
@@ -1202,6 +1220,7 @@ def api_shift_attendances():
     if not shift:
         return jsonify({'attendances': [], 'shift': None}), 200
     attendances = ShiftAttendance.query.filter_by(shift_id=shift.id)\
+        .options(joinedload(ShiftAttendance.user))\
         .order_by(ShiftAttendance.scanned_at.desc()).all()
     return jsonify({
         'attendances': [a.to_dict() for a in attendances],
@@ -1236,8 +1255,13 @@ def api_assignment_data():
             'activities': [a.to_dict() for a in activities]
         }), 200
 
-    attendances = ShiftAttendance.query.filter_by(shift_id=shift.id).all()
-    assignments = ActivityAssignment.query.filter_by(shift_id=shift.id).all()
+    # joinedload: to_dict() kazdego wiersza siega po user/activity — bez tego
+    # lista robila SELECT na kazdego pracownika i kazda czynnosc osobno.
+    attendances = ShiftAttendance.query.filter_by(shift_id=shift.id)\
+        .options(joinedload(ShiftAttendance.user)).all()
+    assignments = ActivityAssignment.query.filter_by(shift_id=shift.id)\
+        .options(joinedload(ActivityAssignment.user),
+                 joinedload(ActivityAssignment.activity)).all()
 
     # Build set of already-assigned user IDs
     assigned_user_ids = {a.user_id for a in assignments}
@@ -1388,8 +1412,11 @@ def api_daily_stats_get():
         return jsonify({'stats': [], 'shift': None}), 200
 
     # Get assignments for this shift
-    assignments = ActivityAssignment.query.filter_by(shift_id=shift.id).all()
-    stats = DailyStat.query.filter_by(shift_id=shift.id).all()
+    assignments = ActivityAssignment.query.filter_by(shift_id=shift.id)\
+        .options(joinedload(ActivityAssignment.user),
+                 joinedload(ActivityAssignment.activity)).all()
+    stats = DailyStat.query.filter_by(shift_id=shift.id)\
+        .options(joinedload(DailyStat.user), joinedload(DailyStat.activity)).all()
 
     return jsonify({
         'shift': shift.to_dict(),
@@ -1917,6 +1944,24 @@ def _cell_to_str(val):
     return str(val).strip()
 
 
+# Wiersze importu przetwarzamy partiami: dedup barcode'ow idzie jednym
+# zapytaniem `IN (...)` na partie, a nie jednym na wiersz. Rozmiar ograniczony,
+# zeby duzy plik nie wchodzil caly do pamieci.
+IMPORT_CHUNK = 500
+
+
+def _partiami(iterable, rozmiar):
+    """Dziel iterowalne (moze byc generator) na listy po `rozmiar` elementow."""
+    partia = []
+    for element in iterable:
+        partia.append(element)
+        if len(partia) >= rozmiar:
+            yield partia
+            partia = []
+    if partia:
+        yield partia
+
+
 def process_import_rows(rows):
     """Shared import pipeline for CSV and Excel.
 
@@ -1932,51 +1977,70 @@ def process_import_rows(rows):
     skipped_barcodes = []
     aggregation = {}  # key: (list_id, land, date_str) -> sum of stueckzahl
 
-    for row in rows:
-        barcode = _cell_to_barcode(row.get('barcode'))
-        land = _cell_to_str(row.get('land'))
-        kategorie = _cell_to_str(row.get('kategorie'))
-        uebergabe_nr = _cell_to_str(row.get('uebergabe_nr'))
-        stueckzahl = _cell_to_int(row.get('stueckzahl'))
-        ziel_datum = _cell_to_date(row.get('ziel_datum'))
+    # Mapowania krajow to kilkadziesiat rekordow — jeden odczyt zamiast SELECT-a
+    # na kazdy wiersz pliku.
+    mapowania = {m.innenauftrag: m for m in CountryMapping.query.all()}
+    # Barcode'y widziane w TYM imporcie — lapie duplikaty wewnatrz pliku bez
+    # polegania na autoflushu.
+    widziane = set()
 
-        if not barcode:
-            continue
+    for partia in _partiami(rows, IMPORT_CHUNK):
+        parsed = []
+        for row in partia:
+            barcode = _cell_to_barcode(row.get('barcode'))
+            if not barcode:
+                continue
+            parsed.append((barcode, row))
 
-        # Check barcode uniqueness
-        if ImportedCarton.query.filter_by(barcode=barcode).first():
-            skipped += 1
-            skipped_barcodes.append(barcode)
-            continue
+        # Jedno zapytanie na partie zamiast jednego na wiersz.
+        istniejace = set()
+        if parsed:
+            kandydaci = [b for b, _ in parsed]
+            istniejace = {
+                b for (b,) in db.session.query(ImportedCarton.barcode)
+                .filter(ImportedCarton.barcode.in_(kandydaci)).all()
+            }
 
-        # Match Land to CountryMapping
-        mapping = CountryMapping.query.filter_by(innenauftrag=land).first()
+        for barcode, row in parsed:
+            if barcode in istniejace or barcode in widziane:
+                skipped += 1
+                skipped_barcodes.append(barcode)
+                continue
+            widziane.add(barcode)
 
-        carton = ImportedCarton(
-            barcode=barcode,
-            land=land,
-            stueckzahl=stueckzahl,
-            kategorie=kategorie,
-            ziel_datum=ziel_datum,
-            uebergabe_nr=uebergabe_nr,
-            country_mapping_id=mapping.id if mapping else None,
-            double_rate=bool(row.get('double_rate')),
-            added_manually=bool(row.get('added_manually')),
-            imported_by=current_user.id
-        )
-        db.session.add(carton)
-        imported += 1
+            land = _cell_to_str(row.get('land'))
+            kategorie = _cell_to_str(row.get('kategorie'))
+            uebergabe_nr = _cell_to_str(row.get('uebergabe_nr'))
+            stueckzahl = _cell_to_int(row.get('stueckzahl'))
+            ziel_datum = _cell_to_date(row.get('ziel_datum'))
 
-        # Aggregate for GeneralStat
-        if uebergabe_nr and ziel_datum:
-            agg_key = (uebergabe_nr, land, ziel_datum.isoformat())
-            if agg_key not in aggregation:
-                aggregation[agg_key] = {
-                    'stueckzahl': 0,
-                    'country': mapping.country if mapping else None,
-                    'date': ziel_datum
-                }
-            aggregation[agg_key]['stueckzahl'] += stueckzahl
+            mapping = mapowania.get(land)
+
+            carton = ImportedCarton(
+                barcode=barcode,
+                land=land,
+                stueckzahl=stueckzahl,
+                kategorie=kategorie,
+                ziel_datum=ziel_datum,
+                uebergabe_nr=uebergabe_nr,
+                country_mapping_id=mapping.id if mapping else None,
+                double_rate=bool(row.get('double_rate')),
+                added_manually=bool(row.get('added_manually')),
+                imported_by=current_user.id
+            )
+            db.session.add(carton)
+            imported += 1
+
+            # Aggregate for GeneralStat
+            if uebergabe_nr and ziel_datum:
+                agg_key = (uebergabe_nr, land, ziel_datum.isoformat())
+                if agg_key not in aggregation:
+                    aggregation[agg_key] = {
+                        'stueckzahl': 0,
+                        'country': mapping.country if mapping else None,
+                        'date': ziel_datum
+                    }
+                aggregation[agg_key]['stueckzahl'] += stueckzahl
 
     # Create/update GeneralStat entries
     stats_created = 0
@@ -2092,7 +2156,18 @@ def api_import_excel():
 @app.route('/api/general-stats', methods=['GET'])
 @admin_required
 def api_general_stats():
-    stats = GeneralStat.query.order_by(GeneralStat.loading_date.desc()).all()
+    """Lista linii rozliczeniowych. Opcjonalne `date_from` / `date_to`
+    (YYYY-MM-DD) — bez nich zwraca wszystko, jak dotad."""
+    query = GeneralStat.query
+    for param, warunek in (('date_from', GeneralStat.loading_date.__ge__),
+                           ('date_to', GeneralStat.loading_date.__le__)):
+        wartosc = request.args.get(param, '')
+        if wartosc:
+            try:
+                query = query.filter(warunek(date.fromisoformat(wartosc)))
+            except ValueError:
+                return jsonify({'error': f'Nieprawidłowa data w {param}.'}), 400
+    stats = query.order_by(GeneralStat.loading_date.desc()).all()
     return jsonify([s.to_dict() for s in stats]), 200
 
 
@@ -2857,7 +2932,8 @@ def api_worker_times():
     shift_ids = [s.id for s in shifts]
     attendances = ShiftAttendance.query.filter(
         ShiftAttendance.shift_id.in_(shift_ids)
-    ).all()
+    ).options(joinedload(ShiftAttendance.user),
+              joinedload(ShiftAttendance.shift)).all()
 
     # One entry per user — earliest attendance_in
     by_user = {}

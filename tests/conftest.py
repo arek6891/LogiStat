@@ -44,6 +44,9 @@ class IsolatedClient(FlaskClient):
 
     def open(self, *args, **kwargs):
         g.pop('_login_user', None)
+        # Produkcja dostaje swiezy app context (a wiec i `g`) na kazde zadanie;
+        # tu context jest wspolny, wiec czyscimy cache stawek recznie.
+        g.pop('_rates_cache', None)
         return super().open(*args, **kwargs)
 
 
@@ -116,6 +119,42 @@ def admin_client(client, admin):
 def leader_client(client, leader):
     login(client, leader.username)
     return client
+
+
+class QueryCounter:
+    """Licznik zapytan SQL — pilnuje, zeby N+1 nie wrocilo."""
+
+    def __init__(self):
+        self.statements = []
+
+    @property
+    def count(self):
+        return len(self.statements)
+
+    @property
+    def selects(self):
+        """Tylko odczyty — INSERT-ow jest z natury tyle, ile wierszy."""
+        return [q for q in self.statements if q.lstrip().upper().startswith('SELECT')]
+
+    def matching(self, fragment):
+        return [q for q in self.statements if fragment.lower() in q.lower()]
+
+
+@pytest.fixture
+def queries(flask_app):
+    from sqlalchemy import event
+
+    counter = QueryCounter()
+
+    def before(conn, cursor, statement, params, context, executemany):
+        counter.statements.append(statement)
+
+    engine = logistat.db.engine
+    event.listen(engine, 'before_cursor_execute', before)
+    try:
+        yield counter
+    finally:
+        event.remove(engine, 'before_cursor_execute', before)
 
 
 @pytest.fixture
