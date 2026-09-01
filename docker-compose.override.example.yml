@@ -11,8 +11,19 @@ services:
   app:
     container_name: logistat-test          # logistat-prod na produkcji
     environment:
+      # SECRET_KEY jest WYMAGANY, gdy ustawione jest DATABASE_URL — bez niego
+      # aplikacja nie wystartuje (dawniej cicho spadala na staly klucz dev).
       - SECRET_KEY=WSTAW_LOSOWY_64_HEX     # python3 -c "import secrets; print(secrets.token_hex(32))"
+      # Haslo konta 'admin' zakladanego przy PIERWSZYM starcie (pozniej bez
+      # znaczenia — haslo zmienia sie na /profile).
+      - ADMIN_PASSWORD=WSTAW_HASLO_ADMINA
       - TZ=Europe/Warsaw
+      # Wlacz, jesli do aplikacji wchodzi sie WYLACZNIE po HTTPS (przez domene).
+      # Przy dostepie po HTTP z LAN-u (http://10.153.1.31:5001) zostaw wylaczone,
+      # bo ciasteczko Secure nie poleci i logowanie przestanie dzialac.
+      # - SESSION_COOKIE_SECURE=1
+      # Limit rozmiaru importu CSV/Excel w MB (domyslnie 32).
+      # - MAX_UPLOAD_MB=32
       # Bez DATABASE_URL aplikacja zostaje na SQLite (instance/logistat.db).
       - DATABASE_URL=postgresql+psycopg2://logistat:WSTAW_HASLO@db:5432/logistat
     depends_on:

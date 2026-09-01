@@ -21,8 +21,41 @@ from sqlalchemy import func, and_, event
 from sqlalchemy.engine import Engine
 
 # ── App Config ───────────────────────────────────────────────────────────────
+
+DEV_SECRET_KEY = 'logistat-dev-key-change-me'
+# Gorny limit uploadu (import CSV/Excel czyta plik do pamieci przez file.read(),
+# a gunicorn ma 2 workery — bez limitu jeden plik potrafi wywalic kontener).
+DEFAULT_MAX_UPLOAD_MB = 32
+# Haslo konta 'admin' zakladanego przy pierwszym starcie; nadpisywalne
+# zmienna ADMIN_PASSWORD (patrz docs/DEPLOY.md).
+DEFAULT_ADMIN_PASSWORD = 'admin123'
+
+
+def resolve_secret_key(env=None):
+    """Zwroc SECRET_KEY albo rzuc, jesli tryb serwerowy leci na kluczu dev.
+
+    Obecnosc DATABASE_URL = srodowisko test/prod (tak ustawia
+    docker-compose.override.yml). Dotad brak SECRET_KEY cicho spadal na staly
+    klucz dev — czyli sesje kazdego admina dalyby sie podrobic, i nikt by sie
+    o tym nie dowiedzial. Awaryjnie: LOGISTAT_ALLOW_DEV_SECRET=1.
+    """
+    env = os.environ if env is None else env
+    key = env.get('SECRET_KEY', '').strip()
+    if key:
+        return key
+    tryb_serwerowy = bool(env.get('DATABASE_URL', '').strip())
+    if tryb_serwerowy and env.get('LOGISTAT_ALLOW_DEV_SECRET') != '1':
+        raise RuntimeError(
+            'SECRET_KEY nie jest ustawiony, a DATABASE_URL wskazuje srodowisko '
+            'serwerowe. Ustaw SECRET_KEY w docker-compose.override.yml '
+            '(python3 -c "import secrets; print(secrets.token_hex(32))"). '
+            'Swiadome pominiecie: LOGISTAT_ALLOW_DEV_SECRET=1.'
+        )
+    return DEV_SECRET_KEY
+
+
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'logistat-dev-key-change-me')
+app.config['SECRET_KEY'] = resolve_secret_key()
 # SQLite domyslnie (dev); produkcyjnie/testowo Postgres przez DATABASE_URL,
 # np. postgresql+psycopg2://logistat:...@db:5432/logistat
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///logistat.db')
@@ -31,8 +64,27 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # martwe polaczenia z puli i pierwsze zadanie na kazdym zwracalo 500
 # ("server closed the connection unexpectedly"). Dla SQLite bez znaczenia.
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_pre_ping': True}
+app.config['MAX_CONTENT_LENGTH'] = int(
+    os.environ.get('MAX_UPLOAD_MB', DEFAULT_MAX_UPLOAD_MB)) * 1024 * 1024
+# SameSite=Lax: przegladarka nie dosle ciasteczka przy POST z obcej strony.
+# Endpointy JSON byly chronione ubocznie (wymagaja Content-Type: application/json,
+# co wymusza preflight), ale /api/import-csv jest multipart, czyli bylo osiagalne
+# CSRF-em. Secure wlaczamy zmienna, bo do .31 wchodzi sie tez po HTTP z LAN-u.
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE') == '1'
 
 db = SQLAlchemy(app)
+
+
+@app.errorhandler(413)
+def _upload_za_duzy(e):
+    """Domyslna odpowiedz 413 to HTML — front na /import-csv czyta JSON."""
+    limit_mb = app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024)
+    komunikat = f'Plik jest za duzy (limit {limit_mb} MB).'
+    if request.path.startswith('/api/'):
+        return jsonify({'error': komunikat}), 413
+    return komunikat, 413
 
 
 @event.listens_for(Engine, 'connect')
@@ -3244,15 +3296,22 @@ def seed_data():
         print("[SEED] Default activities created.")
 
     if User.query.filter_by(role='admin').count() == 0:
+        haslo = os.environ.get('ADMIN_PASSWORD', '').strip() or DEFAULT_ADMIN_PASSWORD
         admin = User(
             username='admin',
             display_name='Administrator',
             role='admin'
         )
-        admin.set_password('admin123')
+        admin.set_password(haslo)
         db.session.add(admin)
         db.session.commit()
-        print("[SEED] Admin user created (login: admin / password: admin123)")
+        if haslo == DEFAULT_ADMIN_PASSWORD:
+            print("[SEED] Admin user created (login: admin / password: "
+                  f"{DEFAULT_ADMIN_PASSWORD})")
+            print("[SEED] !!! ZMIEN TO HASLO PRZY PIERWSZYM LOGOWANIU (/profile) "
+                  "albo ustaw ADMIN_PASSWORD przed pierwszym startem.")
+        else:
+            print("[SEED] Admin user created (login: admin / haslo z ADMIN_PASSWORD)")
 
     if CountryMapping.query.count() == 0:
         for country, innenauftrag in DEFAULT_COUNTRY_MAPPINGS:
@@ -3349,4 +3408,11 @@ with app.app_context():
     init_db()
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    # Debugger Werkzeuga pozwala wykonac dowolny kod, wiec domyslnie sluchamy
+    # tylko na loopbacku. Dostep z LAN-u w dev: HOST=0.0.0.0 python app.py
+    # (produkcja i tak chodzi na gunicornie z Dockerfile, nie tedy).
+    app.run(
+        debug=os.environ.get('FLASK_DEBUG', '1') == '1',
+        host=os.environ.get('HOST', '127.0.0.1'),
+        port=int(os.environ.get('PORT', 5001)),
+    )
