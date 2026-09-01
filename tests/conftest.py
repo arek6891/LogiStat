@@ -16,15 +16,25 @@ from flask.testing import FlaskClient
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-_DB_FD, _DB_PATH = tempfile.mkstemp(suffix='.db', prefix='logistat-test-')
-os.close(_DB_FD)
-os.environ['DATABASE_URL'] = f'sqlite:///{_DB_PATH}'
+# Domyslnie SQLite w pliku tymczasowym. Zeby przejechac ten sam zestaw po
+# Postgresie (tak chodzi .31 i produkcja):
+#   LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/db pytest
+_DB_PATH = None
+_ZEWNETRZNA_BAZA = os.environ.get('LOGISTAT_TEST_DATABASE_URL', '').strip()
+if _ZEWNETRZNA_BAZA:
+    os.environ['DATABASE_URL'] = _ZEWNETRZNA_BAZA
+else:
+    _DB_FD, _DB_PATH = tempfile.mkstemp(suffix='.db', prefix='logistat-test-')
+    os.close(_DB_FD)
+    os.environ['DATABASE_URL'] = f'sqlite:///{_DB_PATH}'
 os.environ.setdefault('SECRET_KEY', 'test-secret-key')
 
 import app as logistat  # noqa: E402  (import po ustawieniu env)
 
 
 def pytest_unconfigure(config):
+    if _DB_PATH is None:
+        return
     for suffix in ('', '-wal', '-shm'):
         try:
             os.unlink(_DB_PATH + suffix)
