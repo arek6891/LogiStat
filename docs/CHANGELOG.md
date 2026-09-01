@@ -1,5 +1,35 @@
 # LogiStat — Changelog
 
+## 2026-09-01 — przeglad kodu: uprawnienia, doba lokalna, sprzatanie
+
+### Poprawione
+- **Eskalacja uprawnien**: lider mogl przez `/api/users` zalozyc konto admina,
+  podniesc sobie role albo przestawic haslo adminowi. Guardy na role + walidacja
+  + ochrona ostatniego aktywnego admina.
+- **Soft-delete nie odbieral dostepu**: `login()` nie sprawdzal `is_active_user`,
+  a `load_user()` nie uniewazniał trwajacej sesji. Teraz jedno i drugie.
+- **Doba lokalna**: dashboard liczyl granice dnia z `date.today()`, a
+  `api_stats_user` grupowal po `func.date()` w UTC — ta sama paczka wypadala na
+  roznych dniach na dwoch ekranach. Nowe `local_today()` / `local_day_bounds()`
+  (DST z ZoneInfo) uzywane wszedzie; praca II zmiany po polnocy liczy sie do
+  wlasciwej doby.
+- **Konfiguracja**: SECRET_KEY fail-fast w trybie serwerowym, MAX_UPLOAD_MB +
+  413 jako JSON, SameSite=Lax (zamyka CSRF na multipartowym `/api/import-csv`),
+  ADMIN_PASSWORD dla seeda, dev server domyslnie na 127.0.0.1.
+
+### Usuniete (martwy kod)
+- `POST /api/scan-package` — wycofane przypisanie paczka->pracownik
+- `POST /api/scan-employee` — bez konsumenta
+- `PUT /api/packages/uebergabe-double-rate` — jedyny writer legacy kolumny
+- `GeneralStat.double_rate` — legacy flaga per linia; zolty wiersz jedzie na
+  `double_rate_amount_map()`, nie na tej kolumnie
+- `GeneralStat.total_cost()` — nieuzywana, liczyla koszt z nieaktualnego klucza
+  `cost` (sprzecznie z `to_dict()`, ktore bierze stawki z `CostMapping`)
+
+### Dodane
+- `tests/` — pierwsze testy w projekcie, nacisk na sciezki rozliczeniowe
+
+
 ## [1.8.0] — 2026-08-31
 
 ### PostgreSQL na środowisku testowym

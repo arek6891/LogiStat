@@ -446,7 +446,6 @@ class GeneralStat(db.Model):
     country_ledger = db.Column(db.String(150), nullable=False)
     amounts = db.Column(db.Integer, default=0)
     category_data = db.Column(db.Text, default='{}')
-    double_rate = db.Column(db.Boolean, default=False)  # legacy per-line flag (unused; kept for back-compat)
     double_rate_category_data = db.Column(db.Text, default='{}')  # yellow row: manual per-category amounts for double-rate packages
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=True)
@@ -477,10 +476,6 @@ class GeneralStat(db.Model):
     def set_double_rate_category_data(self, data):
         self.double_rate_category_data = json.dumps(data)
 
-    def total_cost(self):
-        cd = self.get_category_data()
-        return sum(v.get('amount', 0) * v.get('cost', 0) for v in cd.values())
-
     def to_dict(self):
         cd = self.get_category_data()
         
@@ -508,8 +503,7 @@ class GeneralStat(db.Model):
             'country_ledger': self.country_ledger,
             'amounts': self.amounts,
             'category_data': cd,
-            'double_rate': self.double_rate or False,
-            'total_cost': total_cost
+            'total_cost': total_cost,
         }
 
 
@@ -2358,56 +2352,6 @@ def api_package_lookup():
     return jsonify({'carton': d}), 200
 
 
-@app.route('/api/scan-package', methods=['POST'])
-@leader_required
-def api_scan_package():
-    data = request.get_json()
-    employee_barcode = (data.get('employee_barcode') or '').strip()
-    package_barcode = (data.get('package_barcode') or '').strip()
-
-    if not employee_barcode:
-        return jsonify({'error': 'Brak kodu pracownika.'}), 400
-    if not package_barcode:
-        return jsonify({'error': 'Brak kodu paczki.'}), 400
-
-    user = User.query.filter_by(barcode_id=employee_barcode, is_active_user=True).first()
-    if not user:
-        return jsonify({'error': 'Nieznany kod pracownika.'}), 404
-
-    carton = ImportedCarton.query.filter_by(barcode=package_barcode).first()
-    if not carton:
-        return jsonify({'error': 'Nieznany kod paczki. Upewnij się, że paczka została zaimportowana.'}), 404
-
-    if carton.processed_by:
-        existing = carton.processed_by_user
-        return jsonify({
-            'error': f'Paczka już zeskanowana!',
-            'existing_worker': existing.display_name if existing else '—'
-        }), 409
-
-    carton.processed_by = user.id
-    carton.processed_at = datetime.utcnow()
-    db.session.commit()
-
-    return jsonify({
-        'message': f'Paczka {package_barcode} przypisana do {user.display_name}.',
-        'carton': carton.to_dict()
-    }), 200
-
-
-@app.route('/api/scan-employee', methods=['POST'])
-@leader_required
-def api_scan_employee():
-    data = request.get_json()
-    barcode = (data.get('barcode') or '').strip()
-    if not barcode:
-        return jsonify({'error': 'Brak kodu.'}), 400
-    user = User.query.filter_by(barcode_id=barcode, is_active_user=True).first()
-    if not user:
-        return jsonify({'error': 'Nieznany kod pracownika.'}), 404
-    return jsonify({'user': user.to_dict()}), 200
-
-
 @app.route('/api/packages', methods=['POST'])
 @leader_required
 def api_package_create():
@@ -2765,26 +2709,6 @@ def api_package_time_end():
         'message': f'Koniec zarejestrowany — czas procesowania: {time_str}.',
         'carton': carton.to_dict()
     }), 200
-
-
-@app.route('/api/packages/uebergabe-double-rate', methods=['PUT'])
-@leader_required
-def api_uebergabe_double_rate():
-    data = request.get_json()
-    uebergabe_nr = (data.get('uebergabe_nr') or '').strip()
-    double_rate = bool(data.get('double_rate'))
-
-    if not uebergabe_nr:
-        return jsonify({'error': 'Brak uebergabe_nr.'}), 400
-
-    stats = GeneralStat.query.filter_by(list_id=uebergabe_nr).all()
-    for stat in stats:
-        stat.double_rate = double_rate
-        stat.updated_at = datetime.utcnow()
-        stat.updated_by = current_user.id
-    db.session.commit()
-
-    return jsonify({'message': f'Double rate {"włączony" if double_rate else "wyłączony"} dla {uebergabe_nr} ({len(stats)} rekordów).'})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -3338,7 +3262,6 @@ def migrate_columns():
         migrations = [] if not is_sqlite else [
             ("imported_carton", "processed_by",   "INTEGER REFERENCES user(id)"),
             ("imported_carton", "processed_at",   "DATETIME"),
-            ("general_stat",    "double_rate",     "BOOLEAN DEFAULT 0"),
             ("general_stat",    "double_rate_category_data", "TEXT DEFAULT '{}'"),
             ("imported_carton", "double_rate",     "BOOLEAN DEFAULT 0"),
             ("imported_carton", "scan_start_at",  "DATETIME"),
