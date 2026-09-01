@@ -755,6 +755,11 @@ def parse_date(value, pole='date'):
 
     Dotad `date.fromisoformat()` lecialo bez zabezpieczenia i literowka w URL-u
     konczyla sie 500-ka w logach.
+
+    UWAGA: puste daje DZIS, nie None — to jest wlasciwe dla parametrow typu
+    "ktora zmiane pokazac", ale NIE dla filtrow zakresu (`date_from`/`date_to`),
+    gdzie brak parametru ma znaczyc "bez filtra". Tam wywoluj warunkowo:
+    `parse_date(v, 'date_from') if v else None` (patrz api_stats_user).
     """
     if not value:
         return local_today()

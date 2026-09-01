@@ -22,8 +22,26 @@ def test_parse_shift_number(flask_app):
 
 def test_parse_date(flask_app):
     assert logistat.parse_date('2026-09-01') == date(2026, 9, 1)
+    # Puste daje DZIS, nie None. Wlasciwe dla "ktora zmiane pokazac", ale przy
+    # filtrach zakresu trzeba sprawdzic parametr przed wywolaniem, inaczej brak
+    # date_from znaczylby "od dzisiaj" zamiast "bez filtra".
     assert logistat.parse_date('') == logistat.local_today()
     assert logistat.parse_date(None) == logistat.local_today()
+
+
+def test_brak_filtra_daty_nie_znaczy_dzisiaj(leader_client):
+    """Regresja na pulapke parse_date: bez date_from statystyki maja pokazac
+    calą historie, nie tylko dzisiejszy dzien."""
+    u = make_user('operator', username='historyk')
+    shift = logistat.get_or_create_shift(date(2020, 1, 15), 1)
+    akt = logistat.Activity.query.first()
+    logistat.db.session.add(logistat.DailyStat(
+        shift_id=shift.id, user_id=u.id, activity_id=akt.id, quantity=42))
+    logistat.db.session.commit()
+
+    d = leader_client.get(f'/api/stats/user/{u.id}').get_json()
+
+    assert any(x['date'] == '2020-01-15' for x in d['daily']),         'brak date_from ma znaczyc "bez filtra"' 
 
 
 # ── Query string ─────────────────────────────────────────────────────────────
