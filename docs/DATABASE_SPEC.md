@@ -19,6 +19,15 @@ nigdy w kodzie ani w repozytorium. Procedura: `docs/DEPLOY.md`.
 > kolumn, które aplikacja czyta jako naive UTC (2 h błędu w PL latem). Do decyzji: poprawić
 > (JSONB→TEXT, usunąć `DEFAULT NOW()`) albo usunąć plik.
 
+**Tworzenie schematu jest serializowane między workerami.** Gunicorn importuje `app.py`
+raz na worker, więc przy **pustej** bazie wszystkie wchodzą jednocześnie w `db.create_all()`
+i `seed_data()`. Bez blokady przegrany dostaje `UniqueViolation` na `pg_class` (Postgres)
+albo `table user already exists` (SQLite), gunicorn melduje `Worker failed to boot` i ubija
+cały kontener — losowo, więc wygląda to na zaciętą instalację, nie na błąd. `init_db()`
+używa dlatego `pg_advisory_lock(5001)` na Postgresie i `fcntl.flock` na `instance/.init.lock`
+na SQLite. Dotyczy tylko pierwszego startu; na gotowej bazie `create_all()` i `seed_data()`
+są no-opami.
+
 ---
 
 ## Szacowany wolumen danych (5 lat)
@@ -184,7 +193,6 @@ Dane zagregowane z importów CSV. Grupowanie po `(uebergabe_nr, land, ziel_datum
 | country_ledger | VARCHAR(150) | NOT NULL | = land z ImportedCarton |
 | amounts | INTEGER | DEFAULT 0 | Suma stueckzahl dla grupy |
 | category_data | JSONB | DEFAULT '{}' | Ilości i koszty per kategoria (normalna linia) |
-| double_rate | BOOLEAN | DEFAULT FALSE | *Legacy* — stary mnożnik ×2 per-linia, nieużywany (martwy back-compat) |
 | double_rate_category_data | JSONB/TEXT | DEFAULT '{}' | Ilości per kategoria dla **żółtej linii** double rate (wpisywane ręcznie) |
 | created_at | TIMESTAMP | DEFAULT NOW() | |
 | updated_at | TIMESTAMP | | |
@@ -192,6 +200,13 @@ Dane zagregowane z importów CSV. Grupowanie po `(uebergabe_nr, land, ziel_datum
 
 **Unique:** `(list_id, country_ledger, loading_date)`  
 **Indeksy:** `loading_date`, `list_id`
+
+> **Usunięte 2026-09-01:** kolumna `double_rate` (stary mnożnik ×2 per-linia). Wypadła
+> z modelu razem ze swoim jedynym writerem — `PUT /api/packages/uebergabe-double-rate`.
+> Żółta linia liczy się z `double_rate_amount_map()`, czyli z flag na kartonach, nie stąd.
+> **W istniejących bazach kolumna fizycznie zostaje** (nullable, z defaultem) — nic nie
+> migrujemy, kod jej po prostu nie dotyka. `db.create_all()` na świeżej bazie już jej
+> nie założy, więc schematy starych i nowych instalacji różnią się o tę jedną kolumnę.
 
 **Struktura `category_data`:**
 ```json
@@ -210,6 +225,22 @@ Dane zagregowane z importów CSV. Grupowanie po `(uebergabe_nr, land, ziel_datum
 ```
 
 ---
+
+### `app_setting`
+Generyczny magazyn klucz/wartość na ustawienia aplikacji. Czytany przez
+`get_setting()` / `get_setting_int()`; wartości domyślne dla znanych kluczy siedzą
+w `SETTING_DEFAULTS` w kodzie, więc brak wiersza nie jest błędem.
+
+| Kolumna | Typ | Ograniczenia | Opis |
+|---|---|---|---|
+| key | VARCHAR(100) | PK | Nazwa ustawienia |
+| value | VARCHAR(500) | | Wartość jako tekst; konwersję robi akcesor |
+
+**Znane klucze:**
+
+| Klucz | Domyślnie | Opis |
+|---|---|---|
+| `break_threshold_minutes` | `30` | Próg czasu przerwy podświetlany na czerwono w `/worker-times`; edytowalny w `/admin/settings` (`PUT /api/settings`) |
 
 ### `cost_mapping`
 Stawki kosztów per kategoria per miesiąc/rok. Używane do wyliczania kosztów w GeneralStat.
