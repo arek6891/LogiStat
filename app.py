@@ -3,7 +3,7 @@ import csv
 import sqlite3
 import io
 import json
-from datetime import datetime, date, timedelta, timezone
+from datetime import datetime, date, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 from functools import wraps
 
@@ -72,12 +72,39 @@ def iso_z(dt):
     return dt.isoformat() + 'Z' if dt else None
 
 
+def local_today():
+    """Dzisiejsza data w Europe/Warsaw — niezaleznie od strefy serwera.
+
+    `date.today()` zwraca date wedlug TZ procesu: w kontenerze bez TZ jest to
+    UTC, wiec miedzy 00:00 a 02:00 czasu polskiego oddawalo jeszcze wczoraj.
+    """
+    return datetime.now(LOCAL_TZ).date()
+
+
+def utc_to_local(dt):
+    """Naive UTC -> aware datetime w Europe/Warsaw."""
+    return dt.replace(tzinfo=timezone.utc).astimezone(LOCAL_TZ)
+
+
+def local_day_bounds(d):
+    """Granice doby lokalnej `d` jako naive UTC: [start, koniec).
+
+    Timestampy trzymamy jako naive UTC, a doba pracy jest liczona po Warszawie
+    (dwie zmiany, druga pracuje przez polnoc). Polnoc lokalna to 22:00 UTC
+    latem i 23:00 UTC zima — DST liczy ZoneInfo, nie staly offset.
+    """
+    start = datetime.combine(d, time.min, tzinfo=LOCAL_TZ)
+    end = datetime.combine(d + timedelta(days=1), time.min, tzinfo=LOCAL_TZ)
+    to_naive_utc = lambda dt: dt.astimezone(timezone.utc).replace(tzinfo=None)  # noqa: E731
+    return to_naive_utc(start), to_naive_utc(end)
+
+
 @app.template_filter('localdt')
 def localdt_filter(dt, fmt='%d.%m.%Y %H:%M'):
     """Jinja filter: render a naive-UTC datetime in Europe/Warsaw (DST-correct)."""
     if not dt:
         return '—'
-    return dt.replace(tzinfo=timezone.utc).astimezone(LOCAL_TZ).strftime(fmt)
+    return utc_to_local(dt).strftime(fmt)
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  MODELS
@@ -669,7 +696,7 @@ def profile():
 def scanner(shift_number):
     if shift_number not in (1, 2):
         shift_number = 1
-    today = date.today()
+    today = local_today()
     shift = get_or_create_shift(today, shift_number)
     attendances = ShiftAttendance.query.filter_by(shift_id=shift.id)\
         .order_by(ShiftAttendance.scanned_at.desc()).all()
@@ -1010,7 +1037,7 @@ def double_rate_amount_map():
 @admin_required
 def general_stats_page():
     # If parameters not provided, use first and last day of current month
-    today = datetime.today()
+    today = local_today()
     default_from = today.replace(day=1).strftime('%Y-%m-%d')
     # Calculate last day of month
     import calendar
@@ -1069,7 +1096,7 @@ def api_scan():
     data = request.get_json()
     barcode = data.get('barcode', '').strip()
     shift_number = data.get('shift_number', 1)
-    scan_date = data.get('date', date.today().isoformat())
+    scan_date = data.get('date', local_today().isoformat())
 
     if not barcode:
         return jsonify({'error': 'Brak kodu kreskowego.'}), 400
@@ -1120,7 +1147,7 @@ def api_unscan(attendance_id):
 @app.route('/api/shift/attendances', methods=['GET'])
 @leader_required
 def api_shift_attendances():
-    shift_date = request.args.get('date', date.today().isoformat())
+    shift_date = request.args.get('date', local_today().isoformat())
     shift_number = int(request.args.get('shift_number', 1))
     shift = Shift.query.filter_by(
         date=date.fromisoformat(shift_date),
@@ -1144,7 +1171,7 @@ def api_shift_attendances():
 @leader_required
 def api_assignment_data():
     """Get all assignment data for a given date and shift."""
-    shift_date = request.args.get('date', date.today().isoformat())
+    shift_date = request.args.get('date', local_today().isoformat())
     shift_number = int(request.args.get('shift_number', 1))
 
     shift = Shift.query.filter_by(
@@ -1183,7 +1210,7 @@ def api_assignment_data():
 @leader_required
 def api_assignment_suggestions():
     """Generate AI-based assignment suggestions based on user statistics."""
-    shift_date = request.args.get('date', date.today().isoformat())
+    shift_date = request.args.get('date', local_today().isoformat())
     shift_number = int(request.args.get('shift_number', 1))
 
     shift = Shift.query.filter_by(
@@ -1273,7 +1300,7 @@ def api_assignment_suggestions():
 def api_assignment_save():
     """Save drag & drop assignments."""
     data = request.get_json()
-    shift_date = data.get('date', date.today().isoformat())
+    shift_date = data.get('date', local_today().isoformat())
     shift_number = data.get('shift_number', 1)
     assignments = data.get('assignments', [])
 
@@ -1304,7 +1331,7 @@ def api_assignment_save():
 @leader_required
 def api_daily_stats_get():
     """Get stats for a given date and shift."""
-    shift_date = request.args.get('date', date.today().isoformat())
+    shift_date = request.args.get('date', local_today().isoformat())
     shift_number = int(request.args.get('shift_number', 1))
 
     shift = Shift.query.filter_by(
@@ -1330,7 +1357,7 @@ def api_daily_stats_get():
 def api_daily_stats_save():
     """Save or update daily statistics."""
     data = request.get_json()
-    shift_date = data.get('date', date.today().isoformat())
+    shift_date = data.get('date', local_today().isoformat())
     shift_number = data.get('shift_number', 1)
     entries = data.get('entries', [])
 
@@ -1432,26 +1459,36 @@ def api_stats_user(user_id):
 
     # Przetworzone (zakończone) paczki jako syntetyczne pozycje — tylko w widoku "Wszystkie"
     if not activity_id:
-        from sqlalchemy import func
+        # Grupujemy po DOBIE LOKALNEJ, tak samo jak dashboard. `func.date()`
+        # cielo po dacie UTC, wiec paczka zakonczona po lokalnej polnocy trafiala
+        # na inny dzien tutaj niz na dashboardzie. Konwersja jest w Pythonie —
+        # SQLite i Postgres licza strefy zupelnie inaczej, a zakres jest maly
+        # (paczki jednego pracownika w wybranym okresie).
         pq = db.session.query(
-            func.date(ImportedCarton.scan_end_at).label('d'),
-            func.count(ImportedCarton.id),
-            func.coalesce(func.sum(ImportedCarton.stueckzahl), 0),
+            ImportedCarton.scan_end_at,
+            ImportedCarton.stueckzahl,
         ).filter(
             ImportedCarton.scan_end_by == user_id,
             ImportedCarton.scan_end_at.isnot(None),
         )
         if date_from:
-            pq = pq.filter(func.date(ImportedCarton.scan_end_at) >= date_from)
+            pq = pq.filter(ImportedCarton.scan_end_at >= local_day_bounds(
+                date.fromisoformat(date_from))[0])
         if date_to:
-            pq = pq.filter(func.date(ImportedCarton.scan_end_at) <= date_to)
-        pkg_rows = pq.group_by(func.date(ImportedCarton.scan_end_at)).all()
+            pq = pq.filter(ImportedCarton.scan_end_at < local_day_bounds(
+                date.fromisoformat(date_to))[1])
+
+        per_day = {}
+        for scan_end_at, stueckzahl in pq.all():
+            d = utc_to_local(scan_end_at).date().isoformat()
+            agg = per_day.setdefault(d, {'cnt': 0, 'pcs': 0})
+            agg['cnt'] += 1
+            agg['pcs'] += stueckzahl or 0
 
         PKG_METRICS = [('📦 Paczki', lambda cnt, pcs: cnt),
                        ('📦 Paczki (szt.)', lambda cnt, pcs: pcs)]
-        for d, cnt, pcs in pkg_rows:
-            # func.date() daje str w SQLite, a datetime.date w Postgresie
-            d = d.isoformat() if hasattr(d, 'isoformat') else str(d)
+        for d, agg in per_day.items():
+            cnt, pcs = agg['cnt'], agg['pcs']
             for label, metric in PKG_METRICS:
                 qty = int(metric(cnt, pcs))
                 daily_stats.append({
@@ -2048,8 +2085,8 @@ def dashboard():
 @app.route('/api/dashboard')
 @leader_required
 def api_dashboard():
-    today = date.today()
-    today_start = datetime.combine(today, datetime.min.time())
+    today = local_today()
+    today_start, today_end = local_day_bounds(today)
 
     # Paczki — ogólne (przetworzona = ZAKOŃCZONA, scan_end)
     total_cartons = ImportedCarton.query.count()
@@ -2057,10 +2094,11 @@ def api_dashboard():
     remaining_cartons = total_cartons - done_cartons
 
     # Paczki zakończone dziś
-    done_today_q = ImportedCarton.query.filter(ImportedCarton.scan_end_at >= today_start)
-    done_today = done_today_q.count()
+    dzis = and_(ImportedCarton.scan_end_at >= today_start,
+                ImportedCarton.scan_end_at < today_end)
+    done_today = ImportedCarton.query.filter(dzis).count()
     pieces_today = db.session.query(func.sum(ImportedCarton.stueckzahl))\
-        .filter(ImportedCarton.scan_end_at >= today_start).scalar() or 0
+        .filter(dzis).scalar() or 0
 
     # Breakdown per pracownik — dziś (kto zakończył paczki)
     worker_rows = db.session.query(
@@ -2068,7 +2106,7 @@ def api_dashboard():
         func.count(ImportedCarton.id).label('packages'),
         func.sum(ImportedCarton.stueckzahl).label('pieces')
     ).join(ImportedCarton, ImportedCarton.scan_end_by == User.id)\
-     .filter(ImportedCarton.scan_end_at >= today_start)\
+     .filter(dzis)\
      .group_by(User.id, User.display_name)\
      .order_by(func.count(ImportedCarton.id).desc()).all()
 
@@ -2161,12 +2199,11 @@ def api_dashboard_shifts():
     """
     date_str = request.args.get('date', '')
     try:
-        target = datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else date.today()
+        target = datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else local_today()
     except ValueError:
-        target = date.today()
+        target = local_today()
 
-    day_start = datetime.combine(target, datetime.min.time())
-    day_end = day_start + timedelta(days=1)
+    day_start, day_end = local_day_bounds(target)
 
     act_map = {a.id: a.name for a in Activity.query.all()}
     user_map = {u.id: u.display_name for u in User.query.all()}
@@ -2770,7 +2807,7 @@ def api_time_scan():
         return jsonify({'error': 'Nieznany kod pracownika.'}), 404
 
     # Najnowsza obecność dziś
-    today = date.today()
+    today = local_today()
     attendance = ShiftAttendance.query.join(Shift).filter(
         ShiftAttendance.user_id == user.id,
         Shift.date == today
@@ -2831,11 +2868,11 @@ def api_time_scan():
 @app.route('/api/worker-times')
 @leader_required
 def api_worker_times():
-    date_str = request.args.get('date', date.today().isoformat())
+    date_str = request.args.get('date', local_today().isoformat())
     try:
         query_date = date.fromisoformat(date_str)
     except ValueError:
-        query_date = date.today()
+        query_date = local_today()
 
     shifts = Shift.query.filter_by(date=query_date).all()
     if not shifts:
@@ -2935,7 +2972,7 @@ def api_time_event_delete(event_id):
 @app.route('/forecast')
 @leader_required
 def forecast_page():
-    today = date.today()
+    today = local_today()
     date_from = (today - timedelta(days=7)).isoformat()
     date_to = (today + timedelta(days=14)).isoformat()
     return render_template('forecast.html', date_from=date_from, date_to=date_to)
@@ -2950,12 +2987,12 @@ def api_forecast_chart_data():
     try:
         date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date()
     except (ValueError, TypeError):
-        date_from = date.today() - timedelta(days=7)
+        date_from = local_today() - timedelta(days=7)
 
     try:
         date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date()
     except (ValueError, TypeError):
-        date_to = date.today() + timedelta(days=14)
+        date_to = local_today() + timedelta(days=14)
 
     actual_rows = db.session.query(
         ImportedCarton.ziel_datum,
@@ -3043,12 +3080,12 @@ def api_forecast_export():
     try:
         date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date()
     except (ValueError, TypeError):
-        date_from = date.today() - timedelta(days=7)
+        date_from = local_today() - timedelta(days=7)
 
     try:
         date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date()
     except (ValueError, TypeError):
-        date_to = date.today() + timedelta(days=14)
+        date_to = local_today() + timedelta(days=14)
 
     actual_rows = db.session.query(
         ImportedCarton.ziel_datum,
