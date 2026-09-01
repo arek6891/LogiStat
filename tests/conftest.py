@@ -9,6 +9,8 @@ import sys
 import tempfile
 
 import pytest
+from flask import g
+from flask.testing import FlaskClient
 
 # Sciezka do repo + baza testowa muszą być gotowe przed importem app.py.
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -30,10 +32,26 @@ def pytest_unconfigure(config):
             pass
 
 
+class IsolatedClient(FlaskClient):
+    """Klient, ktory nie dziedziczy zalogowanego uzytkownika po innym kliencie.
+
+    Fixture trzyma jeden app context na caly test, a Flask reuzywa go dla
+    kazdego zadania test-clienta — wiec `g` jest wspolne. Flask-Login cache'uje
+    uzytkownika w `g._login_user` i nie przeladowuje go, jesli jest ustawiony,
+    co przeciekaloby miedzy dwoma klientami w jednym tescie (test uprawnien
+    widzialby nie te role, ktora testuje). Czyscimy cache przed kazdym zadaniem.
+    """
+
+    def open(self, *args, **kwargs):
+        g.pop('_login_user', None)
+        return super().open(*args, **kwargs)
+
+
 @pytest.fixture
 def flask_app():
     """Czysta baza na kazdy test."""
     logistat.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
+    logistat.app.test_client_class = IsolatedClient
     with logistat.app.app_context():
         logistat.db.drop_all()
         logistat.db.create_all()

@@ -539,9 +539,35 @@ def set_setting(key, value):
 #  AUTH HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 
+ROLES = ('operator', 'leader', 'admin')
+# Role z dostepem do logowania i ekranow — konta uprzywilejowane. Zakladac je,
+# zmieniac im role/haslo i dezaktywowac moze wylacznie admin.
+PRIVILEGED_ROLES = ('leader', 'admin')
+
+
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    """Zwraca None dla konta nieaktywnego, wiec dezaktywacja wyrzuca tez z
+    trwajacej sesji (nie tylko blokuje kolejne logowanie)."""
+    try:
+        user = db.session.get(User, int(user_id))
+    except (TypeError, ValueError):
+        return None
+    if user is None or not user.is_active_user:
+        return None
+    return user
+
+
+def acting_as_admin():
+    return current_user.is_authenticated and current_user.role == 'admin'
+
+
+def active_admin_count(exclude_id=None):
+    """Ilu aktywnych adminow zostanie, jesli pominac `exclude_id`."""
+    q = User.query.filter_by(role='admin', is_active_user=True)
+    if exclude_id is not None:
+        q = q.filter(User.id != exclude_id)
+    return q.count()
 
 
 def leader_required(f):
@@ -599,7 +625,8 @@ def login():
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
         user = User.query.filter_by(username=username).first()
-        if user and user.role in ('leader', 'admin') and user.check_password(password):
+        if (user and user.is_active_user and user.role in PRIVILEGED_ROLES
+                and user.check_password(password)):
             login_user(user)
             next_page = request.args.get('next')
             return redirect(next_page or url_for('index'))
@@ -1557,6 +1584,16 @@ def api_user_create():
     if not username or not display_name:
         return jsonify({'error': 'Login i nazwa wyświetlana są wymagane.'}), 400
 
+    if role not in ROLES:
+        return jsonify({'error': 'Nieprawidłowa rola.'}), 400
+
+    # Lider zaklada operatorow na zmianie; kont z logowaniem nie moze zalozyc,
+    # bo inaczej dorobilby sobie admina.
+    if role in PRIVILEGED_ROLES and not acting_as_admin():
+        return jsonify({
+            'error': 'Tylko administrator może zakładać konta lidera i administratora.'
+        }), 403
+
     if User.query.filter_by(username=username).first():
         return jsonify({'error': 'Taki login już istnieje.'}), 400
 
@@ -1581,7 +1618,32 @@ def api_user_create():
 @leader_required
 def api_user_update(user_id):
     user = User.query.get_or_404(user_id)
-    data = request.get_json()
+    data = request.get_json() or {}
+
+    # Lider edytuje wylacznie operatorow i tylko ich dane opisowe. Bez tego
+    # moglby podniesc sobie role albo przestawic haslo adminowi i wejsc na jego
+    # konto.
+    if not acting_as_admin():
+        if user.role in PRIVILEGED_ROLES:
+            return jsonify({
+                'error': 'Konta lidera i administratora może zmieniać tylko administrator.'
+            }), 403
+        if 'role' in data and data['role'] != user.role:
+            return jsonify({'error': 'Tylko administrator może zmieniać rolę.'}), 403
+        if data.get('password'):
+            return jsonify({'error': 'Tylko administrator może zmieniać hasło.'}), 403
+
+    if 'role' in data and data['role'] not in ROLES:
+        return jsonify({'error': 'Nieprawidłowa rola.'}), 400
+
+    # Nie pozwol zdjac uprawnien ostatniemu aktywnemu adminowi — inaczej nikt
+    # nie wejdzie juz do panelu.
+    degraduje = 'role' in data and user.role == 'admin' and data['role'] != 'admin'
+    dezaktywuje = user.role == 'admin' and data.get('is_active_user') is False
+    if (degraduje or dezaktywuje) and active_admin_count(exclude_id=user.id) == 0:
+        return jsonify({
+            'error': 'To ostatnie aktywne konto administratora — najpierw utwórz inne.'
+        }), 400
 
     if 'display_name' in data:
         user.display_name = data['display_name'].strip()
@@ -1611,7 +1673,18 @@ def api_user_update(user_id):
 @leader_required
 def api_user_delete(user_id):
     user = User.query.get_or_404(user_id)
-    user.is_active_user = False  # soft delete
+
+    if user.role in PRIVILEGED_ROLES and not acting_as_admin():
+        return jsonify({
+            'error': 'Konta lidera i administratora może dezaktywować tylko administrator.'
+        }), 403
+
+    if user.role == 'admin' and active_admin_count(exclude_id=user.id) == 0:
+        return jsonify({
+            'error': 'To ostatnie aktywne konto administratora — najpierw utwórz inne.'
+        }), 400
+
+    user.is_active_user = False  # soft delete — load_user odbiera tez trwajaca sesje
     db.session.commit()
     return jsonify({'message': 'Dezaktywowano.'}), 200
 
