@@ -14,6 +14,28 @@ Wszystkie endpointy API wymagają zalogowania jako leader lub admin (chyba że z
 
 ---
 
+## Format błędów
+
+Wszystkie błędy na ścieżkach `/api/` wracają jako **JSON**, nie HTML — dotyczy to także
+`404` z `get_or_404` i `405`. Front wszędzie czyta `data.error`.
+
+```json
+{ "error": "Nieprawidłowa data w \"date_from\" (oczekiwano YYYY-MM-DD)." }
+```
+
+| Kod | Kiedy |
+|---|---|
+| `400` | Błędne wejście — zła data, nieliczbowe pole, brakujący klucz, nieznany FK. Wcześniej część tych przypadków kończyła się `500`. |
+| `403` | Brak uprawnień do konkretnej operacji (patrz *Admin — Użytkownicy*, edycja paczki z importu) |
+| `404` | Nie ma takiego zasobu |
+| `409` | Konflikt — duplikat barcode, paczka zajęta przez innego pracownika, praca już zakończona |
+| `413` | Plik importu większy niż `MAX_UPLOAD_MB` (domyślnie 32 MB) |
+
+Żądania bez ciała albo ze złym `Content-Type` są traktowane jak puste `{}`, więc dają
+`400` z nazwą brakującego pola, a nie `415`.
+
+---
+
 ## Skanowanie (Shift Attendance)
 
 ### POST `/api/scan`
@@ -171,6 +193,59 @@ Parametry query: `activity_id`, `date_from`, `date_to`
 
 > Hasło wymagane tylko dla ról `leader` i `admin`.
 
+**Uprawnienia (od 2026-09-01).** Wszystkie cztery endpointy są `@leader_required`, bo
+lider zakłada operatorów na zmianie — ale ma własne guardy, żeby nie dało się przez nie
+zdobyć admina:
+
+| Operacja | operator jako cel | lider / admin jako cel |
+|---|---|---|
+| POST z `role` = `leader`/`admin` | — | **403**, tylko admin |
+| PUT zmieniający `role` | **403** dla nie-admina | **403** dla nie-admina |
+| PUT ustawiający `password` | **403** dla nie-admina | **403** dla nie-admina |
+| PUT / DELETE na koncie uprzywilejowanym | — | **403** dla nie-admina |
+
+Dodatkowo: nieznana rola → **400**; zdegradowanie lub dezaktywacja **ostatniego aktywnego
+admina** → **400** (żeby nie dało się zablokować dostępu do panelu).
+
+Soft-delete (`DELETE`) ustawia `is_active_user=False`, co **odbiera też trwającą sesję** —
+`login()` i `load_user()` sprawdzają tę flagę.
+
+---
+
+## Czas pracy
+
+| Method | URL | Opis |
+|--------|-----|------|
+| POST | `/api/time/scan` | Skan kodu pracownika na `/time-tracking`. Body: `{ "barcode": "...", "mode": "break" \| "work_end" }`. Tryb `break` **przełącza** przerwę (stan liczony z `count(break_start) - count(break_end)`, brak flagi na User); `work_end` zamyka pracę i **auto-domyka otwartą przerwę**. Brak kodu → 400, nieznany pracownik → 404, brak obecności dziś → 400, praca już zakończona → 409. |
+| GET | `/api/worker-times?date=YYYY-MM-DD` | Podsumowanie per pracownik: `shift_in`, `break_minutes`, `work_minutes`, `breaks[]`, `on_break`, `work_ended`, `events[]`. Jeden wpis na pracownika — brana jest **najwcześniejsza** obecność w danym dniu. |
+| POST | `/api/worker-times/event` | Ręczne zdarzenie (korekta). Body: `user_id`, `shift_id`, `event_type` (`break_start` \| `break_end` \| `work_end`), `timestamp` (naive UTC ISO), opcjonalnie `note`. Ustawia `is_manual=True` i `recorded_by`. → **201**. Nieznany `user_id`/`shift_id` lub zły typ → 400. |
+| PUT | `/api/worker-times/event/<id>` | Edycja zdarzenia (`event_type`, `timestamp`, `note`) |
+| DELETE | `/api/worker-times/event/<id>` | Usunięcie zdarzenia |
+
+> `timestamp` jedzie jako **naive UTC**. Przeglądarka wysyła `new Date(local).toISOString().slice(0,19)`, a serwer zapisuje to bez konwersji — patrz sekcja o czasie w `CLAUDE.md`.
+
+---
+
+## Forecast
+
+| Method | URL | Opis |
+|--------|-----|------|
+| GET | `/api/forecast/chart-data?date_from=&date_to=` | Prognoza vs wykonanie, dzień po dniu. Zwraca listę `{date, forecast, actual, diff, notes}`. `actual` = suma `stueckzahl` paczek z danym `ziel_datum`. Domyślny zakres: −7 / +14 dni. Zła data → cichy powrót do domyślnej. |
+| POST | `/api/forecast/save` | Zapis prognozy. Body: obiekt **albo lista** obiektów `{date, quantity, notes}`. Upsert po dacie. Wiersz z niesparsowalną datą jest **pomijany po cichu**; nieliczbowe `quantity` → 400. Zwraca `{message, saved}`. |
+| GET | `/api/forecast/export?date_from=&date_to=` | Eksport XLSX z wykresem słupkowym (forecast vs actual) |
+
+---
+
+## Admin — Stawki kosztów
+
+| Method | URL | Opis |
+|--------|-----|------|
+| GET | `/api/cost-mapping/<year>/<month>` | Stawki na dany miesiąc — zwraca **bezpośrednio** słownik `{kategoria: stawka}`; brak wpisu → `{}` |
+| PUT/POST | `/api/cost-mapping/<year>/<month>` | Zapis stawek. Body: `{ "rates": { "textile": 0.25, ... } }`. Upsert po `(year, month)`. Zwraca `{success, mapping}`. |
+
+> Koszt linii = `amount × stawka` z miesiąca jej `loading_date`. Stawki są czytane przez
+> `rates_for()` z cache na jedno żądanie — lista statystyk nie odpytuje bazy per wiersz.
+
 ---
 
 ## Admin — Mapowanie krajów i zleceń
@@ -202,7 +277,7 @@ Parametry query: `activity_id`, `date_from`, `date_to`
 | POST | `/api/import/excel` | Wrzucenie pliku Excel `.xlsx` (multipart/form-data z kluczem `file`). Te same kolumny i ta sama odpowiedź co import CSV. ⚠️ numeryczną kolumnę barcode formatować jako tekst (Excel float64 traci precyzję dla długich kodów). |
 | POST | `/api/packages` | **Ręczne dodanie paczki** (leader+). JSON: `barcode`, `stueckzahl`, `land`, `ziel_datum` (`YYYY-MM-DD`), `uebergabe_nr` **(wymagane)** + `kategorie`, `double_rate` (opcjonalne). Przechodzi przez ten sam pipeline co import (agregacja do GeneralStat). Ustawia `added_manually=True` i `imported_by`. Duplikat barcode → 409, brak pól / zła ilość / zła data → 400. |
 | PUT | `/api/packages/<id>` | **Edycja paczki** (leader+). Te same pola i walidacja co POST. Dozwolona **tylko** dla paczek `added_manually` (paczka z importu → 403). Zmiana `uebergabe_nr`/`land`/`ziel_datum` przelicza dotknięte linie GeneralStat od zera z sumy paczek. Zmiana barcode na istniejący → 409. Ustawia `modified_by`/`modified_at`. |
-| GET | `/api/general-stats` | Lista statystyk z importu CSV do tabeli rozliczeniowej |
+| GET | `/api/general-stats` | Lista statystyk z importu CSV do tabeli rozliczeniowej. Opcjonalne `?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD`; bez nich zwraca wszystko. Zła data → 400. |
 | PUT | `/api/general-stats/<id>` | Edytuj statystykę: `category_data` (normalna linia) lub `double_rate_category_data` (żółta linia double rate); słownik 10 kategorii |
 
 **PUT body dla /api/general-stats** (jedno z pól):
