@@ -78,8 +78,8 @@
                 <div style="display:flex;align-items:center;gap:.75rem;">
                     <div style="font-size:1.8rem;">❌</div>
                     <div>
-                        <div style="font-family:monospace;font-weight:700;color:var(--danger,#ef4444);">${barcode}</div>
-                        <div style="color:var(--text-muted);font-size:.9rem;">${msg}</div>
+                        <div style="font-family:monospace;font-weight:700;color:var(--danger,#ef4444);">${escapeHtml(barcode)}</div>
+                        <div style="color:var(--text-muted);font-size:.9rem;">${escapeHtml(msg)}</div>
                     </div>
                 </div>
             </div>`;
@@ -121,14 +121,14 @@
             <div class="card" style="border-left:4px solid ${borderCol};">
                 <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem;">
                     <div style="font-size:1.8rem;">📦</div>
-                    <div style="font-family:monospace;font-weight:700;font-size:1.2rem;">${c.barcode}</div>
+                    <div style="font-family:monospace;font-weight:700;font-size:1.2rem;">${escapeHtml(c.barcode)}</div>
                 </div>
 
                 <div style="display:flex;flex-wrap:wrap;gap:1.5rem;margin-bottom:1.25rem;">
                     <div>
                         <div style="color:var(--text-muted);font-size:.8rem;margin-bottom:.35rem;">Przeskanowana</div>
                         ${pill(c.scanned, '✅ TAK', '❌ NIE')}
-                        ${c.scanned && c.scanned_by ? `<div style="margin-top:.35rem;font-size:.85rem;">przez <strong>${c.scanned_by}</strong></div>` : ''}
+                        ${c.scanned && c.scanned_by ? `<div style="margin-top:.35rem;font-size:.85rem;">przez <strong>${escapeHtml(c.scanned_by)}</strong></div>` : ''}
                     </div>
                     <div>
                         <div style="color:var(--text-muted);font-size:.8rem;margin-bottom:.35rem;">Status</div>
@@ -137,19 +137,19 @@
                 </div>
 
                 <div style="margin-bottom:1rem;">
-                    ${row('Kraj (Land)', c.land || '—')}
+                    ${row('Kraj (Land)', escapeHtml(c.land) || '—')}
                     ${row('Ilość (Stückzahl)', c.stueckzahl)}
-                    ${row('Kategoria', c.kategorie || '—')}
+                    ${row('Kategoria', escapeHtml(c.kategorie) || '—')}
                     ${row('Ziel-Datum', c.ziel_datum ? new Date(c.ziel_datum).toLocaleDateString('pl') : '—')}
-                    ${row('Übergabe Nr.', c.uebergabe_nr || '—')}
+                    ${row('Übergabe Nr.', escapeHtml(c.uebergabe_nr) || '—')}
                     ${row('Double rate', drBadge)}
                 </div>
 
                 <div style="background:rgba(148,163,184,.06);border-radius:8px;padding:.75rem 1rem;">
                     <div style="color:var(--text-muted);font-size:.8rem;margin-bottom:.4rem;">Szczegóły procesowania</div>
-                    ${row('Przypisano', c.processed_by_name ? `${c.processed_by_name} · ${fmtDateTime(c.processed_at)}` : '—')}
-                    ${row('Start', c.scan_start_at ? `${c.scan_start_by_name || '—'} · ${fmtDateTime(c.scan_start_at)}` : '—')}
-                    ${row('Koniec', c.scan_end_at ? `${c.scan_end_by_name || '—'} · ${fmtDateTime(c.scan_end_at)}` : '—')}
+                    ${row('Przypisano', c.processed_by_name ? `${escapeHtml(c.processed_by_name)} · ${fmtDateTime(c.processed_at)}` : '—')}
+                    ${row('Start', c.scan_start_at ? `${escapeHtml(c.scan_start_by_name) || '—'} · ${fmtDateTime(c.scan_start_at)}` : '—')}
+                    ${row('Koniec', c.scan_end_at ? `${escapeHtml(c.scan_end_by_name) || '—'} · ${fmtDateTime(c.scan_end_at)}` : '—')}
                     ${row('Czas procesowania', fmtDuration(c.processing_seconds))}
                 </div>
             </div>`;

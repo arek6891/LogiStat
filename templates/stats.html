@@ -186,7 +186,7 @@
         tbody.innerHTML = monthly.map(m => `
         <tr>
             <td>${m.month}</td>
-            <td>${m.activity}</td>
+            <td>${escapeHtml(m.activity)}</td>
             <td><strong>${m.total_quantity}</strong></td>
             <td>${m.days_worked}</td>
             <td>${m.avg_per_day}</td>
@@ -207,7 +207,7 @@
         <tr style="background:rgba(251,146,60,.06);">
             <td>${d.date}</td>
             <td style="color:var(--text-muted);">—</td>
-            <td>${d.activity}</td>
+            <td>${escapeHtml(d.activity)}</td>
             <td style="text-align:center;"><strong>${d.quantity}</strong></td>
             <td style="color:var(--text-secondary);font-size:0.85rem;">-</td>
             <td style="font-size:0.8rem;color:var(--text-muted);">${d.entered_by || '-'}</td>
@@ -219,7 +219,7 @@
         <tr>
             <td>${d.date}</td>
             <td>Zmiana ${d.shift_number}</td>
-            <td>${d.activity}</td>
+            <td>${escapeHtml(d.activity)}</td>
             <td>
                 <input type="number" class="edit-qty" data-stat-id="${d.stat_id}" value="${d.quantity}"
                     style="width:80px;padding:4px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-family:var(--font);text-align:center;">

@@ -132,7 +132,7 @@
                             background:linear-gradient(135deg,var(--accent),#a78bfa);
                             display:flex;align-items:center;justify-content:center;
                             font-size:.8rem;font-weight:700;color:#fff;">${w.user_name[0]}</div>
-                        <span style="font-weight:600;">${w.user_name}</span>
+                        <span style="font-weight:600;">${escapeHtml(w.user_name)}</span>
                         ${w.on_break ? '<span style="margin-left:4px;font-size:.75rem;background:var(--warning-bg);color:var(--warning);padding:2px 8px;border-radius:8px;">na przerwie</span>' : ''}
                     </div>
                 </td>
@@ -146,7 +146,7 @@
                 <td style="font-weight:700;color:var(--success);">${fmtMins(w.work_minutes)}</td>
                 <td>
                     <button class="btn btn-ghost btn-sm"
-                        onclick='openAddModal(${w.user_id},"${w.user_name}",${w.shift_id})'>+ Dodaj</button>
+                        onclick='openAddModal(${w.user_id},"${escapeHtml(w.user_name)}",${w.shift_id})'>+ Dodaj</button>
                 </td>
             </tr>
             ${w.events.length ? `

@@ -266,9 +266,9 @@ function addRecent(prefix, barcode, workerName, extraInfo) {
     listEl.innerHTML = arr.map(r => `
         <div class="recent-item">
             <div>
-                <span class="barcode">${r.barcode}</span>
-                <span style="color:var(--text-muted);margin-left:8px;font-size:.8rem;">${r.workerName}</span>
-                ${r.extraInfo ? `<span style="color:#22c55e;margin-left:8px;font-size:.8rem;">${r.extraInfo}</span>` : ''}
+                <span class="barcode">${escapeHtml(r.barcode)}</span>
+                <span style="color:var(--text-muted);margin-left:8px;font-size:.8rem;">${escapeHtml(r.workerName)}</span>
+                ${r.extraInfo ? `<span style="color:#22c55e;margin-left:8px;font-size:.8rem;">${escapeHtml(r.extraInfo)}</span>` : ''}
             </div>
             <span class="time">${r.time}</span>
         </div>`).join('');

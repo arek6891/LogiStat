@@ -111,7 +111,7 @@
         card.innerHTML = `
         <div class="checkbox"></div>
         <div class="mini-avatar">${user.display_name[0]}</div>
-        <span>${user.display_name}</span>
+        <span>${escapeHtml(user.display_name)}</span>
     `;
 
         // Click to select/deselect

@@ -3,13 +3,14 @@ import csv
 import sqlite3
 import io
 import json
+import calendar
 from datetime import datetime, date, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 from functools import wraps
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    flash, jsonify, session, g, has_request_context, abort
+    flash, jsonify, session, g, has_request_context, abort, make_response
 )
 from werkzeug.exceptions import HTTPException
 from flask_sqlalchemy import SQLAlchemy
@@ -19,8 +20,13 @@ from flask_login import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import func, and_, event
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import joinedload
+
+import openpyxl
+from openpyxl.chart import BarChart, Reference
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 # ── App Config ───────────────────────────────────────────────────────────────
 
@@ -163,6 +169,24 @@ def local_day_bounds(d):
     end = datetime.combine(d + timedelta(days=1), time.min, tzinfo=LOCAL_TZ)
     to_naive_utc = lambda dt: dt.astimezone(timezone.utc).replace(tzinfo=None)  # noqa: E731
     return to_naive_utc(start), to_naive_utc(end)
+
+
+@app.context_processor
+def _static_version():
+    """`static_v('style.css')` dokleja mtime pliku jako ?v=.
+
+    Dotad w base.html siedzialo recznie wpisane ?v=6 — trzeba bylo pamietac o
+    bumpie przy kazdej zmianie CSS, inaczej przegladarka trzymala stary plik.
+    """
+    def static_v(filename):
+        url = url_for('static', filename=filename)
+        try:
+            mtime = int(os.path.getmtime(os.path.join(app.static_folder, filename)))
+        except OSError:
+            return url
+        return f'{url}?v={mtime}'
+
+    return {'static_v': static_v}
 
 
 @app.template_filter('localdt')
@@ -620,7 +644,7 @@ SETTING_DEFAULTS = {
 
 def get_setting(key, default=None):
     """Return a stored setting value, else its known default, else `default`."""
-    row = AppSetting.query.get(key)
+    row = db.session.get(AppSetting, key)
     if row is not None and row.value is not None:
         return row.value
     return SETTING_DEFAULTS.get(key, default)
@@ -634,7 +658,7 @@ def get_setting_int(key, default=0):
 
 
 def set_setting(key, value):
-    row = AppSetting.query.get(key)
+    row = db.session.get(AppSetting, key)
     if row is None:
         row = AppSetting(key=key, value=str(value))
         db.session.add(row)
@@ -963,9 +987,6 @@ def paczki_view():
 @app.route('/general-stats/export')
 @admin_required
 def general_stats_export():
-    import openpyxl
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from flask import make_response
 
     date_from_str = request.args.get('date_from', '')
     date_to_str = request.args.get('date_to', '')
@@ -1136,7 +1157,6 @@ def general_stats_export():
 def double_rate_amount_map():
     """Sum of Stückzahl of double-rate cartons, keyed by
     (uebergabe_nr, land, ziel_datum) == (list_id, country_ledger, loading_date)."""
-    from sqlalchemy import func
     rows = db.session.query(
         ImportedCarton.uebergabe_nr,
         ImportedCarton.land,
@@ -1157,7 +1177,6 @@ def general_stats_page():
     today = local_today()
     default_from = today.replace(day=1).strftime('%Y-%m-%d')
     # Calculate last day of month
-    import calendar
     last_day = calendar.monthrange(today.year, today.month)[1]
     default_to = today.replace(day=last_day).strftime('%Y-%m-%d')
 
@@ -1254,7 +1273,7 @@ def api_scan():
 @app.route('/api/scan/<int:attendance_id>', methods=['DELETE'])
 @leader_required
 def api_unscan(attendance_id):
-    attendance = ShiftAttendance.query.get_or_404(attendance_id)
+    attendance = db.get_or_404(ShiftAttendance, attendance_id)
     db.session.delete(attendance)
     db.session.commit()
     return jsonify({'message': 'Usunięto rejestrację.'}), 200
@@ -1541,7 +1560,7 @@ def api_daily_stats_save():
 @leader_required
 def api_daily_stat_update(stat_id):
     """Update a single daily stat (mistake correction)."""
-    stat = DailyStat.query.get_or_404(stat_id)
+    stat = db.get_or_404(DailyStat, stat_id)
     data = json_body()
 
     stat.quantity = data.get('quantity', stat.quantity)
@@ -1561,7 +1580,7 @@ def api_daily_stat_update(stat_id):
 @leader_required
 def api_stats_user(user_id):
     """Get per-user statistics, grouped by day and month."""
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
     activity_id = request.args.get('activity_id', type=int)
     date_from = parse_date(request.args.get('date_from'), 'date_from') \
         if request.args.get('date_from') else None
@@ -1708,7 +1727,7 @@ def api_activity_create():
 @app.route('/api/activities/<int:activity_id>', methods=['PUT'])
 @admin_required
 def api_activity_update(activity_id):
-    activity = Activity.query.get_or_404(activity_id)
+    activity = db.get_or_404(Activity, activity_id)
     data = json_body()
 
     if 'name' in data:
@@ -1725,7 +1744,7 @@ def api_activity_update(activity_id):
 @app.route('/api/activities/<int:activity_id>', methods=['DELETE'])
 @admin_required
 def api_activity_delete(activity_id):
-    activity = Activity.query.get_or_404(activity_id)
+    activity = db.get_or_404(Activity, activity_id)
     db.session.delete(activity)
     db.session.commit()
     return jsonify({'message': 'Usunięto.'}), 200
@@ -1737,7 +1756,7 @@ def api_activities_reorder():
     data = json_body()
     order = data.get('order', [])
     for i, activity_id in enumerate(order):
-        act = Activity.query.get(activity_id)
+        act = db.session.get(Activity, activity_id)
         if act:
             act.sort_order = i
     db.session.commit()
@@ -1801,7 +1820,7 @@ def api_user_create():
 @app.route('/api/users/<int:user_id>', methods=['PUT'])
 @leader_required
 def api_user_update(user_id):
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
     data = json_body()
 
     # Lider edytuje wylacznie operatorow i tylko ich dane opisowe. Bez tego
@@ -1856,7 +1875,7 @@ def api_user_update(user_id):
 @app.route('/api/users/<int:user_id>', methods=['DELETE'])
 @leader_required
 def api_user_delete(user_id):
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
 
     if user.role in PRIVILEGED_ROLES and not acting_as_admin():
         return jsonify({
@@ -1902,7 +1921,7 @@ def api_country_mapping_create():
 @app.route('/api/country-mappings/<int:mapping_id>', methods=['PUT'])
 @admin_required
 def api_country_mapping_update(mapping_id):
-    mapping = CountryMapping.query.get_or_404(mapping_id)
+    mapping = db.get_or_404(CountryMapping, mapping_id)
     data = json_body()
     if 'country' in data:
         mapping.country = str(data['country'] or '').strip()
@@ -1915,7 +1934,7 @@ def api_country_mapping_update(mapping_id):
 @app.route('/api/country-mappings/<int:mapping_id>', methods=['DELETE'])
 @admin_required
 def api_country_mapping_delete(mapping_id):
-    mapping = CountryMapping.query.get_or_404(mapping_id)
+    mapping = db.get_or_404(CountryMapping, mapping_id)
     db.session.delete(mapping)
     db.session.commit()
     return jsonify({'message': 'Usunięto mapowanie.'}), 200
@@ -2185,8 +2204,6 @@ def api_import_csv():
 @app.route('/api/import/excel', methods=['POST'])
 @admin_required
 def api_import_excel():
-    import openpyxl
-
     if 'file' not in request.files:
         return jsonify({'error': 'Brak pliku.'}), 400
 
@@ -2248,7 +2265,7 @@ def api_general_stats():
 @app.route('/api/general-stats/<int:stat_id>', methods=['PUT'])
 @admin_required
 def api_general_stat_update(stat_id):
-    stat = GeneralStat.query.get_or_404(stat_id)
+    stat = db.get_or_404(GeneralStat, stat_id)
     data = json_body()
 
     if 'category_data' in data:
@@ -2511,8 +2528,6 @@ def api_package_create():
     like an imported one. Duplicate barcode → 409; missing required fields or
     bad values → 400.
     """
-    from sqlalchemy.exc import IntegrityError
-
     data = json_body()
     barcode = (data.get('barcode') or '').strip()
     land = (data.get('land') or '').strip()
@@ -2635,9 +2650,7 @@ def api_package_update(carton_id):
     GeneralStat groups — both the old and new lines are recomputed from carton
     sums so billing stays exact.
     """
-    from sqlalchemy.exc import IntegrityError
-
-    carton = ImportedCarton.query.get_or_404(carton_id)
+    carton = db.get_or_404(ImportedCarton, carton_id)
     if not carton.added_manually:
         return jsonify({'error': 'Edytować można tylko paczki dodane ręcznie.'}), 403
 
@@ -2708,14 +2721,14 @@ def api_package_update(carton_id):
 @app.route('/api/packages/<int:carton_id>/assign', methods=['PUT'])
 @leader_required
 def api_package_reassign(carton_id):
-    carton = ImportedCarton.query.get_or_404(carton_id)
+    carton = db.get_or_404(ImportedCarton, carton_id)
     data = json_body()
     user_id = data.get('user_id')
     if user_id is None:
         carton.processed_by = None
         carton.processed_at = None
     else:
-        user = User.query.get_or_404(user_id)
+        user = db.get_or_404(User, user_id)
         carton.processed_by = user.id
         carton.processed_at = datetime.utcnow()
     db.session.commit()
@@ -2725,7 +2738,7 @@ def api_package_reassign(carton_id):
 @app.route('/api/packages/<int:carton_id>/double-rate', methods=['PUT'])
 @leader_required
 def api_package_double_rate(carton_id):
-    carton = ImportedCarton.query.get_or_404(carton_id)
+    carton = db.get_or_404(ImportedCarton, carton_id)
     data = json_body()
     carton.double_rate = bool(data.get('double_rate'))
     db.session.commit()
@@ -2797,7 +2810,7 @@ def api_package_time_start():
                 'message': f'Paczka {package_barcode} już rozpoczęta przez Ciebie — start bez zmian.',
                 'carton': carton.to_dict()
             }), 200
-        starter = User.query.get(carton.scan_start_by) if carton.scan_start_by else None
+        starter = db.session.get(User, carton.scan_start_by) if carton.scan_start_by else None
         return jsonify({
             'error': f'Paczka już rozpoczęta przez {starter.display_name if starter else "innego pracownika"}. Nie można jej podebrać.'
         }), 409
@@ -2841,7 +2854,7 @@ def api_package_time_end():
 
     # Tylko pracownik, który rozpoczął paczkę, może ją zakończyć
     if carton.scan_start_by and carton.scan_start_by != user.id:
-        starter = User.query.get(carton.scan_start_by)
+        starter = db.session.get(User, carton.scan_start_by)
         return jsonify({
             'error': f'Paczkę rozpoczął {starter.display_name if starter else "inny pracownik"} — tylko on może ją zakończyć.'
         }), 403
@@ -3072,7 +3085,7 @@ def api_time_event_create():
 @app.route('/api/worker-times/event/<int:event_id>', methods=['PUT'])
 @leader_required
 def api_time_event_update(event_id):
-    event = WorkerTimeEvent.query.get_or_404(event_id)
+    event = db.get_or_404(WorkerTimeEvent, event_id)
     data  = json_body()
     if 'event_type' in data:
         if data['event_type'] not in EVENT_TYPES:
@@ -3094,7 +3107,7 @@ def api_time_event_update(event_id):
 @app.route('/api/worker-times/event/<int:event_id>', methods=['DELETE'])
 @leader_required
 def api_time_event_delete(event_id):
-    event = WorkerTimeEvent.query.get_or_404(event_id)
+    event = db.get_or_404(WorkerTimeEvent, event_id)
     db.session.delete(event)
     db.session.commit()
     return jsonify({'message': 'Usunięto.'}), 200
@@ -3205,11 +3218,6 @@ def api_forecast_save():
 @app.route('/api/forecast/export')
 @leader_required
 def api_forecast_export():
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment
-    from openpyxl.chart import BarChart, Reference
-    from flask import make_response
-    import io as _io
 
     date_from_str = request.args.get('date_from', '')
     date_to_str = request.args.get('date_to', '')
@@ -3248,7 +3256,7 @@ def api_forecast_export():
         days.append(current)
         current += timedelta(days=1)
 
-    wb = Workbook()
+    wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = 'Forecast vs Actual'
 
@@ -3310,7 +3318,7 @@ def api_forecast_export():
 
         ws.add_chart(chart, 'G2')
 
-    buf = _io.BytesIO()
+    buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
 

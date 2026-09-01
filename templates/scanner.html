@@ -107,7 +107,7 @@
         card.innerHTML = `
         <div class="user-avatar">${user.display_name[0]}</div>
         <div class="user-info">
-            <div class="user-name">${user.display_name}</div>
+            <div class="user-name">${escapeHtml(user.display_name)}</div>
             <div class="user-time">${time}</div>
         </div>
         <button class="remove-btn" onclick="removeAttendance(${attendance.id})" title="Usuń">✕</button>
