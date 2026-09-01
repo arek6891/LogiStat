@@ -1,12 +1,18 @@
 import os
 import csv
 import sqlite3
+from contextlib import contextmanager
 import io
 import json
 import calendar
 from datetime import datetime, date, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 from functools import wraps
+
+try:
+    import fcntl  # POSIX; brak na Windows — wtedy blokada plikowa jest no-opem
+except ImportError:
+    fcntl = None
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
@@ -3467,6 +3473,33 @@ def migrate_columns():
                 conn.rollback()
 
 
+@contextmanager
+def _sqlite_init_lock():
+    """Serializuje inicjalizacje schematu miedzy workerami gunicorna.
+
+    Odpowiednik pg_advisory_lock dla SQLite. Gdyby flocka nie dalo sie zalozyc
+    (brak fcntl, egzotyczny filesystem), lecimy dalej bez blokady — gorzej niz
+    z nia, ale nie gorzej niz przed ta zmiana.
+    """
+    if fcntl is None:
+        yield
+        return
+    try:
+        os.makedirs(app.instance_path, exist_ok=True)
+        uchwyt = open(os.path.join(app.instance_path, '.init.lock'), 'w')
+    except OSError:
+        yield
+        return
+    try:
+        fcntl.flock(uchwyt, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(uchwyt, fcntl.LOCK_UN)
+        finally:
+            uchwyt.close()
+
+
 def init_db():
     """Create the schema, patch columns and seed — safe to run from every worker.
 
@@ -3475,12 +3508,19 @@ def init_db():
     pg_class ("worker failed to boot"). A Postgres advisory lock serializes them:
     the winner does the DDL, the rest wait and then find nothing left to do
     (create_all and seed_data are both no-ops on an initialized database).
-    SQLite needs no lock — the writer lock plus busy_timeout already serialize it.
+    SQLite ma DOKLADNIE ten sam problem, wbrew temu, co bylo tu wczesniej
+    napisane: przy pustej bazie dwa workery wchodza rownolegle w create_all()
+    i przegrany dostaje "table user already exists" -> "Worker failed to boot"
+    i gunicorn ubija caly kontener. Writer lock tego nie ratuje, bo kazde CREATE
+    TABLE to osobna, poprawnie zakonczona transakcja — wyscig jest miedzy
+    sprawdzeniem "czy tabela istnieje" a jej utworzeniem. Zamiast advisory locka
+    uzywamy flocka na pliku w instance/.
     """
     if db.engine.dialect.name != 'postgresql':
-        db.create_all()
-        migrate_columns()
-        seed_data()
+        with _sqlite_init_lock():
+            db.create_all()
+            migrate_columns()
+            seed_data()
         return
 
     lock_id = 5001  # dowolna stala — byle ta sama we wszystkich workerach
