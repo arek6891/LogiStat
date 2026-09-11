@@ -25,7 +25,7 @@ from flask_login import (
     logout_user, current_user
 )
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import func, and_, event
+from sqlalchemy import func, and_, case, event
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import joinedload
@@ -377,20 +377,19 @@ class CountryMapping(db.Model):
 STAT_CATEGORIES = [
     'labelling_on', 'labelling_tvl', 'labelling_try', 'textile',
     'accessoire', 'sunglasses', 'card_facture', 'labelling_polybag',
-    'sorting', 'carton_labeling'
+    'sorting'
 ]
 
 STAT_CATEGORY_LABELS = {
-    'labelling_on': 'Labelling on',
-    'labelling_tvl': 'Labelling tvl',
-    'labelling_try': 'Labelling try',
+    'labelling_on': 'Labelling one',
+    'labelling_tvl': 'Labelling twice',
+    'labelling_try': 'Labelling triple',
     'textile': 'Textile',
-    'accessoire': 'accessoire',
+    'accessoire': 'Accessoire',
     'sunglasses': 'Sunglasses',
     'card_facture': 'Card facture',
     'labelling_polybag': 'Labelling polybag',
-    'sorting': 'Sorting',
-    'carton_labeling': 'Carton labeling'
+    'sorting': 'Sorting'
 }
 
 
@@ -420,6 +419,9 @@ class ImportedCarton(db.Model):
     added_manually = db.Column(db.Boolean, default=False)
     modified_at = db.Column(db.DateTime, nullable=True)
     modified_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    # Ilosci per kategoria wpisane przy skanie konca paczki (JSON {kategoria: sztuki}).
+    # Zrodlo prawdy dla GeneralStat.category_data linii oznaczonych category_source='scan'.
+    scan_category_data = db.Column(db.Text, default='{}')
 
     __table_args__ = (
         db.Index('ix_carton_ziel_datum',    'ziel_datum'),
@@ -440,6 +442,24 @@ class ImportedCarton(db.Model):
         if self.scan_start_at and self.scan_end_at:
             return int((self.scan_end_at - self.scan_start_at).total_seconds())
         return None
+
+    def get_scan_categories(self):
+        """Ilosci per kategoria ze skanu. Zawsze dict {kategoria: int}."""
+        try:
+            dane = json.loads(self.scan_category_data) if self.scan_category_data else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+        if not isinstance(dane, dict):
+            return {}
+        return {k: int(v) for k, v in dane.items()
+                if k in STAT_CATEGORIES and isinstance(v, (int, float))}
+
+    def set_scan_categories(self, dane):
+        self.scan_category_data = json.dumps(
+            {k: int(v) for k, v in (dane or {}).items() if k in STAT_CATEGORIES})
+
+    def has_scan_categories(self):
+        return bool(self.get_scan_categories())
 
     def to_dict(self):
         return {
@@ -464,6 +484,7 @@ class ImportedCarton(db.Model):
             'imported_by_login': self.imported_by_user.username if self.imported_by_user else None,
             'modified_at': iso_z(self.modified_at),
             'modified_by_login': self.modified_by_user.username if self.modified_by_user else None,
+            'scan_categories': self.get_scan_categories(),
         }
 
 
@@ -491,6 +512,9 @@ class GeneralStat(db.Model):
     amounts = db.Column(db.Integer, default=0)
     category_data = db.Column(db.Text, default='{}')
     double_rate_category_data = db.Column(db.Text, default='{}')  # yellow row: manual per-category amounts for double-rate packages
+    # 'manual' = kategorie wpisane recznie (linie sprzed skanowania ilosci) — recompute ich NIE rusza.
+    # 'scan'   = kategorie sa suma skanow paczek — pole reczne zablokowane.
+    category_source = db.Column(db.String(10), default='manual')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=True)
     updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
@@ -530,17 +554,22 @@ class GeneralStat(db.Model):
         cd = self.get_category_data()
         rates = rates_for(self.loading_date.year, self.loading_date.month)
 
+        # Iterujemy po STAT_CATEGORIES, nie po kluczach z bazy — inaczej kategoria
+        # usunieta z systemu dalej doliczalaby sie z historycznych wierszy.
         total_cost = 0.0
-        for cat, data in cd.items():
+        for cat in STAT_CATEGORIES:
+            data = cd.setdefault(cat, {'amount': 0, 'cost': 0.0})
             amt = data.get('amount', 0)
             rate = rates.get(cat, 0.0)
             data['computed_cost'] = amt * rate
             total_cost += data['computed_cost']
+        cd = {kat: cd[kat] for kat in STAT_CATEGORIES}
 
         return {
             'id': self.id,
             'loading_date': self.loading_date.isoformat(),
             'week_number': self.week_number,
+            'category_source': self.category_source or 'manual',
             'list_id': self.list_id,
             'country_of_destination': self.country_of_destination,
             'country_ledger': self.country_ledger,
@@ -945,7 +974,7 @@ def api_settings_update():
 
 
 @app.route('/import-csv')
-@admin_required
+@leader_required
 def import_csv_page():
     return render_template('import_csv.html')
 
@@ -992,7 +1021,8 @@ def paczki_view():
                            barcode=barcode,
                            land=land,
                            users=users,
-                           country_mappings=country_mappings)
+                           country_mappings=country_mappings,
+                           kategorie=[(k, STAT_CATEGORY_LABELS[k]) for k in STAT_CATEGORIES])
 
 
 @app.route('/general-stats/export')
@@ -1181,6 +1211,59 @@ def double_rate_amount_map():
     return {(u, l, d): int(s or 0) for u, l, d, s in rows}
 
 
+def scan_category_totals(uebergabe_nr, land, ziel_datum):
+    """Suma ilosci per kategoria ze skanow paczek w danej grupie rozliczeniowej.
+
+    Kategorie siedza w kolumnie Text jako JSON (patrz `category_data`), wiec
+    sumujemy w Pythonie. Zwraca ksztalt `category_data`, czyli
+    {kategoria: {'amount': N, 'cost': 0.0}} — koszt liczy sie w locie w to_dict().
+    """
+    kartony = ImportedCarton.query.filter(
+        ImportedCarton.uebergabe_nr == uebergabe_nr,
+        ImportedCarton.land == land,
+        ImportedCarton.ziel_datum == ziel_datum,
+    ).all()
+    suma = {kat: 0 for kat in STAT_CATEGORIES}
+    for karton in kartony:
+        for kat, ile in karton.get_scan_categories().items():
+            suma[kat] = suma.get(kat, 0) + int(ile or 0)
+    return {kat: {'amount': suma.get(kat, 0), 'cost': 0.0} for kat in STAT_CATEGORIES}
+
+
+def ma_reczne_ilosci(stat):
+    """Czy linia ma juz wpisane recznie niezerowe ilosci per kategoria."""
+    if (stat.category_source or 'manual') != 'manual':
+        return False
+    return any(d.get('amount', 0) for d in stat.get_category_data().values()
+               if isinstance(d, dict))
+
+
+def scan_coverage_map():
+    """Pokrycie skanami per grupa: {(uebergabe, land, ziel): (zeskanowane, wszystkie)}.
+
+    Linia zasilana skanami czyta w trakcie zmiany mniej niz finalnie — bez tego
+    licznika latwo wyeksportowac polowicznie zeskanowana linie jako gotowa.
+    """
+    # Agregujemy w bazie (GROUP BY), nie w Pythonie — inaczej ekran rozliczen
+    # ciagnalby cala tabele kartonow przy kazdym otwarciu.
+    ma_skan = case(
+        (and_(ImportedCarton.scan_category_data.isnot(None),
+              ImportedCarton.scan_category_data.notin_(('{}', '', 'null'))), 1),
+        else_=0)
+    rows = db.session.query(
+        ImportedCarton.uebergabe_nr,
+        ImportedCarton.land,
+        ImportedCarton.ziel_datum,
+        func.count(ImportedCarton.id),
+        func.coalesce(func.sum(ma_skan), 0),
+    ).group_by(
+        ImportedCarton.uebergabe_nr,
+        ImportedCarton.land,
+        ImportedCarton.ziel_datum,
+    ).all()
+    return {(u, l, d): (int(zesk or 0), int(wsz or 0)) for u, l, d, wsz, zesk in rows}
+
+
 @app.route('/general-stats')
 @admin_required
 def general_stats_page():
@@ -1217,8 +1300,13 @@ def general_stats_page():
 
     # Ilość double-rate (suma Stückzahl paczek oznaczonych) per linia → żółty wiersz
     dr_amounts = double_rate_amount_map()
+    pokrycie = scan_coverage_map()
     for s in stats:
         s.dr_amount = dr_amounts.get((s.list_id, s.country_ledger, s.loading_date), 0)
+        # Linia zasilana skanami czyta w trakcie zmiany mniej niz finalnie —
+        # licznik pokrycia pilnuje, by nikt nie wzial jej za gotowa.
+        s.scanned_cartons, s.total_cartons = pokrycie.get(
+            (s.list_id, s.country_ledger, s.loading_date), (0, 0))
 
     # Przekazanie do szablonu wszystkich mapowań kosztów aby JS miał do nich dostęp przy edycji
     cost_mappings = CostMapping.query.all()
@@ -1640,9 +1728,9 @@ def api_stats_user(user_id):
     if not activity_id:
         # Grupujemy po DOBIE LOKALNEJ, tak samo jak dashboard. `func.date()`
         # cielo po dacie UTC, wiec paczka zakonczona po lokalnej polnocy trafiala
-        # na inny dzien tutaj niz na dashboardzie. Konwersja jest w Pythonie —
-        # SQLite i Postgres licza strefy zupelnie inaczej, a zakres jest maly
-        # (paczki jednego pracownika w wybranym okresie).
+        # na inny dzien tutaj niz na dashboardzie. Konwersja jest w Pythonie:
+        # `local_day_bounds()` jest jedyna definicja doby w calej aplikacji,
+        # a zakres jest maly (paczki jednego pracownika w wybranym okresie).
         pq = db.session.query(
             ImportedCarton.scan_end_at,
             ImportedCarton.stueckzahl,
@@ -2187,7 +2275,7 @@ def process_import_rows(rows):
 
 
 @app.route('/api/import-csv', methods=['POST'])
-@admin_required
+@leader_required
 def api_import_csv():
     if 'file' not in request.files:
         return jsonify({'error': 'Brak pliku.'}), 400
@@ -2213,7 +2301,7 @@ def api_import_csv():
 
 
 @app.route('/api/import/excel', methods=['POST'])
-@admin_required
+@leader_required
 def api_import_excel():
     if 'file' not in request.files:
         return jsonify({'error': 'Brak pliku.'}), 400
@@ -2270,7 +2358,16 @@ def api_general_stats():
             except ValueError:
                 return jsonify({'error': f'Nieprawidłowa data w {param}.'}), 400
     stats = query.order_by(GeneralStat.loading_date.desc()).all()
-    return jsonify([s.to_dict() for s in stats]), 200
+    # Pokrycie liczymy raz dla calej listy (jedno zapytanie), nie per wiersz.
+    pokrycie = scan_coverage_map()
+    wynik = []
+    for s in stats:
+        d = s.to_dict()
+        zesk, wsz = pokrycie.get((s.list_id, s.country_ledger, s.loading_date), (0, 0))
+        d['scanned_cartons'] = zesk
+        d['total_cartons'] = wsz
+        wynik.append(d)
+    return jsonify(wynik), 200
 
 
 @app.route('/api/general-stats/<int:stat_id>', methods=['PUT'])
@@ -2280,12 +2377,34 @@ def api_general_stat_update(stat_id):
     data = json_body()
 
     if 'category_data' in data:
+        if (stat.category_source or 'manual') == 'scan':
+            abort(400, 'Kategorie tej linii pochodzą ze skanów paczek — '
+                       'popraw ilości przy paczce (Paczki → ✎ Ilości).')
         stat.set_category_data(data['category_data'])
     if 'double_rate_category_data' in data:
         stat.set_double_rate_category_data(data['double_rate_category_data'])
     stat.updated_at = datetime.utcnow()
     stat.updated_by = current_user.id
 
+    db.session.commit()
+    return jsonify(stat.to_dict()), 200
+
+
+@app.route('/api/general-stats/<int:stat_id>/use-scan', methods=['POST'])
+@admin_required
+def api_general_stat_use_scan(stat_id):
+    """Swiadome przelaczenie linii z ilosci recznych na sume skanow.
+
+    Linia z recznymi ilosciami nie przelacza sie sama (patrz recompute_general_stat),
+    zeby pierwszy zeskanowany karton nie zastapil calego rozliczenia. Tu admin
+    potwierdza zamiane — po niej `category_data` jest suma skanow tej grupy.
+    """
+    stat = db.get_or_404(GeneralStat, stat_id)
+    stat.category_source = 'scan'
+    stat.set_category_data(
+        scan_category_totals(stat.list_id, stat.country_ledger, stat.loading_date))
+    stat.updated_at = datetime.utcnow()
+    stat.updated_by = current_user.id
     db.session.commit()
     return jsonify(stat.to_dict()), 200
 
@@ -2606,7 +2725,7 @@ def api_package_create():
     }), 201
 
 
-def recompute_general_stat(uebergabe_nr, land, ziel_datum, actor_id=None):
+def recompute_general_stat(uebergabe_nr, land, ziel_datum, actor_id=None, from_scan=False):
     """Recompute a GeneralStat line's `amounts` from the SUM of its cartons.
 
     `amounts` is a pure carton aggregate (only written by process_import_rows),
@@ -2634,6 +2753,19 @@ def recompute_general_stat(uebergabe_nr, land, ziel_datum, actor_id=None):
 
     if existing:
         existing.amounts = total
+        # Skan ilosci przelacza linie na zrodlo 'scan' — swiadomie, nie przy okazji
+        # importu. Linie 'manual' (sprzed skanowania) NIGDY nie sa nadpisywane,
+        # inaczej przeliczenie wyzerowaloby recznie wpisane rozliczenia.
+        #
+        # Wyjatek od przelaczenia: linia, w ktorej ktos juz wpisal ilosci recznie.
+        # Pierwszy skan zastapilby np. 120 sztuk szescioma i nikt by tego nie
+        # zauwazyl. Ilosci ze skanu i tak zapisuja sie na kartonie (nic nie ginie),
+        # a linie przelacza dopiero admin — POST /api/general-stats/<id>/use-scan.
+        if from_scan and not ma_reczne_ilosci(existing):
+            existing.category_source = 'scan'
+        if existing.category_source == 'scan':
+            existing.set_category_data(
+                scan_category_totals(uebergabe_nr, land, ziel_datum))
         existing.updated_at = datetime.utcnow()
         if actor_id:
             existing.updated_by = actor_id
@@ -2646,7 +2778,10 @@ def recompute_general_stat(uebergabe_nr, land, ziel_datum, actor_id=None):
             country_of_destination=mapping.country if mapping else None,
             country_ledger=land,
             amounts=total,
-            category_data=json.dumps(empty_category_data()),
+            category_source='scan' if from_scan else 'manual',
+            category_data=json.dumps(
+                scan_category_totals(uebergabe_nr, land, ziel_datum)
+                if from_scan else empty_category_data()),
         )
         db.session.add(stat)
 
@@ -2787,7 +2922,34 @@ def api_cost_mapping_save(year, month):
 @app.route('/scan-paczki')
 @leader_required
 def scan_paczki():
-    return render_template('scan_paczki.html')
+    return render_template(
+        'scan_paczki.html',
+        kategorie=[(kat, STAT_CATEGORY_LABELS[kat]) for kat in STAT_CATEGORIES])
+
+
+def parse_scan_categories(surowe):
+    """Waliduje ilosci per kategoria. Zwraca (dict, komunikat_bledu).
+
+    Suma NIE jest porownywana ze `stueckzahl` — rozbieznosc miedzy deklaracja
+    a zawartoscia paczki jest normalna i nie moze blokowac pracy.
+    """
+    if surowe is None:
+        return {}, None
+    if not isinstance(surowe, dict):
+        return None, 'Nieprawidłowy format ilości.'
+    wynik = {}
+    for kat, wartosc in surowe.items():
+        if kat not in STAT_CATEGORIES:
+            return None, f'Nieznana kategoria: {kat}.'
+        try:
+            ile = int(wartosc)
+        except (TypeError, ValueError):
+            return None, f'Ilość dla „{STAT_CATEGORY_LABELS.get(kat, kat)}" musi być liczbą.'
+        if ile < 0:
+            return None, f'Ilość dla „{STAT_CATEGORY_LABELS.get(kat, kat)}" nie może być ujemna.'
+        if ile:
+            wynik[kat] = ile
+    return wynik, None
 
 
 @app.route('/api/package-time/start', methods=['POST'])
@@ -2870,8 +3032,17 @@ def api_package_time_end():
             'error': f'Paczkę rozpoczął {starter.display_name if starter else "inny pracownik"} — tylko on może ją zakończyć.'
         }), 403
 
+    kategorie, blad = parse_scan_categories(data.get('categories'))
+    if blad:
+        return jsonify({'error': blad}), 400
+
     carton.scan_end_at = datetime.utcnow()
     carton.scan_end_by = user.id
+    if kategorie:
+        carton.set_scan_categories(kategorie)
+        # Ilosci ze skanu staja sie zrodlem rozliczenia tej linii.
+        recompute_general_stat(carton.uebergabe_nr, carton.land, carton.ziel_datum,
+                               actor_id=user.id, from_scan=True)
     db.session.commit()
 
     secs = carton.processing_seconds()
@@ -2882,6 +3053,32 @@ def api_package_time_end():
         'message': f'Koniec zarejestrowany — czas procesowania: {time_str}.',
         'carton': carton.to_dict()
     }), 200
+
+
+@app.route('/api/packages/<int:carton_id>/categories', methods=['PUT'])
+@leader_required
+def api_package_categories_update(carton_id):
+    """Korekta ilosci per kategoria — takze dla paczek z importu.
+
+    Odkad ilosci ze skanu licza koszt, literowka pracownika jest bledem w
+    rozliczeniu. `PUT /api/packages/<id>` edytuje tylko paczki dodane recznie,
+    wiec bez tego wejscia pomylki na paczce z importu nie dalo sie naprawic.
+    Zmieniamy WYLACZNIE ilosci — pola grupujace zostaja nietkniete.
+    """
+    carton = db.get_or_404(ImportedCarton, carton_id)
+    data = json_body()
+
+    kategorie, blad = parse_scan_categories(data.get('categories'))
+    if blad:
+        abort(400, blad)
+
+    carton.set_scan_categories(kategorie)
+    carton.modified_at = datetime.utcnow()
+    carton.modified_by = current_user.id
+    recompute_general_stat(carton.uebergabe_nr, carton.land, carton.ziel_datum,
+                           actor_id=current_user.id, from_scan=True)
+    db.session.commit()
+    return jsonify(carton.to_dict()), 200
 
 
 # ══════════════════════════════════════════════════════════════════════════════

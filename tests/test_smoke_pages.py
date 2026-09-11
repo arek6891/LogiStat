@@ -18,12 +18,12 @@ STRONY_ADMINA = [
 STRONY_LIDERA = [
     '/dashboard', '/forecast', '/scanner/1', '/assignment', '/data-entry',
     '/stats', '/scan-package', '/scan-paczki', '/paczki', '/time-tracking',
-    '/worker-times', '/profile', '/admin/users',
+    '/worker-times', '/profile', '/admin/users', '/import-csv',
 ]
 
 TYLKO_ADMIN = [
     '/admin/activities', '/admin/panel', '/admin/country-mapping',
-    '/admin/cost-mapping', '/admin/settings', '/import-csv', '/general-stats',
+    '/admin/cost-mapping', '/admin/settings', '/general-stats',
 ]
 
 
