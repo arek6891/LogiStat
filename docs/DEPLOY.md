@@ -6,7 +6,7 @@ Stan na 2026-08-31.
 
 | Środowisko | Serwer | Adres | Baza | Stan |
 |---|---|---|---|---|
-| dev | `10.153.1.32` (pllas01) | `http://10.153.1.32:5001` | SQLite | działa |
+| dev | `10.153.1.32` (pllas01) | `http://10.153.1.32:5001` | PostgreSQL 16 | działa |
 | **test** | `10.153.1.31` (ploptmtst01) | **`https://logistat-test.logwin-logistics.com.pl/`** | PostgreSQL 16 | działa |
 | prod | `10.153.1.30` | `https://logistat-prod.logwin-logistics.com.pl/` | PostgreSQL 16 | **brak dostępu SSH** |
 
@@ -68,8 +68,9 @@ wtedy zmienić natychmiast na `/profile`.
 
 | Zmienna | Wymagana | Domyślnie | Opis |
 |---|---|---|---|
-| `SECRET_KEY` | **tak** (gdy jest `DATABASE_URL`) | — | Klucz sesji. Bez niego aplikacja **nie wystartuje** w trybie serwerowym. Awaryjny bypass: `LOGISTAT_ALLOW_DEV_SECRET=1`. |
-| `DATABASE_URL` | nie | SQLite w `instance/` | `postgresql+psycopg2://…`. Jego obecność oznacza tryb serwerowy. |
+| `SECRET_KEY` | **tak, zawsze** | — | Klucz sesji. Bez niego aplikacja **nie wystartuje**. Compose czyta go z `.env` (patrz `.env.example`). Awaryjny bypass: `LOGISTAT_ALLOW_DEV_SECRET=1`. |
+| `DATABASE_URL` | **tak, zawsze** | — | `postgresql+psycopg2://…`. Brak zmiennej albo `sqlite://` → aplikacja nie wstaje (`resolve_database_url()`). |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | nie | `logistat` / `logistat-dev` / `logistat` | Dane usługi `db` w compose. **Na test/prod ustaw własne hasło** w `.env` albo w overridzie. |
 | `ADMIN_PASSWORD` | nie | `admin123` | Hasło konta `admin` przy **pierwszym** starcie. |
 | `TZ` | nie | UTC | Nie wpływa już na liczenie doby — od `local_day_bounds()` doba jest zawsze liczona po `Europe/Warsaw`. |
 | `SESSION_COOKIE_SECURE` | nie | off | `1` tylko gdy dostęp wyłącznie po HTTPS. Przy HTTP z LAN-u zepsuje logowanie. |
@@ -84,27 +85,30 @@ ssh -i ~/.ssh/id_ed25519 optmtst_user@10.153.1.31 \
   'cd ~/logistat-test && docker compose up --build -d'
 ```
 
-`docker-compose.override.yml` i `instance/` nie są w repo, więc `git archive`
-ich nie nadpisuje. Nowe kolumny w modelach: patrz `migrate_columns()` (SQLite)
-— na Postgresie schemat zawsze pochodzi z `db.create_all()`.
+`docker-compose.override.yml`, `.env` i `instance/` nie są w repo, więc `git archive`
+ich nie nadpisuje. **Nowe kolumny w modelach: obowiązkowo dopisz je do
+`migrate_columns()`** — `db.create_all()` dokłada brakujące tabele, ale nigdy kolumny
+do tabeli, która już istnieje, więc bez tego po wdrożeniu każde zapytanie na tym
+modelu kończy się `UndefinedColumn`. Pilnuje tego `tests/test_migracje.py`.
 
 ## Baza danych
 
-Domyślnie SQLite (`instance/logistat.db`). **`DATABASE_URL` przełącza na Postgresa** —
-i to jedyna zmiana potrzebna do migracji; brak zmiennej = powrót na SQLite.
+**Wyłącznie PostgreSQL 16** — od 2026-09 SQLite nie jest wspierany (kod obsługi
+został usunięty, nie tylko odradzony). `DATABASE_URL` jest wymagany; jego brak albo
+`sqlite://` kończy się wyjątkiem przy starcie, zamiast cichego zapisu do pliku,
+którego nikt nie backupuje. Usługę `db` dostarcza `docker-compose.yml`.
 
-Schemat na obu silnikach tworzy `db.create_all()` — **modele w `app.py` są jedynym
+Schemat tworzy `db.create_all()` — **modele w `app.py` są jedynym
 źródłem prawdy**. Nie ma ręcznie pisanego pliku DDL i nie należy go zakładać: poprzedni
 (`docs/postgres_schema.sql`, usunięty 2026-09-01) rozjechał się z modelami tak, że jego
 użycie zepsułoby aplikację — `JSONB` w `category_data` / `rates_data` psuł `json.loads`
 w `get_category_data()` (psycopg2 zwraca dict), a `DEFAULT NOW()` na `TIMESTAMP` wpisywał
 czas lokalny serwera do kolumn czytanych jako naive UTC (2 h błędu w PL latem).
 
-Pierwszy start jest serializowany — `pg_advisory_lock(5001)` na Postgresie, `flock` na
-`instance/.init.lock` na SQLite — bo inaczej workery gunicorna ścigają się w
-`create_all()` i przegrany ubija cały kontener.
+Pierwszy start jest serializowany `pg_advisory_lock(5001)` — bo inaczej workery
+gunicorna ścigają się w `create_all()` i przegrany ubija cały kontener.
 
-Przeniesienie ustawień z SQLite do Postgresa: aktywności i mapowania krajów
+Gdyby trzeba było przenieść ustawienia ze starej bazy: aktywności i mapowania krajów
 odtwarza `seed_data()` (są identyczne z seedem), więc kopiuje się tylko hash
 hasła admina, `cost_mapping` i `app_setting` — bez ID, żeby sekwencje Postgresa
 zostały spójne.
@@ -112,6 +116,15 @@ zostały spójne.
 Przyrost: ~250 B na paczkę z indeksami, czyli **50–90 MB/rok** przy
 500–1000 paczek dziennie. Postgres to ~1,2× tego plus ~40 MB–1 GB stałego
 kosztu klastra (WAL, katalogi).
+
+### Stara baza SQLite na dev
+
+Na `.32` w `instance/logistat.db` zostal plik SQLite sprzed przejscia na Postgresa
+(595 paczek, 25 linii `general_stat`, 20 prognoz, stan na 2026-09-11). Katalog
+`instance/` jest w `.gitignore` i **nie jest juz przez nic uzywany** — plik lezy
+tam wylacznie jako punkt powrotu. Mozna go skasowac, gdy nowa baza dorobi sie
+wlasnych danych. Uwaga: `docker compose down -v` kasuje wolumen Postgresa, ale
+tego pliku nie rusza (i odwrotnie).
 
 ## Backupy
 
@@ -124,11 +137,6 @@ docker exec logistat-test-db psql -U logistat -d postgres -c "CREATE DATABASE re
 gunzip -c backups/logistat-RRRR-MM-DD_GGMM.sql.gz | \
   docker exec -i logistat-test-db psql -U logistat -d restore_check
 ```
-
-Na SQLite backup **nie może być zwykłym `cp`** — przy `journal_mode=WAL` część
-zmian siedzi w `logistat.db-wal`. Trzeba `sqlite3.Connection.backup()` albo
-`VACUUM INTO`. `sqlite3` CLI nie jest zainstalowany ani na `.31`, ani w obrazie
-`python:3.11-slim`.
 
 ## Znane zachowania
 

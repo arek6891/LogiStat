@@ -8,11 +8,41 @@ i ubija caly kontener.
 import os
 import subprocess
 import sys
-import tempfile
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import urlsplit, urlunsplit
+
+import pytest
+import sqlalchemy
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKEROW = 4
+
+
+@pytest.fixture
+def pusta_baza():
+    """Swiezo utworzona, PUSTA baza na serwerze testowym.
+
+    Wyscig pierwszego startu widac tylko na bazie, ktorej schematu jeszcze nie
+    ma — a `flask_app` z conftesta zawsze podaje juz zainicjowana. Tworzymy
+    wiec osobna baze (CREATE DATABASE wymaga AUTOCOMMIT) i kasujemy ja po tescie.
+    """
+    czesci = urlsplit(os.environ['DATABASE_URL'])
+    nazwa = 'logistat_race_' + os.urandom(4).hex()
+    serwer = sqlalchemy.create_engine(
+        urlunsplit(czesci._replace(path='/postgres')),
+        isolation_level='AUTOCOMMIT')
+    with serwer.connect() as conn:
+        conn.execute(sqlalchemy.text(f'CREATE DATABASE {nazwa}'))
+    try:
+        yield urlunsplit(czesci._replace(path='/' + nazwa))
+    finally:
+        with serwer.connect() as conn:
+            conn.execute(sqlalchemy.text(
+                'SELECT pg_terminate_backend(pid) FROM pg_stat_activity '
+                'WHERE datname = :n'), {'n': nazwa})
+            conn.execute(sqlalchemy.text(f'DROP DATABASE IF EXISTS {nazwa}'))
+        serwer.dispose()
+
 
 SKRYPT = (
     'import app; '
@@ -22,10 +52,10 @@ SKRYPT = (
 )
 
 
-def _uruchom(db_path):
+def _uruchom(db_url):
     env = {
         **os.environ,
-        'DATABASE_URL': f'sqlite:///{db_path}',
+        'DATABASE_URL': db_url,
         'SECRET_KEY': 'test-secret-key',
         'PYTHONPATH': ROOT,
     }
@@ -35,12 +65,9 @@ def _uruchom(db_path):
     )
 
 
-def test_rownolegly_start_na_pustej_bazie():
-    katalog = tempfile.mkdtemp(prefix='logistat-race-')
-    db_path = os.path.join(katalog, 'race.db')
-
+def test_rownolegly_start_na_pustej_bazie(pusta_baza):
     with ThreadPoolExecutor(max_workers=WORKEROW) as pula:
-        wyniki = list(pula.map(lambda _: _uruchom(db_path), range(WORKEROW)))
+        wyniki = list(pula.map(lambda _: _uruchom(pusta_baza), range(WORKEROW)))
 
     padly = [w for w in wyniki if w.returncode != 0]
     assert not padly, (
@@ -48,14 +75,11 @@ def test_rownolegly_start_na_pustej_bazie():
         f'{padly[0].stderr[-1500:]}')
 
 
-def test_start_na_pustej_bazie_zaklada_jednego_admina():
+def test_start_na_pustej_bazie_zaklada_jednego_admina(pusta_baza):
     """Seed tez sciga sie miedzy workerami — bez blokady kazdy widzi
     count()==0 i kazdy wstawia admina."""
-    katalog = tempfile.mkdtemp(prefix='logistat-race-')
-    db_path = os.path.join(katalog, 'race.db')
-
     with ThreadPoolExecutor(max_workers=WORKEROW) as pula:
-        wyniki = list(pula.map(lambda _: _uruchom(db_path), range(WORKEROW)))
+        wyniki = list(pula.map(lambda _: _uruchom(pusta_baza), range(WORKEROW)))
 
     assert all(w.returncode == 0 for w in wyniki)
     adminow = {w.stdout for w in wyniki if 'ADMINOW=' in w.stdout}
@@ -63,15 +87,12 @@ def test_start_na_pustej_bazie_zaklada_jednego_admina():
         f'oczekiwano dokladnie jednego admina, jest: {adminow}'
 
 
-def test_ponowny_start_na_gotowej_bazie_jest_no_opem():
-    katalog = tempfile.mkdtemp(prefix='logistat-race-')
-    db_path = os.path.join(katalog, 'race.db')
-
-    pierwszy = _uruchom(db_path)
+def test_ponowny_start_na_gotowej_bazie_jest_no_opem(pusta_baza):
+    pierwszy = _uruchom(pusta_baza)
     assert pierwszy.returncode == 0, pierwszy.stderr[-1500:]
 
     with ThreadPoolExecutor(max_workers=WORKEROW) as pula:
-        wyniki = list(pula.map(lambda _: _uruchom(db_path), range(WORKEROW)))
+        wyniki = list(pula.map(lambda _: _uruchom(pusta_baza), range(WORKEROW)))
 
     assert all(w.returncode == 0 for w in wyniki)
     assert all('ADMINOW=1' in w.stdout for w in wyniki)

@@ -4,10 +4,10 @@
 
 - [x] **PostgreSQL** — wdrożony na środowisku TESTOWYM (`.31`) 2026-08-31
   - Własny kontener `logistat-test-db` (`postgres:16-alpine`), bez portu na hoście
-  - `DATABASE_URL` przełącza silnik; brak zmiennej = SQLite (dev bez zmian)
+  - `DATABASE_URL` wskazuje bazę; od 2026-09 jest **wymagany** (SQLite usunięty)
   - Schemat z `db.create_all()` (ORM = jedyne źródło prawdy). Ręcznie pisany
     `docs/postgres_schema.sql` rozjechał się z modelami i został usunięty 2026-09-01
-  - `migrate_columns()` **została**: blok `ALTER` jest SQLite-only, indeksy lecą na obu
+  - `migrate_columns()` **została** i jest jedyną drogą dla nowych kolumn na żyjącej bazie
   - Przetestowane: import CSV 595 paczek, dedup, czasy paczek, `/api/stats/user`,
     dashboard, per zmiana, sekwencje, `pg_dump` + odtworzenie
   - Szczegóły i procedura: `docs/DEPLOY.md`
@@ -97,15 +97,14 @@
 ## 💡 Tipy dla developera
 
 ### Baza danych
-- SQLite plik: `instance/logistat.db` (dev). Test/prod: PostgreSQL przez `DATABASE_URL`
-- Nowe kolumny do istniejących tabel: dodaj do `migrate_columns()` w `app.py` (SQLite);
-  na Postgresie `db.create_all()` już daje aktualny schemat
+- **Tylko PostgreSQL** — `DATABASE_URL` wymagany, `docker compose up` podnosi bazę
+- Nowe kolumny do istniejących tabel: **obowiązkowo** dodaj do `migrate_columns()`.
+  `db.create_all()` dokłada tabele, ale **nigdy kolumny do istniejącej tabeli** —
+  bez wpisu po wdrożeniu leci `UndefinedColumn`. Dopisz też przypadek do
+  `tests/test_migracje.py`, bo zwykłe testy tego nie widzą (mają świeży schemat)
 - Nowe tabele: `db.create_all()` tworzy automatycznie przy starcie
-- Backup: **nie** `cp` pliku SQLite — przy `journal_mode=WAL` część zmian jest w `-wal`.
-  Użyj `sqlite3.Connection.backup()` / `VACUUM INTO`, a na Postgresie `pg_dump`
-  (`scripts/backup-logistat.sh`)
-- `func.date()` zwraca `str` na SQLite, a `datetime.date` na Postgresie — normalizuj
-  przed slicowaniem/sortowaniem
+- Backup: `pg_dump` (`scripts/backup-logistat.sh`)
+- Testy wymagają bazy: `docker compose -f docker-compose.test.yml up -d`
 
 ### Czas pracy
 - Model `WorkerTimeEvent(user_id, shift_id, event_type, timestamp, recorded_by, is_manual, note)`

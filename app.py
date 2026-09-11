@@ -1,18 +1,11 @@
 import os
 import csv
-import sqlite3
-from contextlib import contextmanager
 import io
 import json
 import calendar
 from datetime import datetime, date, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 from functools import wraps
-
-try:
-    import fcntl  # POSIX; brak na Windows — wtedy blokada plikowa jest no-opem
-except ImportError:
-    fcntl = None
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
@@ -25,9 +18,8 @@ from flask_login import (
     logout_user, current_user
 )
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import func, and_, case, event
+from sqlalchemy import func, and_, case
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import joinedload
 
 import openpyxl
@@ -46,37 +38,60 @@ DEFAULT_ADMIN_PASSWORD = 'admin123'
 
 
 def resolve_secret_key(env=None):
-    """Zwroc SECRET_KEY albo rzuc, jesli tryb serwerowy leci na kluczu dev.
+    """Zwroc SECRET_KEY albo rzuc.
 
-    Obecnosc DATABASE_URL = srodowisko test/prod (tak ustawia
-    docker-compose.override.yml). Dotad brak SECRET_KEY cicho spadal na staly
-    klucz dev — czyli sesje kazdego admina dalyby sie podrobic, i nikt by sie
-    o tym nie dowiedzial. Awaryjnie: LOGISTAT_ALLOW_DEV_SECRET=1.
+    Dotad brak klucza cicho spadal na staly klucz dev — sesje kazdego admina
+    dalyby sie podrobic i nikt by sie o tym nie dowiedzial. Odkad KAZDE
+    srodowisko jest serwerowe (Postgres, wlasny compose), klucz jest wymagany
+    zawsze. Swiadome pominiecie (lokalny eksperyment): LOGISTAT_ALLOW_DEV_SECRET=1.
     """
     env = os.environ if env is None else env
     key = env.get('SECRET_KEY', '').strip()
     if key:
         return key
-    tryb_serwerowy = bool(env.get('DATABASE_URL', '').strip())
-    if tryb_serwerowy and env.get('LOGISTAT_ALLOW_DEV_SECRET') != '1':
+    if env.get('LOGISTAT_ALLOW_DEV_SECRET') == '1':
+        return DEV_SECRET_KEY
+    raise RuntimeError(
+        'SECRET_KEY nie jest ustawiony. Wygeneruj go '
+        '(python3 -c "import secrets; print(secrets.token_hex(32))") i ustaw '
+        'w docker-compose.override.yml albo w srodowisku. '
+        'Swiadome pominiecie: LOGISTAT_ALLOW_DEV_SECRET=1.'
+    )
+
+
+def resolve_database_url(env=None):
+    """Zwroc DATABASE_URL albo rzuc — LogiStat chodzi wylacznie na PostgreSQL.
+
+    Dotad brak zmiennej cicho spadal na `sqlite:///logistat.db` obok kodu, wiec
+    zle skonfigurowany kontener startowal i zapisywal dane do pliku, ktorego
+    nikt nie backupuje. Lepiej nie wstac.
+    """
+    env = os.environ if env is None else env
+    url = env.get('DATABASE_URL', '').strip()
+    if not url:
         raise RuntimeError(
-            'SECRET_KEY nie jest ustawiony, a DATABASE_URL wskazuje srodowisko '
-            'serwerowe. Ustaw SECRET_KEY w docker-compose.override.yml '
-            '(python3 -c "import secrets; print(secrets.token_hex(32))"). '
-            'Swiadome pominiecie: LOGISTAT_ALLOW_DEV_SECRET=1.'
+            'DATABASE_URL nie jest ustawiony. LogiStat dziala wylacznie na '
+            'PostgreSQL — ustaw np. '
+            'postgresql+psycopg2://logistat:haslo@db:5432/logistat '
+            '(patrz docker-compose.yml i docs/DEPLOY.md).'
         )
-    return DEV_SECRET_KEY
+    if url.startswith('sqlite'):
+        raise RuntimeError(
+            f'SQLite nie jest juz wspierany (DATABASE_URL={url!r}). '
+            'LogiStat dziala wylacznie na PostgreSQL.'
+        )
+    return url
 
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = resolve_secret_key()
-# SQLite domyslnie (dev); produkcyjnie/testowo Postgres przez DATABASE_URL,
-# np. postgresql+psycopg2://logistat:...@db:5432/logistat
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///logistat.db')
+# Aplikacja chodzi WYLACZNIE na Postgresie — brak DATABASE_URL to blad
+# konfiguracji, nie powod do cichego fallbacku na plik obok kodu.
+app.config['SQLALCHEMY_DATABASE_URI'] = resolve_database_url()
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # Sprawdz polaczenie przed uzyciem: po restarcie kontenera bazy workery trzymaja
 # martwe polaczenia z puli i pierwsze zadanie na kazdym zwracalo 500
-# ("server closed the connection unexpectedly"). Dla SQLite bez znaczenia.
+# ("server closed the connection unexpectedly").
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_pre_ping': True}
 app.config['MAX_CONTENT_LENGTH'] = int(
     os.environ.get('MAX_UPLOAD_MB', DEFAULT_MAX_UPLOAD_MB)) * 1024 * 1024
@@ -111,22 +126,6 @@ def _upload_za_duzy(e):
     if request.path.startswith('/api/'):
         return jsonify({'error': komunikat}), 413
     return komunikat, 413
-
-
-@event.listens_for(Engine, 'connect')
-def _set_sqlite_pragmas(dbapi_connection, connection_record):
-    """SQLite: WAL + busy timeout, so concurrent leaders don't hit "database is locked".
-
-    WAL lets readers work while one writer commits (rollback-journal mode locks the
-    whole file); busy_timeout makes a blocked writer wait 5s instead of failing at once.
-    No-op on any other engine, so the Postgres setup is unaffected.
-    """
-    if not isinstance(dbapi_connection, sqlite3.Connection):
-        return
-    cursor = dbapi_connection.cursor()
-    cursor.execute('PRAGMA journal_mode=WAL')
-    cursor.execute('PRAGMA busy_timeout=5000')
-    cursor.close()
 
 
 login_manager = LoginManager()
@@ -3628,33 +3627,31 @@ def seed_data():
 def migrate_columns():
     """Add missing columns to existing tables without dropping data.
 
-    The ALTER TABLE block is SQLite-only: it patches databases created before a
-    column existed. On Postgres the schema always comes from db.create_all(), so
-    there is nothing to patch — and a failed statement there aborts the whole
-    transaction, hence the rollback in the except branches. Indexes are created
-    on both engines (CREATE INDEX IF NOT EXISTS works on either).
+    `create_all()` dokłada tylko brakujace TABELE, nigdy kolumn do istniejacej
+    tabeli — wiec nowa kolumna na dzialajacym Postgresie musi przyjsc stad,
+    inaczej kazde zapytanie dotykajace modelu konczy sie `UndefinedColumn`.
+    Testy same z siebie tego nie zlapia: conftest robi drop_all() + create_all(),
+    czyli schema jest tam zawsze swieza — blad istnieje wylacznie na bazie,
+    ktora juz zyje. Stad `test_migracji_kolumn`, ktory kasuje kolumne i sprawdza,
+    czy wraca.
+
+    `ADD COLUMN IF NOT EXISTS` czyni to idempotentnym; try/except zostaje na
+    wypadek starszego serwera, a nieudany statement przerywa transakcje —
+    stad rollback.
     """
-    is_sqlite = db.engine.dialect.name == 'sqlite'
     with db.engine.connect() as conn:
-        migrations = [] if not is_sqlite else [
-            ("imported_carton", "processed_by",   "INTEGER REFERENCES user(id)"),
-            ("imported_carton", "processed_at",   "DATETIME"),
-            ("general_stat",    "double_rate_category_data", "TEXT DEFAULT '{}'"),
-            ("imported_carton", "double_rate",     "BOOLEAN DEFAULT 0"),
-            ("imported_carton", "scan_start_at",  "DATETIME"),
-            ("imported_carton", "scan_start_by",  "INTEGER REFERENCES user(id)"),
-            ("imported_carton", "scan_end_at",    "DATETIME"),
-            ("imported_carton", "scan_end_by",    "INTEGER REFERENCES user(id)"),
-            ("imported_carton", "added_manually", "BOOLEAN DEFAULT 0"),
-            ("imported_carton", "modified_at",    "DATETIME"),
-            ("imported_carton", "modified_by",    "INTEGER REFERENCES user(id)"),
+        migrations = [
+            ("imported_carton", "scan_category_data", "TEXT DEFAULT '{}'"),
+            ("general_stat",    "category_source",    "VARCHAR(10) DEFAULT 'manual'"),
         ]
+
         for table, column, col_def in migrations:
             try:
-                conn.execute(db.text(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}"))
+                conn.execute(db.text(
+                    f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {col_def}"))
                 conn.commit()
             except Exception:
-                conn.rollback()  # column already exists
+                conn.rollback()  # kolumna juz istnieje
 
         indexes = [
             "CREATE INDEX IF NOT EXISTS ix_carton_ziel_datum   ON imported_carton (ziel_datum)",
@@ -3675,33 +3672,6 @@ def migrate_columns():
                 conn.rollback()
 
 
-@contextmanager
-def _sqlite_init_lock():
-    """Serializuje inicjalizacje schematu miedzy workerami gunicorna.
-
-    Odpowiednik pg_advisory_lock dla SQLite. Gdyby flocka nie dalo sie zalozyc
-    (brak fcntl, egzotyczny filesystem), lecimy dalej bez blokady — gorzej niz
-    z nia, ale nie gorzej niz przed ta zmiana.
-    """
-    if fcntl is None:
-        yield
-        return
-    try:
-        os.makedirs(app.instance_path, exist_ok=True)
-        uchwyt = open(os.path.join(app.instance_path, '.init.lock'), 'w')
-    except OSError:
-        yield
-        return
-    try:
-        fcntl.flock(uchwyt, fcntl.LOCK_EX)
-        yield
-    finally:
-        try:
-            fcntl.flock(uchwyt, fcntl.LOCK_UN)
-        finally:
-            uchwyt.close()
-
-
 def init_db():
     """Create the schema, patch columns and seed — safe to run from every worker.
 
@@ -3710,21 +3680,7 @@ def init_db():
     pg_class ("worker failed to boot"). A Postgres advisory lock serializes them:
     the winner does the DDL, the rest wait and then find nothing left to do
     (create_all and seed_data are both no-ops on an initialized database).
-    SQLite ma DOKLADNIE ten sam problem, wbrew temu, co bylo tu wczesniej
-    napisane: przy pustej bazie dwa workery wchodza rownolegle w create_all()
-    i przegrany dostaje "table user already exists" -> "Worker failed to boot"
-    i gunicorn ubija caly kontener. Writer lock tego nie ratuje, bo kazde CREATE
-    TABLE to osobna, poprawnie zakonczona transakcja — wyscig jest miedzy
-    sprawdzeniem "czy tabela istnieje" a jej utworzeniem. Zamiast advisory locka
-    uzywamy flocka na pliku w instance/.
     """
-    if db.engine.dialect.name != 'postgresql':
-        with _sqlite_init_lock():
-            db.create_all()
-            migrate_columns()
-            seed_data()
-        return
-
     lock_id = 5001  # dowolna stala — byle ta sama we wszystkich workerach
     with db.engine.connect() as conn:
         conn.execute(db.text('SELECT pg_advisory_lock(:id)'), {'id': lock_id})
