@@ -7,7 +7,7 @@ System do zarządzania pracownikami, przydzielania czynności i śledzenia staty
 | Warstwa | Technologia |
 |---------|-------------|
 | Backend | Python 3.13 + Flask 3.1 |
-| Baza danych | SQLite (dev) / PostgreSQL 16 (test, prod) — przełącznik `DATABASE_URL` |
+| Baza danych | PostgreSQL 16 (wszystkie środowiska) — `DATABASE_URL` wymagany |
 | Autentykacja | Flask-Login |
 | Frontend | Vanilla HTML/CSS/JS + Chart.js |
 | Deploy | Docker + Gunicorn |
@@ -28,8 +28,9 @@ docker compose up --build -d
 # → http://localhost:5001
 ```
 
-Bez `DATABASE_URL` aplikacja działa na SQLite. Wdrożenie na serwer (Postgres, domena,
-backupy) opisuje **`docs/DEPLOY.md`**.
+Aplikacja wymaga PostgreSQL i `SECRET_KEY` — `docker compose up` podnosi bazę razem
+z aplikacją, wystarczy skopiować `.env.example` do `.env` i wpisać klucz. Wdrożenie na
+serwer (domena, backupy) opisuje **`docs/DEPLOY.md`**.
 
 ## Testy
 
@@ -53,7 +54,7 @@ i `America/New_York`.
 
 | Środowisko | Adres | Baza |
 |---|---|---|
-| dev (`10.153.1.32`) | `http://10.153.1.32:5001` | SQLite |
+| dev (`10.153.1.32`) | `http://10.153.1.32:5001` | PostgreSQL 16 |
 | test (`10.153.1.31`) | `https://logistat-test.logwin-logistics.com.pl/` | PostgreSQL 16 |
 | prod (`10.153.1.30`) | `https://logistat-prod.logwin-logistics.com.pl/` | *(nie wdrożone)* |
 
@@ -96,8 +97,9 @@ LogiStat/
 │   ├── test_smoke_pages.py         # Każda strona się renderuje
 │   ├── test_config.py              # SECRET_KEY, limit uploadu, ciasteczka
 │   └── test_init_race.py           # Równoległy start workerów na pustej bazie
-├── instance/
-│   └── logistat.db         # Baza SQLite (dev; generowana automatycznie)
+├── docker-compose.yml      # Aplikacja + PostgreSQL
+├── docker-compose.test.yml # PostgreSQL pod pytest (port 55432, tmpfs)
+├── .env.example            # Wzor konfiguracji lokalnej (SECRET_KEY, haslo bazy)
 ├── static/
 │   └── style.css           # Design system (dark theme)
 ├── templates/

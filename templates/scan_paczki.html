@@ -110,6 +110,63 @@
         font-size: .85rem;
     }
     .recent-item .barcode { font-family: monospace; color: var(--accent); }
+
+    /* Panel ilosci per kategoria (krok 3 przy koncu paczki) */
+    .qty-panel {
+        display: none;
+        margin-top: 22px;
+        padding-top: 20px;
+        border-top: 2px solid var(--border);
+    }
+    .qty-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 16px;
+    }
+    .qty-head .pkg { font-family: monospace; color: var(--accent); font-size: 1rem; }
+    .qty-count {
+        font-size: 1.05rem;
+        background: var(--accent-glow);
+        color: var(--accent);
+        padding: 6px 14px;
+        border-radius: var(--radius-sm);
+        font-weight: 700;
+    }
+    .qty-grid { display: flex; flex-direction: column; gap: 8px; }
+    .qty-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 6px 10px;
+        border-radius: var(--radius-sm);
+        background: var(--bg-hover);
+    }
+    .qty-row label { font-size: .92rem; color: var(--text-primary); }
+    .qty-row input {
+        width: 96px;
+        padding: 8px 10px;
+        font-size: 1.05rem;
+        text-align: right;
+        border-radius: var(--radius-sm);
+        border: 2px solid var(--border);
+        background: var(--bg-primary);
+        color: var(--text-primary);
+    }
+    .qty-row input:focus { outline: none; border-color: var(--accent); }
+    .qty-foot {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 18px;
+    }
+    .qty-sum { font-size: .95rem; color: var(--text-muted); }
+    .qty-sum strong { color: var(--text-primary); font-size: 1.1rem; }
     .recent-item .time { color: var(--text-muted); font-size: .78rem; }
 </style>
 {% endblock %}
@@ -178,7 +235,37 @@
             <div class="scan-input-wrap">
                 <input type="text" id="end-pkg" placeholder="Zeskanuj kod paczki…"
                     autocomplete="off" disabled
-                    onkeydown="handleKey(event, 'end-pkg', null, submitEnd)">
+                    onkeydown="handleKey(event, 'end-pkg', null, otworzPanelIlosci)">
+            </div>
+        </div>
+
+        <div class="qty-panel" id="end-qty-panel">
+            <div class="qty-head">
+                <div>
+                    <div style="font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);">Paczka</div>
+                    <div class="pkg" id="end-qty-barcode"></div>
+                </div>
+                <div class="qty-count">W paczce: <span id="end-qty-stueckzahl">–</span> szt.</div>
+            </div>
+
+            <div class="qty-grid">
+                {% for klucz, etykieta in kategorie %}
+                <div class="qty-row">
+                    <label for="qty-{{ klucz }}">{{ etykieta }}</label>
+                    <input type="number" min="0" step="1" id="qty-{{ klucz }}"
+                        data-kategoria="{{ klucz }}" placeholder="0"
+                        autocomplete="off" oninput="przeliczSume()"
+                        onkeydown="qtyKey(event, {{ loop.index0 }})">
+                </div>
+                {% endfor %}
+            </div>
+
+            <div class="qty-foot">
+                <div class="qty-sum">Wpisano: <strong id="end-qty-sum">0</strong> szt.</div>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-ghost" onclick="anulujKoniec()">Anuluj</button>
+                    <button class="btn btn-primary" onclick="submitEnd()">✅ Zapisz koniec</button>
+                </div>
             </div>
         </div>
 
@@ -226,6 +313,76 @@ function resetSteps(prefix) {
     s2.className = 'scan-step-num waiting';
     pkg.disabled = true;
     emp.disabled = false;
+    if (prefix === 'end') ukryjPanelIlosci();
+}
+
+// ── Panel ilosci per kategoria (krok 3 przy koncu paczki) ────────────────────
+
+function poleIlosci() {
+    return Array.from(document.querySelectorAll('#end-qty-panel input[data-kategoria]'));
+}
+
+function ukryjPanelIlosci() {
+    const panel = document.getElementById('end-qty-panel');
+    if (!panel) return;
+    panel.style.display = 'none';
+    poleIlosci().forEach(i => { i.value = ''; });
+    const suma = document.getElementById('end-qty-sum');
+    if (suma) suma.textContent = '0';
+}
+
+function przeliczSume() {
+    const suma = poleIlosci().reduce((acc, i) => acc + (parseInt(i.value, 10) || 0), 0);
+    document.getElementById('end-qty-sum').textContent = suma;
+}
+
+function qtyKey(event, idx) {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    const pola = poleIlosci();
+    if (idx < pola.length - 1) pola[idx + 1].focus();
+    else submitEnd();
+}
+
+function anulujKoniec() {
+    document.getElementById('end-emp').value = '';
+    document.getElementById('end-pkg').value = '';
+    resetSteps('end');
+    document.getElementById('end-emp').focus();
+}
+
+async function otworzPanelIlosci() {
+    const pkg = document.getElementById('end-pkg').value.trim();
+    if (!pkg) return;
+
+    // Podglad jest read-only — sluzy tylko pokazaniu ile sztuk bylo w paczce
+    // i wczesnemu zlapaniu paczki zakonczonej / bez startu.
+    let data;
+    try {
+        const res = await fetch('/api/package-lookup?barcode=' + encodeURIComponent(pkg));
+        data = await res.json();
+        if (!res.ok) { showResult('end', '❌ ' + data.error, 'error'); anulujKoniec(); return; }
+    } catch (e) {
+        showResult('end', '❌ Błąd połączenia.', 'error'); anulujKoniec(); return;
+    }
+
+    const carton = data.carton || {};
+    if (carton.finished) {
+        showResult('end', '❌ Paczka jest już zakończona.', 'error'); anulujKoniec(); return;
+    }
+    if (!carton.scan_start_at) {
+        showResult('end', '❌ Brak zarejestrowanego startu dla tej paczki.', 'error');
+        anulujKoniec(); return;
+    }
+
+    document.getElementById('end-qty-barcode').textContent = pkg;
+    document.getElementById('end-qty-stueckzahl').textContent =
+        (carton.stueckzahl === null || carton.stueckzahl === undefined) ? '?' : carton.stueckzahl;
+    poleIlosci().forEach(i => { i.value = ''; });
+    document.getElementById('end-qty-sum').textContent = '0';
+    document.getElementById('end-qty-panel').style.display = 'block';
+    const pierwsze = poleIlosci()[0];
+    if (pierwsze) pierwsze.focus();
 }
 
 function handleKey(event, currentId, nextId, submitFn) {
@@ -305,10 +462,18 @@ async function submitEnd() {
     const pkg = document.getElementById('end-pkg').value.trim();
     if (!emp || !pkg) return;
 
+    const kategorie = {};
+    poleIlosci().forEach(i => {
+        const n = parseInt(i.value, 10);
+        if (n > 0) kategorie[i.dataset.kategoria] = n;
+    });
+
     const res = await fetch('/api/package-time/end', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employee_barcode: emp, package_barcode: pkg })
+        body: JSON.stringify({
+            employee_barcode: emp, package_barcode: pkg, categories: kategorie
+        })
     });
     const data = await res.json();
 
@@ -319,8 +484,12 @@ async function submitEnd() {
             const m = Math.floor(secs / 60), s = secs % 60;
             timeStr = (m > 0 ? m + 'm ' : '') + s + 's';
         }
+        const wpisane = Object.values(data.carton?.scan_categories || {})
+            .reduce((a, b) => a + b, 0);
+        const opis = [timeStr ? `⏱ ${timeStr}` : null,
+                      wpisane ? `${wpisane} szt.` : null].filter(Boolean).join(' · ');
         showResult('end', '✅ ' + data.message, 'success');
-        addRecent('end', pkg, data.carton?.scan_end_by_name || emp, timeStr ? `⏱ ${timeStr}` : null);
+        addRecent('end', pkg, data.carton?.scan_end_by_name || emp, opis || null);
     } else {
         showResult('end', '❌ ' + data.error, 'error');
     }

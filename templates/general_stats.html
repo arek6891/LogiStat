@@ -67,13 +67,31 @@
             {% for s in stats %}
             {% set row_ym = '%d-%02d'|format(s.loading_date.year, s.loading_date.month) %}
             {% set rates = rates_by_ym.get(row_ym, {}) %}
+            {% set ze_skanu = (s.category_source or 'manual') == 'scan' %}
             <tr data-id="{{ s.id }}" data-ym="{{ row_ym }}">
                 <td>{{ s.loading_date.strftime('%d.%m.%Y') }}</td>
                 <td>{{ s.week_number }}</td>
                 <td>{{ s.list_id }}</td>
                 <td>{{ s.country_of_destination or '—' }}</td>
                 <td>{{ s.country_ledger }}</td>
-                <td style="font-weight:600;" class="row-amounts" data-val="{{ s.amounts }}">{{ s.amounts }}</td>
+                <td style="font-weight:600;" class="row-amounts" data-val="{{ s.amounts }}">{{ s.amounts }}
+                    {% if ze_skanu %}
+                    <div class="scan-cov {% if s.scanned_cartons < s.total_cartons %}niepelne{% endif %}"
+                        title="Ilości per kategoria pochodzą ze skanów paczek. Zeskanowano {{ s.scanned_cartons }} z {{ s.total_cartons }} paczek tej linii.">
+                        🔒 {{ s.scanned_cartons }}/{{ s.total_cartons }}
+                    </div>
+                    {% elif s.scanned_cartons > 0 %}
+                    {# Linia ma reczne ilosci, ale jej paczki sa juz skanowane.
+                       Nie przelaczamy jej sami — skan zastapilby cale rozliczenie. #}
+                    <div class="scan-cov niepelne"
+                        title="Ta linia ma ilości wpisane ręcznie, ale {{ s.scanned_cartons }} z {{ s.total_cartons }} jej paczek ma już ilości ze skanów. Przełączenie zastąpi ręczne wartości sumą skanów.">
+                        ⚠ ręczne · skany {{ s.scanned_cartons }}/{{ s.total_cartons }}
+                    </div>
+                    <button class="btn btn-ghost btn-sm" style="padding:1px 5px;font-size:.65rem;margin-top:2px;"
+                        data-id="{{ s.id }}" onclick="przelaczNaSkany(this)"
+                        title="Zastąp ręczne ilości sumą skanów">→ użyj skanów</button>
+                    {% endif %}
+                </td>
                 {% set cd = s.get_category_data() %}
                 {% set row_total = namespace(val=0) %}
                 {% set row_total_amount = namespace(val=0) %}
@@ -92,8 +110,13 @@
                 {% set rate = rates.get(cat, 0.0) %}
                 {% set computed_cost = amt * rate %}
                 <td>
-                    <input type="number" class="inline-input cat-amount" data-cat="{{ cat }}" data-field="amount"
-                        value="{{ amt }}" min="0" step="1" style="width:65px;">
+                    {# Linia zasilana skanami: pole bez klasy `inline-input`, wiec saveAll
+                       jej nie zbiera — backend i tak odrzucilby taki zapis (400). #}
+                    <input type="number" data-cat="{{ cat }}" data-field="amount"
+                        class="cat-amount {% if ze_skanu %}locked{% else %}inline-input{% endif %}"
+                        value="{{ amt }}" min="0" step="1" style="width:65px;"
+                        {% if ze_skanu %}readonly tabindex="-1"
+                        title="Ilość ze skanów paczek — popraw w Paczki → ✎ Ilości"{% endif %}>
                 </td>
                 <td>
                     <input type="text" class="inline-input cat-cost" data-cat="{{ cat }}" data-field="cost"
@@ -157,6 +180,24 @@
 </div>
 
 <style>
+    .scan-cov {
+        margin-top: 3px;
+        font-size: .7rem;
+        font-weight: 600;
+        color: #22c55e;
+        white-space: nowrap;
+    }
+    .scan-cov.niepelne { color: #f59e0b; }
+    .cat-amount.locked {
+        width: 65px;
+        background: rgba(255,255,255,.05);
+        border: 1px solid transparent;
+        border-radius: 4px;
+        color: #94a3b8;
+        text-align: right;
+        padding: 4px 6px;
+        cursor: not-allowed;
+    }
     .inline-input {
         background: transparent;
         border: 1px solid transparent;
@@ -311,6 +352,26 @@
 
     // Initialize sums on load
     updateGlobalSums();
+
+    async function przelaczNaSkany(btn) {
+        if (!confirm('Zastąpić ręcznie wpisane ilości sumą ze skanów paczek?\n\n' +
+                     'Tej operacji nie cofniesz — ręczne wartości tej linii zostaną nadpisane.')) return;
+        btn.disabled = true;
+        try {
+            const res = await fetch(`/api/general-stats/${btn.dataset.id}/use-scan`,
+                                    { method: 'POST' });
+            if (!res.ok) {
+                const d = await res.json().catch(() => ({}));
+                alert('Błąd: ' + (d.error || 'nie udało się przełączyć linii.'));
+                btn.disabled = false;
+                return;
+            }
+            location.reload();
+        } catch {
+            alert('Błąd połączenia.');
+            btn.disabled = false;
+        }
+    }
 
     async function saveAll() {
         const rows = document.querySelectorAll('#statsTable tbody tr[data-id]');

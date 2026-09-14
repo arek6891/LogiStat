@@ -1,5 +1,58 @@
 # LogiStat — Changelog
 
+## 2026-09-11 — tylko PostgreSQL, ilosci per kategoria ze skanu, menu wg rol
+
+### Zmienione — baza
+- **SQLite nie jest juz wspierany.** Kod obslugi zostal USUNIETY, nie tylko odradzony:
+  `_set_sqlite_pragmas` (WAL + busy_timeout), `_sqlite_init_lock` (flock), galaz
+  SQLite w `migrate_columns()` i `init_db()`, importy `sqlite3` / `fcntl`.
+- **`DATABASE_URL` jest wymagany** — `resolve_database_url()` rzuca przy starcie, gdy
+  zmiennej brak albo wskazuje `sqlite://`. Wczesniej cichy fallback zapisywal dane do
+  pliku obok kodu, ktorego nikt nie backupuje.
+- **`SECRET_KEY` wymagany zawsze** (nie tylko "gdy jest DATABASE_URL") — kazde
+  srodowisko jest teraz serwerowe.
+- `docker-compose.yml` dostal usluge **`db`** (postgres:16-alpine, bez portu na hoscie)
+  i `.env` / `.env.example` na sekrety. **Uwaga:** Compose interpoluje `${...}` w kazdym
+  pliku OSOBNO, przed scaleniem overrida — dlatego plik bazowy NIE uzywa skladni
+  wymaganej `${X:?}`, bo `.31` nie ma `.env` i taki zapis wysadzilby mu deploy.
+- Testy chodza na Postgresie (`docker-compose.test.yml`, port 55432, tmpfs).
+  `tests/test_init_race.py` tworzy wlasna baze przez `CREATE DATABASE`.
+
+### Poprawione
+- **`migrate_columns()` nie dzialal na Postgresie** — blok `ALTER` byl pod `is_sqlite`,
+  a `create_all()` nigdy nie dokłada kolumny do istniejacej tabeli. Nowe kolumny nie
+  powstalyby na `.31` i kazde zapytanie na modelu konczyloby sie `UndefinedColumn`.
+  Zwykle testy tego nie widza (conftest stawia schemat od zera) — stad
+  **`tests/test_migracje.py`**, ktory kasuje kolumne i sprawdza, czy wraca.
+- **Pierwszy skan kasowal reczne rozliczenie linii** (120 sztuk -> 6). Linia z
+  niezerowymi recznymi iloscami nie przelacza sie sama; ilosci ze skanu i tak zapisuja
+  sie na kartonie, a zamiany dokonuje admin przyciskiem **-> uzyj skanow**.
+- `scan_coverage_map()` ciagnal cala tabele kartonow przy kazdym otwarciu rozliczen —
+  przepisane na `GROUP BY`.
+- **Brak access logow** — gunicorn startowal bez `--access-logfile`, 9 dni pracy
+  zostawialo 71 linii logu. Doszly logi dostepu, `gthread` (koniec `WORKER TIMEOUT`
+  na cichych gniazdach), `--timeout 120` i rotacja `json-file` 10 MB x 5.
+
+### Dodane
+- **Ilosci per kategoria przy skanie konca paczki.** Skan loginu -> skan paczki ->
+  panel z 9 kategoriami i pokazana iloscia sztuk w paczce. Ilosci lecą na
+  `ImportedCarton.scan_category_data` i przez `recompute_general_stat(from_scan=True)`
+  staja sie zrodlem `GeneralStat.category_data`, czyli kosztu.
+  `GeneralStat.category_source` (`manual`/`scan`) rozdziela linie reczne od skanowanych.
+- `PUT /api/packages/<id>/categories` — korekta ilosci przez lidera, takze dla paczek
+  z importu (wczesniej pomylki w takiej paczce nie dalo sie naprawic).
+- Licznik pokrycia skanami w Statystykach ogolnych (`3/50`), zeby nikt nie wzial
+  polowicznie zeskanowanej linii za gotowa.
+- **Import CSV/Excel dostepny dla lidera** (byl admin-only).
+- **Menu w 3 grupach** wg tego, kto obsluguje ekran: Pracownik / Lider / Admin.
+  Naglowki siedza w tym samym warunku roli co pozycje — lider nie widzi juz pustego
+  naglowka "Administracja".
+
+### Usuniete
+- Kategoria `carton_labeling` (0 wierszy z niezerowa wartoscia na dev i na tescie).
+  Etykiety: `Labelling one` / `twice` / `triple`. `GeneralStat.to_dict()` iteruje po
+  `STAT_CATEGORIES`, wiec usunieta kategoria nie doliczy sie z historycznego JSON-a.
+
 ## 2026-09-01 — przeglad kodu: uprawnienia, doba lokalna, sprzatanie
 
 ### Poprawione

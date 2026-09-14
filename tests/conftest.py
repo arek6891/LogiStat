@@ -2,44 +2,44 @@
 
 `app.py` tworzy `app` i odpala `init_db()` na poziomie modulu, wiec DATABASE_URL
 musi byc ustawiony PRZED importem. Kazdy test dostaje czysta baze (drop_all +
-create_all + seed), zeby kolejnosc testow nie mialy znaczenia.
+create_all + seed), zeby kolejnosc testow nie miala znaczenia.
+
+Od 2026-09 testy chodza na PostgreSQL — tym samym silniku co produkcja, bo
+aplikacja nie wspiera juz SQLite. Baze podnosi:
+
+    docker compose -f docker-compose.test.yml up -d
+
+Inna baza: LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://... pytest
 """
 import os
 import sys
-import tempfile
 
 import pytest
 from flask import g
 from flask.testing import FlaskClient
 
-# Sciezka do repo + baza testowa muszą być gotowe przed importem app.py.
+# Sciezka do repo + baza testowa musza byc gotowe przed importem app.py.
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-# Domyslnie SQLite w pliku tymczasowym. Zeby przejechac ten sam zestaw po
-# Postgresie (tak chodzi .31 i produkcja):
-#   LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/db pytest
-_DB_PATH = None
-_ZEWNETRZNA_BAZA = os.environ.get('LOGISTAT_TEST_DATABASE_URL', '').strip()
-if _ZEWNETRZNA_BAZA:
-    os.environ['DATABASE_URL'] = _ZEWNETRZNA_BAZA
-else:
-    _DB_FD, _DB_PATH = tempfile.mkstemp(suffix='.db', prefix='logistat-test-')
-    os.close(_DB_FD)
-    os.environ['DATABASE_URL'] = f'sqlite:///{_DB_PATH}'
+# Zgodne z docker-compose.test.yml (port 55432, zeby nie kolidowac z lokalnym
+# Postgresem na 5432).
+DOMYSLNA_BAZA_TESTOWA = (
+    'postgresql+psycopg2://logistat:logistat@127.0.0.1:55432/logistat_test')
+
+os.environ['DATABASE_URL'] = (
+    os.environ.get('LOGISTAT_TEST_DATABASE_URL', '').strip() or DOMYSLNA_BAZA_TESTOWA)
 os.environ.setdefault('SECRET_KEY', 'test-secret-key')
 
-import app as logistat  # noqa: E402  (import po ustawieniu env)
-
-
-def pytest_unconfigure(config):
-    if _DB_PATH is None:
-        return
-    for suffix in ('', '-wal', '-shm'):
-        try:
-            os.unlink(_DB_PATH + suffix)
-        except OSError:
-            pass
+try:
+    import app as logistat  # noqa: E402  (import po ustawieniu env)
+except Exception as blad:  # pragma: no cover — tylko gdy baza nie odpowiada
+    raise RuntimeError(
+        f"Nie udalo sie polaczyc z baza testowa ({os.environ['DATABASE_URL']}).\n"
+        'LogiStat dziala wylacznie na PostgreSQL — podnies baze testowa:\n'
+        '    docker compose -f docker-compose.test.yml up -d\n'
+        f'Blad zrodlowy: {blad}'
+    ) from blad
 
 
 class IsolatedClient(FlaskClient):

@@ -1,12 +1,60 @@
+# LogiStat — aplikacja + PostgreSQL. Od 2026-09 SQLite nie jest juz wspierany.
+#
+# UWAGA przy edycji: Compose interpoluje ${ZMIENNE} w KAZDYM pliku osobno, jeszcze
+# przed scaleniem z docker-compose.override.yml. Dlatego NIE uzywamy tu skladni
+# wymaganej (${X:?blad}) dla wartosci, ktore srodowiska nadpisuja w overridzie —
+# `.31` nie ma pliku .env i taki zapis wysadzilby mu deploy mimo poprawnej
+# konfiguracji. Wartosci wrazliwe maja puste/dev-owe domyslne, a aplikacja sama
+# odmawia startu bez SECRET_KEY (resolve_secret_key) i bez DATABASE_URL
+# (resolve_database_url).
 services:
   app:
     build: .
     container_name: logistat
     restart: always
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "5001:5000"
-    volumes:
-      - ./instance:/app/instance
     environment:
       - FLASK_APP=app.py
       - FLASK_ENV=production
+      - TZ=Europe/Warsaw
+      # Puste = aplikacja nie wstanie z czytelnym bledem. Ustaw w .env:
+      #   python3 -c "import secrets; print(secrets.token_hex(32))"
+      - SECRET_KEY=${SECRET_KEY:-}
+      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-logistat}:${POSTGRES_PASSWORD:-logistat-dev}@db:5432/${POSTGRES_DB:-logistat}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  db:
+    image: postgres:16-alpine
+    container_name: logistat-db
+    restart: always
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-logistat}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-logistat-dev}
+      - POSTGRES_DB=${POSTGRES_DB:-logistat}
+      - TZ=Europe/Warsaw
+    # Bez portu na hoscie — dostep tylko po wewnetrznej sieci Dockera.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # -U/-d jawnie: docker exec dziala jako root, a roli "root" w bazie nie ma
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-logistat} -d ${POSTGRES_DB:-logistat}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  pgdata:

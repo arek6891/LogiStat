@@ -10,8 +10,11 @@ venv/
 env/
 ENV/
 
-# SQLite database (generated at runtime)
+# Stara baza SQLite (nieuzywana od 2026-09, zostaje jako punkt rollbacku)
 instance/
+
+# Lokalna konfiguracja srodowiska (hasla, SECRET_KEY)
+.env
 
 # IDE
 .vscode/

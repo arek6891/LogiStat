@@ -5,23 +5,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Local development
-pip install -r requirements.txt
-python app.py                        # → http://127.0.0.1:5001
-HOST=0.0.0.0 python app.py           # dev reachable from the LAN (loopback by default)
-
-# Tests
-pip install -r requirements-dev.txt
-pytest                               # 178 tests
-LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://u:p@host:5432/db pytest   # same suite on Postgres
-
-# Docker (production-like)
-docker compose up --build -d         # → http://localhost:5001
+# Everything runs on PostgreSQL — there is no SQLite mode any more.
+cp .env.example .env                 # then put a real SECRET_KEY in it
+docker compose up --build -d         # app + db → http://localhost:5001
 docker compose down
 
-# Database reset (required after model changes — no migrations for existing columns)
-rm instance/logistat.db
-python app.py                        # re-creates + seeds
+# Tests — need a Postgres; the compose file below provides one (port 55432, tmpfs)
+docker compose -f docker-compose.test.yml up -d
+pip install -r requirements-dev.txt
+pytest                               # 265 tests
+docker compose -f docker-compose.test.yml down
+LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://u:p@host:5432/db pytest   # another DB
+
+# Local run without Docker (needs a reachable Postgres)
+DATABASE_URL=postgresql+psycopg2://logistat:pass@127.0.0.1:5432/logistat \
+  SECRET_KEY=$(python3 -c 'import secrets;print(secrets.token_hex(32))') python app.py
+
+# Database reset (drops all data)
+docker compose down -v && docker compose up -d      # re-creates + seeds
 ```
 
 Default admin credentials after seed: `admin` / `admin123` — override with the `ADMIN_PASSWORD` env var **before the first start** (see `docs/DEPLOY.md`).
@@ -30,20 +31,22 @@ Default admin credentials after seed: `admin` / `admin123` — override with the
 
 **Everything is in `app.py`** — models, routes, API endpoints, seed data (~3200 lines). There are no separate modules.
 
-**Tests:** `tests/` (pytest). `conftest.py` sets `DATABASE_URL` to a temp SQLite file **before importing `app`** (the module runs `init_db()` at import time) and gives every test a fresh schema + seed. Coverage is deliberately concentrated on the money-affecting paths — import aggregation, `recompute_general_stat`, double rate, cost math — plus permissions, day boundaries, validation and a page smoke test. `IsolatedClient` clears `g._login_user` / `g._rates_cache` per request: the fixture holds one app context per test and Flask reuses it, so without that two clients in one test would share the cached login.
+**Tests:** `tests/` (pytest). `conftest.py` sets `DATABASE_URL` **before importing `app`** (the module runs `init_db()` at import time) — it points at the Postgres from `docker-compose.test.yml` (`…@127.0.0.1:55432/logistat_test`), overridable with `LOGISTAT_TEST_DATABASE_URL`; if the DB is unreachable the import raises with the command that starts it and gives every test a fresh schema + seed. Coverage is deliberately concentrated on the money-affecting paths — import aggregation, `recompute_general_stat`, double rate, cost math — plus permissions, day boundaries, validation and a page smoke test. `IsolatedClient` clears `g._login_user` / `g._rates_cache` per request: the fixture holds one app context per test and Flask reuses it, so without that two clients in one test would share the cached login.
 
-**Database:** SQLite at `instance/logistat.db` by default; **`DATABASE_URL` overrides it** (test env on `.31` runs `postgresql+psycopg2://…@db:5432/logistat`). Flask-SQLAlchemy ORM. No Flask-Migrate. **The ORM is the single source of truth for the schema** — `db.create_all()` builds it on both engines. There is no hand-written DDL file; `docs/postgres_schema.sql` used to exist and was deleted in 2026-09 because it had drifted into something actively harmful (its `JSONB` columns broke `get_category_data()`'s `json.loads`, and its `DEFAULT NOW()` wrote server-local time into columns everything reads as naive UTC). Don't reintroduce one — change the models.
+**Database: PostgreSQL only** (since 2026-09 — SQLite support was removed, not merely discouraged). `DATABASE_URL` is **mandatory**: `resolve_database_url()` raises at import if it is missing *or* points at SQLite, instead of silently writing to a file nobody backs up. `docker-compose.yml` ships the `db` service; `.31` overrides it in `docker-compose.override.yml`. Flask-SQLAlchemy ORM. No Flask-Migrate. **The ORM is the single source of truth for the schema** — `db.create_all()` builds it. There is no hand-written DDL file; `docs/postgres_schema.sql` used to exist and was deleted in 2026-09 because it had drifted into something actively harmful (its `JSONB` columns broke `get_category_data()`'s `json.loads`, and its `DEFAULT NOW()` wrote server-local time into columns everything reads as naive UTC). Don't reintroduce one — change the models.
 - New **tables**: `db.create_all()` at module level handles them automatically on startup.
 - New **columns** on existing tables: add an entry to `migrate_columns()` — uses `ALTER TABLE` with try/except to skip if already present.
-- `migrate_columns()`'s ALTER block is **SQLite-only** (`db.engine.dialect.name`); on Postgres `create_all()` already produces the current schema. Its index block runs on both.
-- **`func.date()` returns `str` on SQLite but `datetime.date` on Postgres** — avoid it for day grouping entirely; `api_stats_user` now groups in Python via `local_day_bounds()` (see the timezone note below).
+- `migrate_columns()` uses `ALTER TABLE … ADD COLUMN IF NOT EXISTS`. This is the **only** way a new column reaches a live database: `create_all()` adds missing *tables* but **never a column to an existing table**, so forgetting it means every query on that model dies with `UndefinedColumn` after deploy. Ordinary tests cannot catch that — conftest does `drop_all()` + `create_all()`, so their schema is always fresh and the bug exists only on a database that already lives. **`tests/test_migracje.py` covers it** by dropping a column and asserting it comes back; add a case there with every new column.
+- **Avoid `func.date()` for day grouping** — `api_stats_user` groups in Python via `local_day_bounds()` (see the timezone note below), which keeps one definition of "day" across the app.
 
 **Auth:** Flask-Login with three roles enforced by `@leader_required` / `@admin_required` decorators:
 - `operator` — scanned in at shift start, no login
-- `leader` — password login, runs scanner/assignment/data-entry/time-tracking screens
-- `admin` — everything + admin panel, CSV import, country/cost mappings
+- `leader` — password login, runs scanner/assignment/data-entry/time-tracking screens + **CSV/Excel import** (`/import-csv`, `POST /api/import-csv`, `POST /api/import/excel`)
+- `admin` — everything + admin panel, General Stats, country/cost mappings
 
 `/api/users` is `@leader_required` (leaders create operators) but carries its own role guards: only an **admin** may create/edit/deactivate a `leader` or `admin` account, change any role, or set a password (403 otherwise) — see `ROLES` / `PRIVILEGED_ROLES` / `acting_as_admin()`. Degrading or deactivating the **last active admin** is refused (400). `login()` and `load_user()` both check `is_active_user`, so a soft-delete also kills a session already in progress.
+
+**Sidebar** is grouped by **who operates the screen**, not by permission (the two can disagree — `Czasy paczek` sits under Pracownik but is still `@leader_required`, being a station screen): **👷 Pracownik** (Skaner zmian, Czas pracy, Czasy paczek, Paczki inspektor) · **🧑‍💼 Lider** (Dashboard, Forecast, Przydzielanie, Wpis ilości, Statystyki, Paczki (dane), Czasy pracowników, Import danych, Użytkownicy) · **🛡️ Admin** (Statystyki ogólne, Czynności, Panel Admina). Each group header lives **inside** the same role conditional as its items — otherwise a leader sees an empty "Admin" heading.
 
 **Frontend:** Vanilla HTML/JS + Jinja2 templates. No JS framework. Chart.js for stats graphs. All templates extend `base.html` (dark theme, sidebar navigation).
 
@@ -60,7 +63,7 @@ Leader enters quantities per person → `DailyStat` records with audit trail
 
 **Package scanning — two separate modules:**
 - `/scan-package` ("Skan paczek"): **read-only lookup**. Scan a package barcode → `GET /api/package-lookup` returns status (scanned / by whom / finished) + basic data. `scanned = processed_by OR scan_start_at`; `finished = scan_end_at`; "kto" = `processed_by_name` else `scan_start_by_name`. Does NOT mutate anything.
-- `/scan-paczki` ("Czasy paczek"): time tracking. Tabs Start / Koniec → `POST /api/package-time/start|end` set `scan_start_at`/`scan_end_at` (+ `_by`). `processing_seconds()` = end − start. **Ownership lock:** a package in progress belongs to the worker who started it — another worker starting → 409, ending → 403; same worker re-start keeps the original timestamp. A **finished** package is locked: re-start → 409, re-end → 409 (no re-processing).
+- `/scan-paczki` ("Czasy paczek"): time tracking **+ ilości per kategoria**. Tabs Start / Koniec → `POST /api/package-time/start|end` set `scan_start_at`/`scan_end_at` (+ `_by`). `processing_seconds()` = end − start. Both steps are **skan loginu → skan paczki**. On **Koniec** the package barcode opens a third step: `GET /api/package-lookup` shows the package's `stueckzahl` and the worker types quantities per category, sent as `categories` in the end call and stored on `ImportedCarton.scan_category_data` (JSON, accessors `get_/set_scan_categories()`). The sum is **not** validated against `stueckzahl` — a discrepancy is normal and must not block work. Omitting `categories` keeps the old behaviour (time only). **Ownership lock:** a package in progress belongs to the worker who started it — another worker starting → 409, ending → 403; same worker re-start keeps the original timestamp. A **finished** package is locked: re-start → 409, re-end → 409 (no re-processing).
 
 `ImportedCarton.processed_by` + `processed_at` are set only via reassignment on `/paczki` (leader+). The old alternating employee→package assignment scan (`POST /api/scan-package`) and `POST /api/scan-employee` were removed in the 2026-09 cleanup.
 
@@ -82,6 +85,15 @@ Both `POST /api/import-csv` (`;`-delimited CSV) and `POST /api/import/excel` (`.
 
 **Manual edit:** `PUT /api/packages/<id>` (leader+, "✎ Edytuj" button) — editable **only** for `added_manually` packages (imported ones → 403). Same validation as create; changed barcode collision → 409. Changing a group field (`uebergabe_nr`/`land`/`ziel_datum`) moves the carton between GeneralStat groups: `recompute_general_stat()` rewrites the affected line(s) as `SUM(stueckzahl)` over the group — **recompute-from-sum, not delta** (exact even when manual + imported cartons share a line; the invariant is that `amounts` is written only by carton aggregation). An emptied group's line is kept at `amounts=0` (preserves `category_data`). Sets `modified_by`/`modified_at` (shown per row). Editing a scanned package (has `scan_start_at`/`scan_end_at`) is allowed but the UI confirms first.
 
+**Scan quantities → billing (`GeneralStat.category_source`):**
+Quantities entered at package end are the **source of truth for `category_data`**, i.e. for cost (`cost = amount × rate`). `recompute_general_stat(..., from_scan=True)` rewrites `category_data` as `SUM` of the group's cartons' `scan_category_data` — same recompute-from-sum invariant as `amounts`, via `scan_category_totals()`.
+- **`category_source`** on `GeneralStat` splits two worlds: `'manual'` (entered by hand, pre-dating scanning) is **never touched by recompute**; `'scan'` is a carton aggregate and its manual field is **rejected by `PUT /api/general-stats/<id>` (400)**. Without this guard a recompute would silently zero out hand-entered billing — the expensive, invisible bug. The flip to `'scan'` happens **only** when scan quantities arrive, never as a side effect of an import.
+- **A line that already holds non-zero manual quantities does not flip** (`ma_reczne_ilosci()`): otherwise the first scanned carton would replace e.g. 120 pieces with 6, silently. The scan still stores its quantities **on the carton**, so nothing is lost, and the line shows `⚠ ręczne · skany 3/50` with a **→ użyj skanów** button → `POST /api/general-stats/<id>/use-scan` (admin), which performs the swap deliberately. A freshly imported line has empty categories, so its first scan flips automatically.
+- **Correcting a typo:** `PUT /api/packages/<id>/categories` (leader+, "✎ Ilości" in `/paczki`) edits quantities on **any** carton — imported ones included, unlike `PUT /api/packages/<id>` which is manual-only. Since scan quantities bill, a worker's typo had to be fixable; it sets `modified_by`/`modified_at` and recomputes.
+- **Coverage:** `scan_coverage_map()` → `scanned/total` cartons per line, shown in General Stats (`🔒 3/50`) and in `GET /api/general-stats`. A line legitimately reads low mid-shift; the counter stops anyone exporting a half-scanned line as final.
+- The **yellow double-rate row** (`double_rate_category_data`) stays **manual** — unaffected.
+- `carton_labeling` was **removed** from `STAT_CATEGORIES` (2026-09); labels are now `Labelling one/twice/triple`. `GeneralStat.to_dict()` iterates `STAT_CATEGORIES`, not the stored keys, so a removed category can never bill from legacy JSON.
+
 **AI suggestions** (`/api/assignment/suggestions`): greedy algorithm using 30-day average `DailyStat.quantity` per user per activity.
 
 ## Key implementation details
@@ -91,12 +103,12 @@ Both `POST /api/import-csv` (`;`-delimited CSV) and `POST /api/import/excel` (`.
 - **Drag & drop:** Native HTML5 API. Multi-select via click, drag moves all selected.
 - **`GeneralStat.category_data`** and **`CostMapping.rates_data`** store JSON as `db.Text`. Always use `get_category_data()` / `get_rates_data()` accessors.
 - **User soft-delete:** `DELETE /api/users/<id>` sets `is_active_user=False`.
-- **"Today" is always the Warsaw day, never the server's.** `local_today()` and `local_day_bounds(d)` (→ naive-UTC `[start, end)`, DST-correct via ZoneInfo) are the single definition, used by `api_dashboard`, `api_dashboard_shifts` and `api_stats_user`. Never build a day boundary from `date.today()` — with two shifts working through midnight it puts work on the wrong day, and it used to disagree with the stats screen's `func.date()` (UTC). `api_stats_user` groups packages by local day **in Python**, because SQLite and Postgres do timezone conversion completely differently.
+- **"Today" is always the Warsaw day, never the server's.** `local_today()` and `local_day_bounds(d)` (→ naive-UTC `[start, end)`, DST-correct via ZoneInfo) are the single definition, used by `api_dashboard`, `api_dashboard_shifts` and `api_stats_user`. Never build a day boundary from `date.today()` — with two shifts working through midnight it puts work on the wrong day, and it used to disagree with the stats screen's `func.date()` (UTC). `api_stats_user` groups packages by local day **in Python**, so `local_day_bounds()` stays the single definition of a day.
 - **All timestamps stored in UTC (naive `datetime.utcnow()`); displayed in Europe/Warsaw.** Two display paths, both DST-correct: (1) API JSON serializes datetimes via `iso_z()` which appends **`Z`** so the browser's `new Date(iso)` parses them as UTC and `toLocaleTimeString('pl')` converts to local — **datetime fields only, never date-only** columns (`ziel_datum`, `loading_date`, `Shift.date` stay bare `isoformat()`); (2) server-rendered Jinja timestamps use the **`| localdt('%fmt')`** filter (naive-UTC → `Europe/Warsaw`). Manual worker-time edits round-trip cleanly: the browser sends `new Date(local).toISOString().slice(0,19)` (naive UTC) and `fromisoformat` stores it as-is. Never render a stored datetime with bare `strftime` (shows UTC) or feed a Z-less ISO to `new Date()` (parsed as local → 2h off in PL summer).
 - **Break threshold** (min) highlighted red in `/worker-times` is **configurable** by admin at `/admin/settings` (`PUT /api/settings`, key `break_threshold_minutes`, default 30). Stored in the generic `AppSetting` key/value table — read via `get_setting_int()`, defaults in `SETTING_DEFAULTS`. The route passes it to the template (`break_threshold`) and JS uses `BREAK_THRESHOLD`.
-- **First start is serialized on BOTH engines.** Gunicorn imports `app.py` once per worker, so on an empty database the workers race inside `db.create_all()`. Postgres uses `pg_advisory_lock`; SQLite uses an `fcntl.flock` on `instance/.init.lock` (`_sqlite_init_lock()`). Without it the loser died with `table user already exists` → `Worker failed to boot` and gunicorn shut the whole container down — non-deterministically, so it looked like a flaky deploy. The busy_timeout pragma does **not** cover this: each `CREATE TABLE` is its own committed transaction, and the race is between the existence check and the create.
-- **SQLite pragmas:** `_set_sqlite_pragmas` (a SQLAlchemy `Engine` `connect` listener) sets `journal_mode=WAL` + `busy_timeout=5000` on every connection, so concurrent leaders don't hit `database is locked`. WAL adds `logistat.db-wal` / `-shm` next to the DB — **back up with `sqlite3.Connection.backup()` or `VACUUM INTO`, never a bare `cp`** (torn snapshot). The listener no-ops on non-SQLite DBAPI connections, so the Postgres migration stays unaffected.
-- **Config / env vars** (full table in `docs/DEPLOY.md`): `SECRET_KEY` is **mandatory whenever `DATABASE_URL` is set** — `resolve_secret_key()` raises at import rather than silently falling back to the dev key (bypass: `LOGISTAT_ALLOW_DEV_SECRET=1`). `MAX_UPLOAD_MB` (default 32) caps imports; over the limit → `413` as JSON. `SESSION_COOKIE_SAMESITE=Lax` is always on (closes CSRF on the multipart `/api/import-csv`; JSON endpoints were already protected by the preflight requirement); `SESSION_COOKIE_SECURE` is opt-in via env because `.31` is also reached over plain HTTP from the LAN.
+- **First start is serialized with `pg_advisory_lock`.** Gunicorn imports `app.py` once per worker, so on an empty database the workers race inside `db.create_all()` and the loser dies with a `UniqueViolation` on `pg_class` → `Worker failed to boot`, and gunicorn shuts the whole container down — non-deterministically, so it looks like a flaky deploy. The race is between the existence check and the create, and each `CREATE TABLE` is its own committed transaction, so no ordinary lock covers it. `tests/test_init_race.py` starts four workers against a freshly created database (its `pusta_baza` fixture does `CREATE DATABASE`, since the shared test DB is already initialised).
+- **Backups: `pg_dump`.** The old SQLite WAL caveat is gone with SQLite itself.
+- **Config / env vars** (full table in `docs/DEPLOY.md`): `SECRET_KEY` is **always mandatory** — `resolve_secret_key()` raises at import rather than silently falling back to the dev key (bypass: `LOGISTAT_ALLOW_DEV_SECRET=1`). It is read from `.env` (gitignored; see `.env.example`) by Compose. **Careful with Compose interpolation:** `${VAR:?msg}` is resolved per-file *before* `docker-compose.override.yml` is merged, so requiring a variable in `docker-compose.yml` breaks `.31`, which has no `.env` and supplies the value in its override — that is why the base file uses plain defaults and the app itself refuses to start instead. `MAX_UPLOAD_MB` (default 32) caps imports; over the limit → `413` as JSON. `SESSION_COOKIE_SAMESITE=Lax` is always on (closes CSRF on the multipart `/api/import-csv`; JSON endpoints were already protected by the preflight requirement); `SESSION_COOKIE_SECURE` is opt-in via env because `.31` is also reached over plain HTTP from the LAN.
 - **Errors on `/api/` paths return JSON**, not HTML — one `@app.errorhandler(HTTPException)`. Use `abort(400, 'komunikat')` freely; the front reads `data.error`. Request helpers: `json_body()`, `parse_date()`, `parse_shift_number()`, `require_int()`.
 - **Static assets:** `{{ static_v('style.css') }}` appends the file's mtime — no manual `?v=` bump.
 - **`escapeHtml()` in `base.html`** — everything interpolated into `innerHTML` from the DB (display names, activity names, barcodes, countries) goes through it. Barcodes arrive from CSV imports, so the risk is *stored* XSS.

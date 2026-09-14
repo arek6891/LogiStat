@@ -1,0 +1,29 @@
+# Postgres pod `pytest`. Od 2026-09 testy chodza na tym samym silniku co produkcja.
+#
+#   docker compose -f docker-compose.test.yml up -d
+#   LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://logistat:logistat@127.0.0.1:55432/logistat_test pytest
+#   docker compose -f docker-compose.test.yml down -v
+#
+# Port 55432 (nie 5432), zeby nie kolidowac z lokalnym Postgresem.
+#
+# TYLKO DLA DEWELOPERKI. Plik jedzie z repo na serwery razem z reszta kodu,
+# ale NIE uruchamiaj go na .31/.30 — postawi drugiego Postgresa obok bazy
+# produkcyjnej/testowej. Tam baze daje docker-compose.yml + override.
+# Baza jest efemeryczna — brak wolumenu, `down` kasuje dane.
+services:
+  test-db:
+    image: postgres:16-alpine
+    container_name: logistat-test-pg
+    environment:
+      - POSTGRES_USER=logistat
+      - POSTGRES_PASSWORD=logistat
+      - POSTGRES_DB=logistat_test
+    ports:
+      - "127.0.0.1:55432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data   # testy nie potrzebuja trwalosci, a tmpfs jest szybszy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logistat -d logistat_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 15

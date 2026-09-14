@@ -62,6 +62,37 @@
 </div>
 
 
+<!-- Modal korekty ilosci per kategoria -->
+<div id="qtyModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;">
+    <div style="background:var(--surface);border-radius:12px;padding:2rem;min-width:360px;max-width:520px;width:90%;max-height:90vh;overflow-y:auto;">
+        <h3 style="margin-top:0;">✎ Ilości per kategoria</h3>
+        <p style="color:var(--text-muted);font-size:.85rem;">
+            Paczka <strong id="qtyBarcode" style="font-family:monospace;color:var(--accent);"></strong>
+            · w paczce <strong id="qtyStueck"></strong> szt.<br>
+            Zapis od razu przelicza Statystyki ogólne dla tej linii.
+        </p>
+
+        <div id="qtyRows" style="display:flex;flex-direction:column;gap:.4rem;margin-top:1rem;">
+            {% for klucz, etykieta in kategorie %}
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.35rem .6rem;background:var(--bg-hover);border-radius:6px;">
+                <label for="qty-{{ klucz }}" style="font-size:.9rem;">{{ etykieta }}</label>
+                <input type="number" min="0" step="1" id="qty-{{ klucz }}" data-kategoria="{{ klucz }}"
+                    class="form-control" style="width:100px;text-align:right;" placeholder="0" autocomplete="off">
+            </div>
+            {% endfor %}
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1.25rem;gap:.5rem;">
+            <span style="color:var(--text-muted);font-size:.85rem;">Suma: <strong id="qtySuma">0</strong> szt.</span>
+            <div style="display:flex;gap:.5rem;">
+                <button class="btn btn-secondary" onclick="zamknijQty()">Anuluj</button>
+                <button class="btn btn-primary" onclick="zapiszQty()">💾 Zapisz</button>
+            </div>
+        </div>
+        <div id="qtyBlad" style="display:none;margin-top:.75rem;color:var(--danger);font-size:.85rem;"></div>
+    </div>
+</div>
+
 <div style="overflow-x:auto;">
     <table class="data-table">
         <thead>
@@ -147,6 +178,16 @@
                             onclick="openEditPackage(this)" title="Edytuj paczkę">✎ Edytuj</button>
                     </div>
                     {% endif %}
+                    <div style="margin-top:.35rem;">
+                        {# Korekta ilosci dziala takze na paczkach z importu — odkad
+                           ilosci ze skanu licza koszt, pomylka musi byc naprawialna. #}
+                        <button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:.75rem;"
+                            data-id="{{ item.id }}"
+                            data-barcode="{{ item.barcode }}"
+                            data-stueckzahl="{{ item.stueckzahl or 0 }}"
+                            data-cats="{{ item.get_scan_categories() | tojson }}"
+                            onclick="otworzQty(this)" title="Popraw ilości per kategoria">✎ Ilości</button>
+                    </div>
                     {% if item.modified_at %}<div style="font-size:.7rem;color:var(--text-muted);" title="Ostatnia edycja">✏ {{ item.modified_by_user.username if item.modified_by_user else '' }} · {{ item.modified_at | localdt('%d.%m %H:%M') }}</div>{% endif %}
                 </td>
             </tr>
@@ -354,6 +395,75 @@ async function toggleCartonDoubleRate(cartonId, checkbox) {
         checkbox.disabled = false;
     }
 }
+
+// ── Korekta ilosci per kategoria ────────────────────────────────────────────
+
+let qtyKartonId = null;
+
+function qtyPola() {
+    return Array.from(document.querySelectorAll('#qtyRows input[data-kategoria]'));
+}
+
+function qtyPrzelicz() {
+    const suma = qtyPola().reduce((a, i) => a + (parseInt(i.value, 10) || 0), 0);
+    document.getElementById('qtySuma').textContent = suma;
+}
+
+function otworzQty(btn) {
+    qtyKartonId = btn.dataset.id;
+    document.getElementById('qtyBarcode').textContent = btn.dataset.barcode;
+    document.getElementById('qtyStueck').textContent = btn.dataset.stueckzahl;
+    document.getElementById('qtyBlad').style.display = 'none';
+
+    let biezace = {};
+    try { biezace = JSON.parse(btn.dataset.cats || '{}'); } catch { biezace = {}; }
+    qtyPola().forEach(i => { i.value = biezace[i.dataset.kategoria] || ''; });
+    qtyPrzelicz();
+
+    document.getElementById('qtyModal').style.display = 'flex';
+    const pierwsze = qtyPola()[0];
+    if (pierwsze) pierwsze.focus();
+}
+
+function zamknijQty() {
+    document.getElementById('qtyModal').style.display = 'none';
+    qtyKartonId = null;
+}
+
+async function zapiszQty() {
+    if (!qtyKartonId) return;
+    const categories = {};
+    qtyPola().forEach(i => {
+        const n = parseInt(i.value, 10);
+        if (n > 0) categories[i.dataset.kategoria] = n;
+    });
+
+    try {
+        const res = await fetch(`/api/packages/${qtyKartonId}/categories`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ categories })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            const el = document.getElementById('qtyBlad');
+            el.textContent = data.error || 'Błąd zapisu.';
+            el.style.display = 'block';
+            return;
+        }
+        zamknijQty();
+        showToast('Ilości zapisane — rozliczenie przeliczone.', 'success');
+        setTimeout(() => location.reload(), 700);
+    } catch {
+        const el = document.getElementById('qtyBlad');
+        el.textContent = 'Błąd połączenia.';
+        el.style.display = 'block';
+    }
+}
+
+document.addEventListener('input', e => {
+    if (e.target.matches('#qtyRows input[data-kategoria]')) qtyPrzelicz();
+});
 
 </script>
 {% endblock %}

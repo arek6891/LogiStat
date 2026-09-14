@@ -12,26 +12,44 @@ def test_klucz_z_env_wygrywa():
     assert logistat.resolve_secret_key({'SECRET_KEY': 'wlasny'}) == 'wlasny'
 
 
-def test_dev_bez_database_url_dostaje_klucz_dev():
-    assert logistat.resolve_secret_key({}) == logistat.DEV_SECRET_KEY
+def test_brak_klucza_wybucha():
+    """Cichy fallback na staly klucz dev = sesje admina do podrobienia.
 
-
-def test_tryb_serwerowy_bez_klucza_wybucha():
-    """Cichy fallback na staly klucz dev = sesje admina do podrobienia."""
+    Odkad kazde srodowisko jest serwerowe (Postgres), klucz jest wymagany
+    zawsze — nie tylko gdy ustawiony jest DATABASE_URL.
+    """
     with pytest.raises(RuntimeError, match='SECRET_KEY'):
-        logistat.resolve_secret_key({'DATABASE_URL': 'postgresql://x/y'})
+        logistat.resolve_secret_key({})
 
 
 def test_pusty_klucz_traktowany_jak_brak():
     with pytest.raises(RuntimeError):
-        logistat.resolve_secret_key({'SECRET_KEY': '   ',
-                                     'DATABASE_URL': 'postgresql://x/y'})
+        logistat.resolve_secret_key({'SECRET_KEY': '   '})
 
 
 def test_swiadome_pominiecie_dziala():
-    env = {'DATABASE_URL': 'postgresql://x/y', 'LOGISTAT_ALLOW_DEV_SECRET': '1'}
+    env = {'LOGISTAT_ALLOW_DEV_SECRET': '1'}
 
     assert logistat.resolve_secret_key(env) == logistat.DEV_SECRET_KEY
+
+
+# ── DATABASE_URL ─────────────────────────────────────────────────────────────
+
+def test_url_bazy_z_env_wygrywa():
+    env = {'DATABASE_URL': 'postgresql+psycopg2://u:p@db:5432/logistat'}
+
+    assert logistat.resolve_database_url(env) == env['DATABASE_URL']
+
+
+def test_brak_url_bazy_wybucha():
+    """Zamiast cicho zapisywac do pliku, ktorego nikt nie backupuje."""
+    with pytest.raises(RuntimeError, match='DATABASE_URL'):
+        logistat.resolve_database_url({})
+
+
+def test_sqlite_jest_odrzucany():
+    with pytest.raises(RuntimeError, match='SQLite'):
+        logistat.resolve_database_url({'DATABASE_URL': 'sqlite:///logistat.db'})
 
 
 # ── Limit uploadu ────────────────────────────────────────────────────────────

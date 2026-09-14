@@ -4,16 +4,18 @@
 
 | Środowisko | Host | Silnik | Baza | Użytkownik |
 |---|---|---|---|---|
-| Development | 10.153.1.32 | SQLite | `instance/logistat.db` | — |
+| Development | 10.153.1.32 | **PostgreSQL 16** (kontener `logistat-db`) | `logistat` | `logistat` |
 | Test | 10.153.1.31 | **PostgreSQL 16** (kontener `logistat-test-db`) | `logistat` | `logistat` |
 | Production | 10.153.1.30 | PostgreSQL 16 *(nie wdrożone)* | `logistat` | `logistat` |
 
-Silnik wybiera zmienna **`DATABASE_URL`**; bez niej aplikacja działa na SQLite.
-Hasła w `docker-compose.override.yml` na serwerze (`chmod 600`, poza repozytorium) —
+Od 2026-09 LogiStat działa **wyłącznie na PostgreSQL** — obsługa SQLite została
+usunięta z kodu. `DATABASE_URL` jest wymagany; jego brak albo `sqlite://` kończy się
+wyjątkiem przy starcie (`resolve_database_url()`).
+Hasła w `.env` / `docker-compose.override.yml` na serwerze (`chmod 600`, poza repozytorium) —
 nigdy w kodzie ani w repozytorium. Procedura: `docs/DEPLOY.md`.
 
 > ⚠️ **Nie ma ręcznie pisanego pliku DDL i nie należy go zakładać.**
-> Schemat na obu silnikach tworzy `db.create_all()` (ORM = źródło prawdy). W tym pliku
+> Schemat tworzy `db.create_all()` (ORM = źródło prawdy). W tym pliku
 > `category_data`/`rates_data` są `JSONB` — psycopg2 zwraca wtedy dict, a `get_category_data()`
 > robi na tym `json.loads`; a `DEFAULT NOW()` na `TIMESTAMP` wpisuje czas lokalny serwera do
 > kolumn, które aplikacja czyta jako naive UTC (2 h błędu w PL latem). Do decyzji: poprawić
@@ -21,11 +23,10 @@ nigdy w kodzie ani w repozytorium. Procedura: `docs/DEPLOY.md`.
 
 **Tworzenie schematu jest serializowane między workerami.** Gunicorn importuje `app.py`
 raz na worker, więc przy **pustej** bazie wszystkie wchodzą jednocześnie w `db.create_all()`
-i `seed_data()`. Bez blokady przegrany dostaje `UniqueViolation` na `pg_class` (Postgres)
-albo `table user already exists` (SQLite), gunicorn melduje `Worker failed to boot` i ubija
-cały kontener — losowo, więc wygląda to na zaciętą instalację, nie na błąd. `init_db()`
-używa dlatego `pg_advisory_lock(5001)` na Postgresie i `fcntl.flock` na `instance/.init.lock`
-na SQLite. Dotyczy tylko pierwszego startu; na gotowej bazie `create_all()` i `seed_data()`
+i `seed_data()`. Bez blokady przegrany dostaje `UniqueViolation` na `pg_class`,
+gunicorn melduje `Worker failed to boot` i ubija cały kontener — losowo, więc wygląda
+to na zaciętą instalację, nie na błąd. `init_db()` używa dlatego `pg_advisory_lock(5001)`.
+Dotyczy tylko pierwszego startu; na gotowej bazie `create_all()` i `seed_data()`
 są no-opami.
 
 ---
