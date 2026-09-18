@@ -1,5 +1,64 @@
 # LogiStat — Changelog
 
+## 2026-09-18 — filtry czasow i paczek, Total Amount z Labelling one, „Inne"
+
+### Zmienione — rozliczenia
+- **`Total Amount` w Statystykach ogolnych liczy sie WYLACZNIE z `Labelling one`**
+  (`TOTAL_AMOUNT_CATEGORY`), zamiast sumowac wszystkie kategorie. Jedna sztuka
+  przechodzi przez kilka czynnosci, wiec suma liczyla ten sam towar wielokrotnie
+  i potrafila przebic `Amounts`. Zmiana dotyczy ekranu, przeliczania w JS po edycji
+  i eksportu Excel — koszty (`cost = amount x rate`) sa nietkniete.
+- **Zolty wiersz double rate ZOSTAJE na sumie wszystkich kategorii** — swiadoma
+  niespojnosc, do ustalenia z operacja (`docs/TODO.md`). `write_data_row()` dostal
+  flage `is_double_rate`.
+- Naglowek `Total Amount` i `Amounts` maja dymek (ⓘ) tlumaczacy, skad biora sie
+  liczby: `Amounts` = suma Stueckzahl z importu, `Total Amount` = ilosci wpisane
+  przy zakonczeniu paczki.
+
+### Dodane — czas pracy
+- **Tryb „Inne"** na ekranie Czas pracy (np. wyjscie do HR): zdarzenia
+  `other_start` / `other_end`. Liczy sie **jak przerwa** — pomniejsza czas pracy —
+  ale jest raportowany osobno (`other_minutes`, kolumna „Inne").
+- Przerwa i „Inne" nie moga trwac jednoczesnie (409), bo ten sam czas zostalby
+  odjety dwa razy. `work_end` domyka **oba** otwarte okresy. Reczna korekta na
+  `/worker-times` te blokade omija, wiec czas pracy odejmuje **sume zlaczonych
+  okresow** (`suma_zlaczonych_okresow()`), a nie sume ich dlugosci — inaczej
+  nachodzaca przerwa i „Inne" zanizylyby czas pracy.
+- **Czasy pracownikow: filtr po pracowniku + „⚠️ Tylko bledy"** (czas pracy ponad
+  progiem, brak przerwy, przerwa ponizej progu). Oba filtry dzialaja na danych juz
+  pobranych z `/api/worker-times` — bez zmian w API. Brak/za krotka przerwa licza
+  sie **dopiero po zarejestrowaniu konca pracy**, zeby trwajaca zmiana nie
+  swiecila sie na czerwono.
+- Nowe ustawienia admina (`/admin/settings`): `max_work_minutes` (660) i
+  `min_break_minutes` (15) — obok istniejacego `break_threshold_minutes`.
+
+### Dodane — Paczki (dane)
+- Filtry: **po pracowniku** (kto przejal / rozpoczal / zakonczyl), **tylko double
+  rate**, **pokaz zrobione**, **⚠️ pokaz bledy**.
+- **Domyslnie widac tylko paczki niezrobione** (bez `scan_end_at`). Zakonczone
+  pokazuje dopiero „pokaz zrobione".
+- Filtr bledow: paczka rozpoczeta i nigdy nie zakonczona **albo** ilosc w kategorii
+  przekraczajaca `stueckzahl` o ponad 10% (`TOLERANCJA_ILOSCI`). Porownanie idzie
+  w Pythonie, bo ilosci ze skanu to JSON w kolumnie tekstowej (JSONB jest zakazany)
+  — stad `StroniceLista`, stronicowanie w pamieci z API `Pagination`.
+- **`POST /api/packages/<id>/unlock-scan`** (lider+, przycisk 🔓 Odblokuj) — kasuje
+  start skanu paczki rozpoczetej i nigdy nie zakonczonej. Bez tego paczka zostawala
+  zablokowana na zawsze: nalezy do pracownika, ktory ja zaczal, wiec inny dostawal
+  409 przy starcie i 403 przy koncu. Na bazie testowej wisialo tak 5 paczek,
+  najstarsza od tygodnia. Paczki **zakonczonej** nie da sie odblokowac (409).
+
+### Dodane — tlumaczenia
+- Kategorie ilosci maja dwuczlonowe etykiety na ekranach
+  (`Labelling one — Etykietowanie pojedyncze`) — `STAT_CATEGORY_LABELS_PL`
+  + `etykieta_kategorii()`. **Naglowki eksportu Excel zostaja po angielsku**,
+  bo to artefakt rozliczeniowy wychodzacy na zewnatrz.
+
+### Testy
+- `tests/test_total_amount.py`, `tests/test_czas_inne.py`,
+  `tests/test_filtry_paczek.py`, `tests/test_progi_bledow.py` — 307 testow.
+- Zadnej nowej kolumny w bazie, wiec `migrate_columns()` bez zmian.
+
+
 ## 2026-09-11 — tylko PostgreSQL, ilosci per kategoria ze skanu, menu wg rol
 
 ### Zmienione — baza

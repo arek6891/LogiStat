@@ -4,16 +4,46 @@
 <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
     <div>
         <h1>📦 Paczki (dane)</h1>
-        <p style="color:var(--text-muted);">Surowe dane paczek: zaimportowane z plików CSV/Excel oraz dodane ręcznie.</p>
+        <p style="color:var(--text-muted);">Surowe dane paczek: zaimportowane z plików CSV/Excel oraz dodane ręcznie.<br>
+            <span style="font-size:.85rem;">
+            {% if tylko_bledy %}Filtr błędów: paczki rozpoczęte bez końca lub z ilością przekraczającą Stückzahl o ponad 10%.
+            {% elif pokaz_zrobione %}Widok: wszystkie paczki, także zakończone.
+            {% else %}Widok domyślny: <strong>tylko paczki niezrobione</strong> (bez skanu „Koniec paczki"). Zaznacz „pokaż zrobione", aby zobaczyć resztę.
+            {% endif %}
+            </span>
+        </p>
     </div>
     <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;">
         <button type="button" class="btn btn-primary" onclick="openAddPackage()">➕ Dodaj paczkę</button>
-        <form method="GET" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+        <form method="GET" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
             <input type="date" name="date_from" value="{{ date_from }}" class="form-control" style="width:130px;" placeholder="Od (Ziel-Datum)">
             <span style="color:var(--text-muted);">—</span>
             <input type="date" name="date_to" value="{{ date_to }}" class="form-control" style="width:130px;" placeholder="Do (Ziel-Datum)">
             <input type="text" name="barcode" value="{{ barcode }}" class="form-control" style="width:150px;" placeholder="Barcode">
             <input type="text" name="land" value="{{ land }}" class="form-control" style="width:100px;" placeholder="Land">
+            <select name="osoba" class="form-control" style="width:180px;" title="Kto przejął / rozpoczął / zakończył paczkę">
+                <option value="">— pracownik —</option>
+                {% for u in users %}
+                <option value="{{ u.id }}" {% if osoba_id == u.id %}selected{% endif %}>{{ u.display_name }}</option>
+                {% endfor %}
+            </select>
+            <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;white-space:nowrap;font-size:.85rem;">
+                <input type="checkbox" name="double_rate" value="1" {% if tylko_double %}checked{% endif %}
+                       style="width:16px;height:16px;cursor:pointer;">
+                <span style="color:#fb923c;">tylko double rate</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;white-space:nowrap;font-size:.85rem;"
+                   title="Domyślnie widać tylko paczki bez zarejestrowanego końca skanu">
+                <input type="checkbox" name="pokaz_zrobione" value="1" {% if pokaz_zrobione %}checked{% endif %}
+                       style="width:16px;height:16px;cursor:pointer;">
+                <span>pokaż zrobione</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;white-space:nowrap;font-size:.85rem;"
+                   title="Paczka rozpoczęta i nigdy nie zakończona, albo ilość w kategorii przekracza Stückzahl o ponad 10%">
+                <input type="checkbox" name="bledy" value="1" {% if tylko_bledy %}checked{% endif %}
+                       style="width:16px;height:16px;cursor:pointer;">
+                <span style="color:var(--danger);">⚠️ pokaż błędy</span>
+            </label>
             <button type="submit" class="btn btn-primary">Filtruj</button>
             <a href="{{ url_for('paczki_view') }}" class="btn btn-secondary" style="padding:0.5rem;" title="Wyczyść">✖</a>
         </form>
@@ -115,7 +145,13 @@
             {% for item in items %}
             {% set proc_secs = item.processing_seconds() %}
             <tr>
-                <td style="font-family:monospace; color:var(--accent);">{{ item.barcode }}</td>
+                <td style="font-family:monospace; color:var(--accent);">
+                    {{ item.barcode }}
+                    {% for blad in bledy_map.get(item.id, []) %}
+                    <div style="margin-top:3px;font-family:inherit;font-size:.7rem;background:rgba(248,113,113,.15);
+                                color:var(--danger);padding:2px 6px;border-radius:6px;display:inline-block;">⚠️ {{ blad }}</div>
+                    {% endfor %}
+                </td>
                 <td>{{ item.land or '—' }}</td>
                 <td style="text-align:right; font-weight:bold;">{{ item.stueckzahl }}</td>
                 <td>{{ item.kategorie or '—' }}</td>
@@ -140,6 +176,14 @@
                     {% if item.scan_start_at %}
                     <div>{{ item.scan_start_at | localdt('%d.%m %H:%M:%S') }}</div>
                     {% if item.scan_start_by_user %}<div style="color:var(--text-muted);font-size:.75rem;">{{ item.scan_start_by_user.display_name }}</div>{% endif %}
+                    {% if not item.scan_end_at %}
+                    {# Paczka w trakcie nalezy do tego, kto ja zaczal — bez tego przycisku
+                       nikt inny nie moze jej ani zaczac, ani skonczyc. #}
+                    <button class="btn btn-ghost btn-sm" style="margin-top:.35rem;padding:2px 6px;font-size:.72rem;color:var(--warning);"
+                        data-id="{{ item.id }}" data-barcode="{{ item.barcode }}"
+                        onclick="odblokujPaczke(this)"
+                        title="Skasuj start — paczka wróci do stanu „nierozpoczęta" i każdy będzie mógł ją zeskanować">🔓 Odblokuj</button>
+                    {% endif %}
                     {% else %}—{% endif %}
                 </td>
                 <td style="font-size:.8rem;{% if not item.scan_end_at %}color:var(--text-muted){% endif %};">
@@ -206,11 +250,11 @@
 {% if pagination and pagination.pages > 1 %}
 <div style="margin-top: 1.5rem; display: flex; justify-content: center; gap: .5rem;">
     {% if pagination.has_prev %}
-    <a href="{{ url_for('paczki_view', page=pagination.prev_num, date_from=date_from, date_to=date_to, barcode=barcode, land=land) }}" class="btn btn-secondary">« Poprzednia</a>
+    <a href="{{ url_for('paczki_view', page=pagination.prev_num, date_from=date_from, date_to=date_to, barcode=barcode, land=land, osoba=osoba_id, double_rate='1' if tylko_double else None, pokaz_zrobione='1' if pokaz_zrobione else None, bledy='1' if tylko_bledy else None) }}" class="btn btn-secondary">« Poprzednia</a>
     {% endif %}
     <span style="display:flex; align-items:center; padding: 0 1rem; color: var(--text-muted);">Strona {{ pagination.page }} z {{ pagination.pages }}</span>
     {% if pagination.has_next %}
-    <a href="{{ url_for('paczki_view', page=pagination.next_num, date_from=date_from, date_to=date_to, barcode=barcode, land=land) }}" class="btn btn-secondary">Następna »</a>
+    <a href="{{ url_for('paczki_view', page=pagination.next_num, date_from=date_from, date_to=date_to, barcode=barcode, land=land, osoba=osoba_id, double_rate='1' if tylko_double else None, pokaz_zrobione='1' if pokaz_zrobione else None, bledy='1' if tylko_bledy else None) }}" class="btn btn-secondary">Następna »</a>
     {% endif %}
 </div>
 {% endif %}
@@ -376,6 +420,23 @@ async function confirmReassign() {
 document.getElementById('reassignModal').addEventListener('click', function(e) {
     if (e.target === this) closeReassign();
 });
+
+async function odblokujPaczke(btn) {
+    const id = btn.dataset.id;
+    const barcode = btn.dataset.barcode;
+    if (!confirm(`Odblokować paczkę ${barcode}?\n\nStart skanu zostanie skasowany — paczka wróci do stanu „nierozpoczęta" i każdy pracownik będzie mógł ją zeskanować od nowa. Zapisany czas rozpoczęcia przepadnie.`)) return;
+    btn.disabled = true;
+    try {
+        const res = await fetch(`/api/packages/${id}/unlock-scan`, { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { showToast(data.error || 'Błąd odblokowania.', 'error'); btn.disabled = false; return; }
+        showToast(data.message || 'Odblokowano.', 'success');
+        setTimeout(() => location.reload(), 600);
+    } catch {
+        showToast('Błąd połączenia.', 'error');
+        btn.disabled = false;
+    }
+}
 
 async function toggleCartonDoubleRate(cartonId, checkbox) {
     const val = checkbox.checked;

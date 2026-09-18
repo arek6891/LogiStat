@@ -3,6 +3,7 @@ import csv
 import io
 import json
 import calendar
+import math
 from datetime import datetime, date, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 from functools import wraps
@@ -391,6 +392,38 @@ STAT_CATEGORY_LABELS = {
     'sorting': 'Sorting'
 }
 
+# Polskie odpowiedniki — TYLKO dla ekranów. Naglowki eksportu Excel zostaja
+# angielskie, bo to artefakt rozliczeniowy wychodzacy na zewnatrz.
+STAT_CATEGORY_LABELS_PL = {
+    'labelling_on': 'Etykietowanie pojedyncze',
+    'labelling_tvl': 'Etykietowanie podwójne',
+    'labelling_try': 'Etykietowanie potrójne',
+    'textile': 'Tekstylia',
+    'accessoire': 'Akcesoria',
+    'sunglasses': 'Okulary przeciwsłoneczne',
+    'card_facture': 'Karta / faktura',
+    'labelling_polybag': 'Etykietowanie polybag',
+    'sorting': 'Sortowanie'
+}
+
+
+def etykieta_kategorii(kat):
+    """Dwuczlonowa etykieta na ekrany: „Labelling one — Etykietowanie pojedyncze"."""
+    ang = STAT_CATEGORY_LABELS.get(kat, kat)
+    pl = STAT_CATEGORY_LABELS_PL.get(kat)
+    return f'{ang} — {pl}' if pl else ang
+
+
+def etykiety_kategorii():
+    """Mapa kategoria → dwuczlonowa etykieta (do szablonow)."""
+    return {k: etykieta_kategorii(k) for k in STAT_CATEGORIES}
+
+
+# Total Amount w Statystykach ogolnych liczy WYLACZNIE te kategorie. Suma
+# wszystkich kategorii zliczala te same sztuki wielokrotnie (paczka przechodzi
+# przez kilka czynnosci), wiec „total" wychodzil wielokrotnoscia zawartosci paczki.
+TOTAL_AMOUNT_CATEGORY = 'labelling_on'
+
 
 def empty_category_data():
     """Return default empty category_data dict."""
@@ -661,7 +694,9 @@ class WorkerTimeEvent(db.Model):
         }
 
 
-EVENT_TYPES = ('break_start', 'break_end', 'work_end')
+EVENT_TYPES = ('break_start', 'break_end', 'other_start', 'other_end', 'work_end')
+# 'other_*' — czas poza stanowiskiem inny niz przerwa (np. wyjscie do HR).
+# Liczony jak przerwa: pomniejsza czas pracy, ale raportowany osobno.
 
 
 class AppSetting(db.Model):
@@ -673,6 +708,9 @@ class AppSetting(db.Model):
 # Defaults for known settings (used when a key is not yet stored)
 SETTING_DEFAULTS = {
     'break_threshold_minutes': '30',
+    # Progi dla filtra bledow na ekranie „Czasy pracownikow"
+    'max_work_minutes': '660',      # 11 h
+    'min_break_minutes': '15',
 }
 
 
@@ -943,32 +981,44 @@ def admin_country_mapping():
 @app.route('/admin/cost-mapping')
 @admin_required
 def admin_cost_mapping():
-    return render_template('admin_cost_mapping.html', categories=STAT_CATEGORIES, category_labels=STAT_CATEGORY_LABELS)
+    return render_template('admin_cost_mapping.html', categories=STAT_CATEGORIES,
+                           category_labels=etykiety_kategorii())
 
 
 @app.route('/admin/settings')
 @admin_required
 def admin_settings():
     return render_template('admin_settings.html',
-                           break_threshold=get_setting_int('break_threshold_minutes', 30))
+                           break_threshold=get_setting_int('break_threshold_minutes', 30),
+                           max_work=get_setting_int('max_work_minutes', 660),
+                           min_break=get_setting_int('min_break_minutes', 15))
 
 
 @app.route('/api/settings', methods=['PUT'])
 @admin_required
 def api_settings_update():
     data = json_body()
-    if 'break_threshold_minutes' in data:
+    pola = [
+        ('break_threshold_minutes', 'Próg przerwy'),
+        ('max_work_minutes',        'Maksymalny czas pracy'),
+        ('min_break_minutes',       'Minimalna przerwa'),
+    ]
+    for klucz, nazwa in pola:
+        if klucz not in data:
+            continue
         try:
-            val = int(data['break_threshold_minutes'])
+            val = int(data[klucz])
         except (TypeError, ValueError):
-            return jsonify({'error': 'Próg przerwy musi być liczbą całkowitą.'}), 400
+            return jsonify({'error': f'{nazwa} musi być liczbą całkowitą.'}), 400
         if val < 1:
-            return jsonify({'error': 'Próg przerwy musi być większy od zera.'}), 400
-        set_setting('break_threshold_minutes', val)
+            return jsonify({'error': f'{nazwa} musi być większa od zera.'}), 400
+        set_setting(klucz, val)
     db.session.commit()
     return jsonify({
         'message': 'Zapisano ustawienia.',
         'break_threshold_minutes': get_setting_int('break_threshold_minutes', 30),
+        'max_work_minutes': get_setting_int('max_work_minutes', 660),
+        'min_break_minutes': get_setting_int('min_break_minutes', 15),
     }), 200
 
 
@@ -977,6 +1027,62 @@ def api_settings_update():
 def import_csv_page():
     return render_template('import_csv.html')
 
+PACZKI_NA_STRONE = 100
+#  Prog tolerancji: ilosc wpisana per kategoria wieksza niz Stueckzahl o wiecej
+#  niz 10% traktujemy jako pomylke wpisujacego.
+TOLERANCJA_ILOSCI = 1.10
+
+
+class StroniceLista:
+    """Minimalny odpowiednik `Pagination` Flask-SQLAlchemy dla listy w pamieci.
+
+    Filtr „pokaz bledy" porownuje ilosci ze `scan_category_data` (JSON w kolumnie
+    tekstowej) ze `stueckzahl`, czego nie da sie wyrazic w SQL — a JSONB jest
+    zakazany (rozwala `json.loads` w akcesorach). Filtrujemy wiec w Pythonie i
+    tniemy strony recznie, zachowujac API, ktorego uzywa szablon.
+    """
+
+    def __init__(self, items, page, per_page):
+        self.total = len(items)
+        self.per_page = per_page
+        self.pages = max(1, math.ceil(self.total / per_page)) if self.total else 0
+        self.page = min(max(1, page), self.pages) if self.pages else 1
+        poczatek = (self.page - 1) * per_page
+        self.items = items[poczatek:poczatek + per_page]
+
+    @property
+    def has_prev(self):
+        return self.page > 1
+
+    @property
+    def has_next(self):
+        return self.page < self.pages
+
+    @property
+    def prev_num(self):
+        return self.page - 1
+
+    @property
+    def next_num(self):
+        return self.page + 1
+
+
+def bledy_paczki(carton):
+    """Lista bledow paczki: brak zakonczenia, przekroczona ilosc per kategoria."""
+    bledy = []
+    if carton.scan_start_at and not carton.scan_end_at:
+        bledy.append('Rozpoczęta, ale nie zakończona')
+
+    limit = (carton.stueckzahl or 0) * TOLERANCJA_ILOSCI
+    for kat, ile in carton.get_scan_categories().items():
+        if ile > limit:
+            bledy.append(
+                f'{STAT_CATEGORY_LABELS.get(kat, kat)}: {ile} szt. '
+                f'przy {carton.stueckzahl or 0} w paczce'
+            )
+    return bledy
+
+
 @app.route('/paczki')
 @leader_required
 def paczki_view():
@@ -984,31 +1090,60 @@ def paczki_view():
     date_to_str = request.args.get('date_to', '')
     barcode = request.args.get('barcode', '').strip()
     land = request.args.get('land', '').strip()
+    osoba_id = request.args.get('osoba', type=int)
+    tylko_double = request.args.get('double_rate') == '1'
+    pokaz_zrobione = request.args.get('pokaz_zrobione') == '1'
+    tylko_bledy = request.args.get('bledy') == '1'
     page = request.args.get('page', 1, type=int)
-    
+
     query = ImportedCarton.query
-    
+
     if date_from_str:
         try:
             date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date()
             query = query.filter(ImportedCarton.ziel_datum >= date_from)
         except ValueError:
             pass
-            
+
     if date_to_str:
         try:
             date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date()
             query = query.filter(ImportedCarton.ziel_datum <= date_to)
         except ValueError:
             pass
-            
+
     if barcode:
         query = query.filter(ImportedCarton.barcode.ilike(f'%{barcode}%'))
-        
+
     if land:
         query = query.filter(ImportedCarton.land.ilike(f'%{land}%'))
 
-    pagination = query.order_by(ImportedCarton.imported_at.desc()).paginate(page=page, per_page=100, error_out=False)
+    if osoba_id:
+        # Ta sama definicja „kto", co na ekranie skanu paczek: kto przejal,
+        # kto rozpoczal, kto zakonczyl.
+        query = query.filter(db.or_(
+            ImportedCarton.processed_by == osoba_id,
+            ImportedCarton.scan_start_by == osoba_id,
+            ImportedCarton.scan_end_by == osoba_id,
+        ))
+
+    if tylko_double:
+        query = query.filter(ImportedCarton.double_rate.is_(True))
+
+    # Domyslnie widac tylko paczki niezrobione — „zrobiona" to ta z zarejestrowanym
+    # koncem skanu (ta sama definicja, co `finished` na /scan-package).
+    if not pokaz_zrobione and not tylko_bledy:
+        query = query.filter(ImportedCarton.scan_end_at.is_(None))
+
+    query = query.order_by(ImportedCarton.imported_at.desc())
+
+    if tylko_bledy:
+        wszystkie = query.all()
+        wszystkie = [c for c in wszystkie if bledy_paczki(c)]
+        pagination = StroniceLista(wszystkie, page, PACZKI_NA_STRONE)
+    else:
+        pagination = query.paginate(page=page, per_page=PACZKI_NA_STRONE, error_out=False)
+
     users = User.query.filter_by(is_active_user=True).order_by(User.display_name).all()
     country_mappings = CountryMapping.query.order_by(CountryMapping.country).all()
 
@@ -1019,9 +1154,14 @@ def paczki_view():
                            date_to=date_to_str,
                            barcode=barcode,
                            land=land,
+                           osoba_id=osoba_id,
+                           tylko_double=tylko_double,
+                           pokaz_zrobione=pokaz_zrobione,
+                           tylko_bledy=tylko_bledy,
+                           bledy_map={c.id: bledy_paczki(c) for c in pagination.items},
                            users=users,
                            country_mappings=country_mappings,
-                           kategorie=[(k, STAT_CATEGORY_LABELS[k]) for k in STAT_CATEGORIES])
+                           kategorie=[(k, etykieta_kategorii(k)) for k in STAT_CATEGORIES])
 
 
 @app.route('/general-stats/export')
@@ -1112,12 +1252,18 @@ def general_stats_export():
     ws.row_dimensions[1].height = 28
     ws.row_dimensions[2].height = 18
 
-    def write_data_row(ri, s, cd, dr_label, row_fill, amounts_val):
+    def write_data_row(ri, s, cd, dr_label, row_fill, amounts_val, is_double_rate=False):
         """Write one data row (normal or yellow double-rate) at Excel row ri."""
         ym = (s.loading_date.year, s.loading_date.month)
         rates = rates_by_ym.get(ym, {})
 
-        total_amount = sum(cd.get(cat, {}).get('amount', 0) for cat in STAT_CATEGORIES)
+        # Zwykly wiersz: Total Amount = tylko Labelling one (patrz TOTAL_AMOUNT_CATEGORY).
+        # Zolty wiersz double rate zostaje na sumie wszystkich kategorii —
+        # decyzja do ustalenia z operacja, notatka w docs/TODO.md.
+        if is_double_rate:
+            total_amount = sum(cd.get(cat, {}).get('amount', 0) for cat in STAT_CATEGORIES)
+        else:
+            total_amount = cd.get(TOTAL_AMOUNT_CATEGORY, {}).get('amount', 0)
         total_cost = sum(cd.get(cat, {}).get('amount', 0) * rates.get(cat, 0.0)
                          for cat in STAT_CATEGORIES)
 
@@ -1170,7 +1316,7 @@ def general_stats_export():
         dr_amount = dr_amounts.get((s.list_id, s.country_ledger, s.loading_date), 0)
         if dr_amount > 0:
             write_data_row(ri, s, s.get_double_rate_category_data(),
-                           'DOUBLE RATE', dr_fill_row, dr_amount)
+                           'DOUBLE RATE', dr_fill_row, dr_amount, is_double_rate=True)
             ri += 1
 
     # Column widths
@@ -1314,6 +1460,8 @@ def general_stats_page():
     return render_template('general_stats.html',
                            stats=stats,
                            category_labels=STAT_CATEGORY_LABELS,
+                           category_labels_pl=STAT_CATEGORY_LABELS_PL,
+                           total_amount_category=TOTAL_AMOUNT_CATEGORY,
                            categories=STAT_CATEGORIES,
                            date_from=date_from_str,
                            date_to=date_to_str,
@@ -2923,7 +3071,7 @@ def api_cost_mapping_save(year, month):
 def scan_paczki():
     return render_template(
         'scan_paczki.html',
-        kategorie=[(kat, STAT_CATEGORY_LABELS[kat]) for kat in STAT_CATEGORIES])
+        kategorie=[(kat, etykieta_kategorii(kat)) for kat in STAT_CATEGORIES])
 
 
 def parse_scan_categories(surowe):
@@ -3080,9 +3228,64 @@ def api_package_categories_update(carton_id):
     return jsonify(carton.to_dict()), 200
 
 
+@app.route('/api/packages/<int:carton_id>/unlock-scan', methods=['POST'])
+@leader_required
+def api_package_unlock_scan(carton_id):
+    """Zdejmij blokade z paczki rozpoczetej i nigdy nie zakonczonej.
+
+    Paczka w trakcie nalezy do pracownika, ktory ja rozpoczal: inny dostanie 409
+    przy starcie i 403 przy koncu. Gdy ten pracownik juz do niej nie wroci
+    (koniec zmiany, pomylkowy skan), paczka zostaje zablokowana na zawsze —
+    w bazie testowej wisialo tak 5 sztuk, najstarsza od tygodnia. Lider kasuje
+    tu start, przez co paczka wraca do stanu „nierozpoczeta" i ktokolwiek moze
+    ja zeskanowac od nowa. Paczki zakonczonej nie ruszamy.
+    """
+    carton = db.get_or_404(ImportedCarton, carton_id)
+
+    if carton.scan_end_at:
+        return jsonify({'error': 'Paczka jest zakończona — nie ma czego odblokowywać.'}), 409
+    if not carton.scan_start_at:
+        return jsonify({'error': 'Paczka nie jest rozpoczęta.'}), 400
+
+    poprzedni = db.session.get(User, carton.scan_start_by) if carton.scan_start_by else None
+    carton.scan_start_at = None
+    carton.scan_start_by = None
+    carton.modified_at = datetime.utcnow()
+    carton.modified_by = current_user.id
+    db.session.commit()
+
+    kto = poprzedni.display_name if poprzedni else 'nieznany pracownik'
+    return jsonify({
+        'message': f'Paczka {carton.barcode} odblokowana (była u: {kto}).',
+        'carton': carton.to_dict()
+    }), 200
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  TIME TRACKING
 # ══════════════════════════════════════════════════════════════════════════════
+
+def suma_zlaczonych_okresow(okresy):
+    """Laczna dlugosc okresow (start, koniec) w sekundach, bez liczenia
+    nakladajacych sie fragmentow dwa razy."""
+    if not okresy:
+        return 0.0
+    suma = 0.0
+    biezacy_start, biezacy_koniec = None, None
+    for start, koniec in sorted(okresy):
+        if koniec <= start:
+            continue                      # odwrocony zakres po recznej korekcie
+        if biezacy_start is None:
+            biezacy_start, biezacy_koniec = start, koniec
+        elif start <= biezacy_koniec:     # nachodzi — rozszerzamy
+            biezacy_koniec = max(biezacy_koniec, koniec)
+        else:
+            suma += (biezacy_koniec - biezacy_start).total_seconds()
+            biezacy_start, biezacy_koniec = start, koniec
+    if biezacy_start is not None:
+        suma += (biezacy_koniec - biezacy_start).total_seconds()
+    return suma
+
 
 def _compute_worker_times(uid, shift, attendance_time):
     """Return break/work summary for one worker-shift pair."""
@@ -3091,9 +3294,13 @@ def _compute_worker_times(uid, shift, attendance_time):
     ).order_by(WorkerTimeEvent.timestamp).all()
 
     break_secs = 0
+    other_secs = 0
     open_break = None
+    open_other = None
     work_end_ts = None
     breaks = []
+    others = []
+    okresy = []          # (start, koniec) wszystkich zamknietych przerw i „Innych"
 
     for e in events:
         if e.event_type == 'break_start':
@@ -3103,22 +3310,45 @@ def _compute_worker_times(uid, shift, attendance_time):
             breaks.append({'start': iso_z(open_break), 'end': iso_z(e.timestamp),
                            'minutes': int(secs / 60)})
             break_secs += secs
+            okresy.append((open_break, e.timestamp))
             open_break = None
+        elif e.event_type == 'other_start':
+            open_other = e.timestamp
+        elif e.event_type == 'other_end' and open_other:
+            secs = (e.timestamp - open_other).total_seconds()
+            others.append({'start': iso_z(open_other), 'end': iso_z(e.timestamp),
+                           'minutes': int(secs / 60)})
+            other_secs += secs
+            okresy.append((open_other, e.timestamp))
+            open_other = None
         elif e.event_type == 'work_end':
             work_end_ts = e.timestamp
 
     if open_break:
         breaks.append({'start': iso_z(open_break), 'end': None, 'minutes': None})
+    if open_other:
+        others.append({'start': iso_z(open_other), 'end': None, 'minutes': None})
 
     end_ref = work_end_ts or datetime.utcnow()
-    work_secs = max(0, (end_ref - attendance_time).total_seconds() - break_secs)
+    # „Inne" (np. wyjscie do HR) pomniejsza czas pracy tak samo jak przerwa,
+    # ale jest raportowane osobno — przerwa i „Inne" to rozne rzeczy dla operacji.
+    #
+    # Odejmujemy SUME ZLACZONYCH okresow, nie sume dlugosci: skan pilnuje, zeby
+    # przerwa i „Inne" sie nie nakladaly, ale reczna korekta na /worker-times
+    # (POST/PUT zdarzenia) moze stworzyc nachodzace okresy. Sumowanie dlugosci
+    # odjeloby wtedy te same minuty dwa razy i czas pracy wyszedlby za niski.
+    work_secs = max(0, (end_ref - attendance_time).total_seconds()
+                    - suma_zlaczonych_okresow(okresy))
 
     return {
         'work_end':      iso_z(work_end_ts),
         'break_minutes': int(break_secs / 60),
+        'other_minutes': int(other_secs / 60),
         'work_minutes':  int(work_secs / 60),
         'breaks':        breaks,
+        'others':        others,
         'on_break':      open_break is not None,
+        'on_other':      open_other is not None,
         'work_ended':    work_end_ts is not None,
         'events':        [e.to_dict() for e in events],
     }
@@ -3134,7 +3364,9 @@ def time_tracking():
 @leader_required
 def worker_times():
     return render_template('worker_times.html',
-                           break_threshold=get_setting_int('break_threshold_minutes', 30))
+                           break_threshold=get_setting_int('break_threshold_minutes', 30),
+                           max_work=get_setting_int('max_work_minutes', 660),
+                           min_break=get_setting_int('min_break_minutes', 15))
 
 
 @app.route('/api/time/scan', methods=['POST'])
@@ -3169,18 +3401,27 @@ def api_time_scan():
     work_ended = any(e.event_type == 'work_end' for e in events)
     now = datetime.utcnow()
 
+    def otwarte(prefix):
+        """True gdy jest wiecej '<prefix>_start' niz '<prefix>_end'."""
+        return (sum(1 for e in events if e.event_type == f'{prefix}_start')
+                > sum(1 for e in events if e.event_type == f'{prefix}_end'))
+
+    on_break = otwarte('break')
+    on_other = otwarte('other')
+
     if mode == 'work_end':
         if work_ended:
             return jsonify({'error': f'{user.display_name} już zakończył/a pracę na tej zmianie.'}), 409
 
-        break_starts = sum(1 for e in events if e.event_type == 'break_start')
-        break_ends   = sum(1 for e in events if e.event_type == 'break_end')
-        if break_starts > break_ends:
-            db.session.add(WorkerTimeEvent(
-                user_id=user.id, shift_id=shift.id, event_type='break_end',
-                timestamp=now, recorded_by=current_user.id, is_manual=False,
-                note='Auto-zamknięcie przerwy przy końcu pracy'
-            ))
+        # Niedomkniete przerwa/„Inne" zamykamy sami — inaczej wisialyby otwarte
+        # i zjadaly czas pracy az do konca swiata.
+        for prefix, opis in (('break', 'przerwy'), ('other', '„Innego"')):
+            if otwarte(prefix):
+                db.session.add(WorkerTimeEvent(
+                    user_id=user.id, shift_id=shift.id, event_type=f'{prefix}_end',
+                    timestamp=now, recorded_by=current_user.id, is_manual=False,
+                    note=f'Auto-zamknięcie {opis} przy końcu pracy'
+                ))
 
         db.session.add(WorkerTimeEvent(
             user_id=user.id, shift_id=shift.id, event_type='work_end',
@@ -3190,24 +3431,36 @@ def api_time_scan():
         return jsonify({'message': f'{user.display_name} — koniec pracy zarejestrowany.',
                         'event_type': 'work_end', 'user': user.to_dict()}), 200
 
-    else:  # break
-        if work_ended:
-            return jsonify({'error': f'{user.display_name} już zakończył/a pracę.'}), 409
+    if mode not in ('break', 'other'):
+        return jsonify({'error': 'Nieprawidłowy tryb skanowania.'}), 400
 
-        break_starts = sum(1 for e in events if e.event_type == 'break_start')
-        break_ends   = sum(1 for e in events if e.event_type == 'break_end')
-        on_break     = break_starts > break_ends
-        event_type   = 'break_end' if on_break else 'break_start'
+    if work_ended:
+        return jsonify({'error': f'{user.display_name} już zakończył/a pracę.'}), 409
 
-        db.session.add(WorkerTimeEvent(
-            user_id=user.id, shift_id=shift.id, event_type=event_type,
-            timestamp=now, recorded_by=None, is_manual=False
-        ))
-        db.session.commit()
+    # Przerwa i „Inne" nie moga trwac jednoczesnie — inaczej ten sam czas
+    # zostalby odjety od pracy dwa razy.
+    if mode == 'break' and on_other and not on_break:
+        return jsonify({'error': f'{user.display_name} jest na „Inne" — najpierw zakończ „Inne".'}), 409
+    if mode == 'other' and on_break and not on_other:
+        return jsonify({'error': f'{user.display_name} jest na przerwie — najpierw zakończ przerwę.'}), 409
 
-        label = 'wrócił/wróciła z przerwy ✅' if event_type == 'break_end' else 'poszedł/poszła na przerwę ☕'
-        return jsonify({'message': f'{user.display_name} — {label}',
-                        'event_type': event_type, 'user': user.to_dict()}), 200
+    trwa = on_break if mode == 'break' else on_other
+    event_type = f'{mode}_end' if trwa else f'{mode}_start'
+
+    db.session.add(WorkerTimeEvent(
+        user_id=user.id, shift_id=shift.id, event_type=event_type,
+        timestamp=now, recorded_by=None, is_manual=False
+    ))
+    db.session.commit()
+
+    etykiety = {
+        'break_start': 'poszedł/poszła na przerwę ☕',
+        'break_end':   'wrócił/wróciła z przerwy ✅',
+        'other_start': 'wyszedł/wyszła — Inne 🚪',
+        'other_end':   'wrócił/wróciła (Inne) ✅',
+    }
+    return jsonify({'message': f'{user.display_name} — {etykiety[event_type]}',
+                    'event_type': event_type, 'user': user.to_dict()}), 200
 
 
 @app.route('/api/worker-times')

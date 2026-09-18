@@ -126,7 +126,7 @@ Korekta pojedynczego wpisu.
 
 | Method | URL | Opis |
 |--------|-----|------|
-| PUT | `/api/settings` | Zapis ustawień systemowych (admin). JSON np. `{"break_threshold_minutes": 30}` (liczba ≥ 1). Przechowywane w tabeli `AppSetting`. Zła wartość → 400. |
+| PUT | `/api/settings` | Zapis ustawień systemowych (admin). Klucze: `break_threshold_minutes` (30), `max_work_minutes` (660), `min_break_minutes` (15) — każdy liczbą ≥ 1, wszystkie opcjonalne. Przechowywane w tabeli `AppSetting`. Zła wartość → 400 i **nic się nie zapisuje**. |
 
 ## Dashboard
 
@@ -216,9 +216,9 @@ Soft-delete (`DELETE`) ustawia `is_active_user=False`, co **odbiera też trwają
 
 | Method | URL | Opis |
 |--------|-----|------|
-| POST | `/api/time/scan` | Skan kodu pracownika na `/time-tracking`. Body: `{ "barcode": "...", "mode": "break" \| "work_end" }`. Tryb `break` **przełącza** przerwę (stan liczony z `count(break_start) - count(break_end)`, brak flagi na User); `work_end` zamyka pracę i **auto-domyka otwartą przerwę**. Brak kodu → 400, nieznany pracownik → 404, brak obecności dziś → 400, praca już zakończona → 409. |
-| GET | `/api/worker-times?date=YYYY-MM-DD` | Podsumowanie per pracownik: `shift_in`, `break_minutes`, `work_minutes`, `breaks[]`, `on_break`, `work_ended`, `events[]`. Jeden wpis na pracownika — brana jest **najwcześniejsza** obecność w danym dniu. |
-| POST | `/api/worker-times/event` | Ręczne zdarzenie (korekta). Body: `user_id`, `shift_id`, `event_type` (`break_start` \| `break_end` \| `work_end`), `timestamp` (naive UTC ISO), opcjonalnie `note`. Ustawia `is_manual=True` i `recorded_by`. → **201**. Nieznany `user_id`/`shift_id` lub zły typ → 400. |
+| POST | `/api/time/scan` | Skan kodu pracownika na `/time-tracking`. Body: `{ "barcode": "...", "mode": "break" \| "other" \| "work_end" }`. Tryby `break` i `other` **przełączają** stan (liczony z `count(*_start) - count(*_end)`, brak flagi na User); `work_end` zamyka pracę i **auto-domyka otwartą przerwę oraz otwarte „Inne"**. Przerwa i „Inne" nie mogą trwać jednocześnie → 409. Brak kodu / nieznany tryb → 400, nieznany pracownik → 404, brak obecności dziś → 400, praca już zakończona → 409. |
+| GET | `/api/worker-times?date=YYYY-MM-DD` | Podsumowanie per pracownik: `shift_in`, `break_minutes`, `other_minutes`, `work_minutes`, `breaks[]`, `others[]`, `on_break`, `on_other`, `work_ended`, `events[]`. Jeden wpis na pracownika — brana jest **najwcześniejsza** obecność w danym dniu. Czas „Inne" **pomniejsza `work_minutes` tak samo jak przerwa**, ale jest raportowany osobno. Filtr po pracowniku i filtr błędów działają w przeglądarce na tych danych — API ich nie przyjmuje. |
+| POST | `/api/worker-times/event` | Ręczne zdarzenie (korekta). Body: `user_id`, `shift_id`, `event_type` (`break_start` \| `break_end` \| `other_start` \| `other_end` \| `work_end`), `timestamp` (naive UTC ISO), opcjonalnie `note`. Ustawia `is_manual=True` i `recorded_by`. → **201**. Nieznany `user_id`/`shift_id` lub zły typ → 400. |
 | PUT | `/api/worker-times/event/<id>` | Edycja zdarzenia (`event_type`, `timestamp`, `note`) |
 | DELETE | `/api/worker-times/event/<id>` | Usunięcie zdarzenia |
 
@@ -310,6 +310,14 @@ Soft-delete (`DELETE`) ustawia `is_active_user=False`, co **odbiera też trwają
 | PUT | `/api/packages/<id>/double-rate` | Oznaczenie paczki jako double rate `{ "double_rate": true }` |
 | POST | `/api/package-time/start` | Rejestracja startu procesowania `{ "employee_barcode", "package_barcode" }` |
 | POST | `/api/package-time/end` | Rejestracja końca + czas procesowania (to samo body) |
+| POST | `/api/packages/<id>/unlock-scan` | **Odblokowanie paczki** rozpoczętej i nigdy nie zakończonej (lider+): kasuje `scan_start_at`/`scan_start_by`, ustawia `modified_by`/`modified_at`. Paczka wraca do stanu „nierozpoczęta". Paczka zakończona → 409, nierozpoczęta → 400. |
+
+**Filtry na `/paczki`** (query string): `date_from`, `date_to`, `barcode`, `land`,
+`osoba` (id — kto przejął / rozpoczął / zakończył), `double_rate=1`,
+`pokaz_zrobione=1`, `bledy=1`, `page`. **Domyślnie widać tylko paczki bez
+`scan_end_at`.** `bledy=1` ignoruje ten domyślny filtr (błąd ilości występuje na
+paczce już zakończonej) i liczy się w Pythonie — ilości ze skanu to JSON w kolumnie
+tekstowej, SQL ich nie przefiltruje.
 
 **Blokady czasu paczek** (`/api/package-time/*`):
 - Paczkę w trakcie (start bez końca) obsługuje **tylko** pracownik, który ją rozpoczął:

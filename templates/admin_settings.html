@@ -16,9 +16,29 @@
     <p style="color:var(--text-muted);font-size:.85rem;margin:0 0 .5rem;">
         Przerwa dłuższa niż ta wartość jest oznaczana ⚠️ (czerwono) w „Czasy pracowników".
     </p>
+    <input type="number" id="breakThreshold" class="form-control" style="width:120px;"
+           min="1" step="1" value="{{ break_threshold }}">
+
+    <label style="display:block;margin:1.5rem 0 .35rem;font-weight:600;">
+        Maksymalny czas pracy (min)
+    </label>
+    <p style="color:var(--text-muted);font-size:.85rem;margin:0 0 .5rem;">
+        Powyżej tej wartości pracownik trafia do filtra „⚠️ Tylko błędy" w „Czasy pracowników".
+        660 min = 11 h.
+    </p>
+    <input type="number" id="maxWork" class="form-control" style="width:120px;"
+           min="1" step="1" value="{{ max_work }}">
+
+    <label style="display:block;margin:1.5rem 0 .35rem;font-weight:600;">
+        Minimalna przerwa (min)
+    </label>
+    <p style="color:var(--text-muted);font-size:.85rem;margin:0 0 .5rem;">
+        Krótsza (lub żadna) przerwa jest oznaczana jako błąd — liczone dopiero po
+        zarejestrowaniu końca pracy, żeby trwająca zmiana nie świeciła się na czerwono.
+    </p>
     <div style="display:flex;gap:.75rem;align-items:center;">
-        <input type="number" id="breakThreshold" class="form-control" style="width:120px;"
-               min="1" step="1" value="{{ break_threshold }}">
+        <input type="number" id="minBreak" class="form-control" style="width:120px;"
+               min="1" step="1" value="{{ min_break }}">
         <button class="btn btn-primary" id="saveBtn" onclick="saveSettings()">Zapisz</button>
     </div>
 </div>
@@ -27,15 +47,21 @@
 {% block scripts %}
 <script>
 async function saveSettings() {
-    const val = parseInt(document.getElementById('breakThreshold').value, 10);
-    if (!val || val < 1) { showToast('Podaj wartość większą od zera.', 'error'); return; }
+    const pola = {
+        break_threshold_minutes: parseInt(document.getElementById('breakThreshold').value, 10),
+        max_work_minutes:        parseInt(document.getElementById('maxWork').value, 10),
+        min_break_minutes:       parseInt(document.getElementById('minBreak').value, 10),
+    };
+    if (Object.values(pola).some(v => !v || v < 1)) {
+        showToast('Wszystkie wartości muszą być większe od zera.', 'error'); return;
+    }
     const btn = document.getElementById('saveBtn');
     btn.disabled = true;
     try {
         const res = await fetch('/api/settings', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ break_threshold_minutes: val })
+            body: JSON.stringify(pola)
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) { showToast(data.error || 'Błąd zapisu.', 'error'); return; }

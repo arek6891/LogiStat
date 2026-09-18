@@ -6,9 +6,17 @@
         <h1>⏱ Czasy pracowników</h1>
         <p style="color:var(--text-muted);">Przegląd i korekta rejestracji czasu pracy. Przerwa powyżej <strong>{{ break_threshold }} min</strong> oznaczona ⚠️.</p>
     </div>
-    <div style="display:flex;gap:.5rem;align-items:center;">
+    <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
         <input type="date" id="dateFilter" class="form-control" style="width:160px;"
                value="{{ '' }}">
+        <select id="workerFilter" class="form-control" style="width:200px;" onchange="rerender()">
+            <option value="">— wszyscy pracownicy —</option>
+        </select>
+        <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;white-space:nowrap;"
+               title="Czas pracy ponad {{ max_work }} min, brak przerwy lub przerwa krótsza niż {{ min_break }} min">
+            <input type="checkbox" id="errorFilter" style="width:16px;height:16px;cursor:pointer;" onchange="rerender()">
+            <span>⚠️ Tylko błędy</span>
+        </label>
         <button class="btn btn-primary" onclick="loadData()">Pokaż</button>
     </div>
 </div>
@@ -38,6 +46,8 @@
             <select id="modalEventType" class="form-control">
                 <option value="break_start">☕ Wyjście na przerwę</option>
                 <option value="break_end">✅ Powrót z przerwy</option>
+                <option value="other_start">🚪 Wyjście — Inne</option>
+                <option value="other_end">✅ Powrót z „Inne"</option>
                 <option value="work_end">🏁 Koniec pracy</option>
             </select>
         </div>
@@ -61,13 +71,24 @@
 <script>
     // Konfigurowalny próg przerwy (min) — z ustawień admina
     const BREAK_THRESHOLD = {{ break_threshold }};
+    // Progi filtra bledow — konfigurowalne w Panel Admina → Ustawienia
+    const MAX_WORK_MINUTES  = {{ max_work }};
+    const MIN_BREAK_MINUTES = {{ min_break }};
 
     // Default: today
     const today = new Date().toISOString().slice(0, 10);
     document.getElementById('dateFilter').value = today;
 
-    const ET_LABEL = { break_start: '☕ Przerwa wyjście', break_end: '✅ Przerwa powrót', work_end: '🏁 Koniec pracy' };
-    const ET_COLOR = { break_start: 'var(--warning)', break_end: 'var(--success)', work_end: 'var(--danger)' };
+    const ET_LABEL = {
+        break_start: '☕ Przerwa wyjście', break_end: '✅ Przerwa powrót',
+        other_start: '🚪 Inne wyjście',    other_end: '✅ Inne powrót',
+        work_end: '🏁 Koniec pracy',
+    };
+    const ET_COLOR = {
+        break_start: 'var(--warning)', break_end: 'var(--success)',
+        other_start: 'var(--accent)',  other_end: 'var(--success)',
+        work_end: 'var(--danger)',
+    };
 
     function fmt(iso) {
         if (!iso) return '—';
@@ -85,18 +106,73 @@
         return new Date(d - offset).toISOString().slice(0, 16);
     }
 
+    // Ostatnio pobrane dane — filtry dzialaja na nich, bez ponownego zapytania.
+    let ostatniWynik = [];
+
     async function loadData() {
         const dateVal = document.getElementById('dateFilter').value;
         if (!dateVal) return;
         const res = await fetch(`/api/worker-times?date=${dateVal}`);
         const data = await res.json();
-        renderTable(data.workers, dateVal);
+        ostatniWynik = data.workers || [];
+        odswiezListePracownikow(ostatniWynik);
+        renderTable(filtrujWierszy(ostatniWynik), dateVal);
+    }
+
+    function odswiezListePracownikow(workers) {
+        const sel = document.getElementById('workerFilter');
+        const wybrany = sel.value;
+        sel.innerHTML = '<option value="">— wszyscy pracownicy —</option>';
+        workers.forEach(w => {
+            const opt = document.createElement('option');
+            opt.value = String(w.user_id);
+            opt.textContent = w.user_name;
+            sel.appendChild(opt);
+        });
+        // Zachowaj wybor, o ile ten pracownik jest tez w nowym dniu
+        if (wybrany && workers.some(w => String(w.user_id) === wybrany)) sel.value = wybrany;
+    }
+
+    // Blad = cos, co lider powinien poprawic recznie. Brak przerwy i za krotka
+    // przerwa licza sie DOPIERO po koncu pracy — na trwajacej zmianie pracownik
+    // ma prawo jeszcze nie miec przerwy i nie jest to pomylka.
+    function bledyPracownika(w) {
+        const bledy = [];
+        if (w.work_minutes > MAX_WORK_MINUTES) {
+            bledy.push(`Czas pracy ${fmtMins(w.work_minutes)} — ponad ${fmtMins(MAX_WORK_MINUTES)}`);
+        }
+        if (w.work_ended) {
+            if (!w.break_minutes) {
+                bledy.push('Brak przerwy');
+            } else if (w.break_minutes < MIN_BREAK_MINUTES) {
+                bledy.push(`Przerwa ${fmtMins(w.break_minutes)} — poniżej ${MIN_BREAK_MINUTES} min`);
+            }
+        }
+        return bledy;
+    }
+
+    function filtrujWierszy(workers) {
+        const uid = document.getElementById('workerFilter').value;
+        const tylkoBledy = document.getElementById('errorFilter').checked;
+        return workers.filter(w =>
+            (!uid || String(w.user_id) === uid) &&
+            (!tylkoBledy || bledyPracownika(w).length > 0));
+    }
+
+    function rerender() {
+        const dateVal = document.getElementById('dateFilter').value;
+        renderTable(filtrujWierszy(ostatniWynik), dateVal);
     }
 
     function renderTable(workers, dateVal) {
         const wrap = document.getElementById('tableWrap');
         if (!workers.length) {
-            wrap.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted);">Brak pracowników na zmianie w tym dniu.</div>';
+            const filtrowane = document.getElementById('workerFilter').value
+                             || document.getElementById('errorFilter').checked;
+            const tekst = ostatniWynik.length && filtrowane
+                ? 'Brak wierszy pasujących do filtrów.'
+                : 'Brak pracowników na zmianie w tym dniu.';
+            wrap.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">${tekst}</div>`;
             return;
         }
 
@@ -108,6 +184,7 @@
             <th>Wejście</th>
             <th>Przerwy</th>
             <th>Czas przerw</th>
+            <th>Inne</th>
             <th>Koniec pracy</th>
             <th>Czas pracy</th>
             <th style="width:100px;"></th>
@@ -116,13 +193,22 @@
 
         workers.forEach(w => {
             const overBreak = w.break_minutes > BREAK_THRESHOLD;
-            const rowStyle  = overBreak
+            const bledy     = bledyPracownika(w);
+            const rowStyle  = (overBreak || bledy.length)
                 ? 'background:rgba(248,113,113,.10);border-left:3px solid var(--danger);'
                 : '';
 
-            const breaksSummary = w.breaks.map(b =>
+            const okresy = lista => lista.map(b =>
                 `${fmt(b.start)}–${b.end ? fmt(b.end) : '<span style="color:var(--warning);">w trakcie</span>'}${b.minutes !== null ? ` (${b.minutes}min)` : ''}`
             ).join('<br>') || '—';
+            const breaksSummary = okresy(w.breaks);
+            const otherSummary  = okresy(w.others || []);
+
+            const bledyHtml = bledy.length ? `
+                <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">
+                    ${bledy.map(b => `<span style="font-size:.7rem;background:var(--danger-bg,rgba(248,113,113,.15));
+                        color:var(--danger);padding:2px 8px;border-radius:8px;">⚠️ ${escapeHtml(b)}</span>`).join('')}
+                </div>` : '';
 
             html += `
             <tr style="${rowStyle}">
@@ -134,13 +220,19 @@
                             font-size:.8rem;font-weight:700;color:#fff;">${escapeHtml(w.user_name[0])}</div>
                         <span style="font-weight:600;">${escapeHtml(w.user_name)}</span>
                         ${w.on_break ? '<span style="margin-left:4px;font-size:.75rem;background:var(--warning-bg);color:var(--warning);padding:2px 8px;border-radius:8px;">na przerwie</span>' : ''}
+                        ${w.on_other ? '<span style="margin-left:4px;font-size:.75rem;background:rgba(99,102,241,.18);color:var(--accent);padding:2px 8px;border-radius:8px;">Inne</span>' : ''}
                     </div>
+                    ${bledyHtml}
                 </td>
                 <td>Zmiana ${w.shift_number}</td>
                 <td style="font-family:monospace;">${fmt(w.shift_in)}</td>
                 <td style="font-size:.82rem;line-height:1.6;">${breaksSummary}</td>
                 <td style="font-weight:700;color:${overBreak ? 'var(--danger)' : 'var(--warning)'};">
                     ${fmtMins(w.break_minutes)}${overBreak ? ' ⚠️' : ''}
+                </td>
+                <td style="font-size:.82rem;line-height:1.6;">
+                    ${otherSummary}
+                    ${w.other_minutes ? `<div style="font-weight:700;color:var(--accent);">${fmtMins(w.other_minutes)}</div>` : ''}
                 </td>
                 <td style="font-family:monospace;${w.work_end ? 'color:var(--danger);font-weight:600;' : 'color:var(--text-muted);'}">${fmt(w.work_end)}</td>
                 <td style="font-weight:700;color:var(--success);">${fmtMins(w.work_minutes)}</td>
@@ -153,7 +245,7 @@
             </tr>
             ${w.events.length ? `
             <tr style="background:var(--bg-secondary);">
-                <td colspan="8" style="padding:0 0 0 48px;">
+                <td colspan="9" style="padding:0 0 0 48px;">
                     <div style="display:flex;flex-wrap:wrap;gap:6px;padding:10px 16px 10px 0;">
                         ${w.events.map(e => `
                         <div style="display:inline-flex;align-items:center;gap:6px;
