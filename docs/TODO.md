@@ -2,6 +2,13 @@
 
 ## 🔴 Do zrobienia (priorytetowe)
 
+- [ ] **Total Amount w żółtym wierszu double rate** — do decyzji z operacją (2026-09-18)
+  - Zwykły wiersz Statystyk ogólnych liczy od 2026-09-18 **tylko `Labelling one`**
+  - Żółty wiersz double rate **celowo został sumą wszystkich kategorii** — zmiana
+    wstrzymana do ustalenia z operacją, czy ma działać tak samo jak zwykły wiersz
+  - Miejsca do zmiany, jeśli decyzja padnie na „tak samo": `templates/general_stats.html`
+    (blok `dr_total_amount`) oraz `write_data_row(..., is_double_rate=True)` w `app.py`
+
 - [x] **PostgreSQL** — wdrożony na środowisku TESTOWYM (`.31`) 2026-08-31
   - Własny kontener `logistat-test-db` (`postgres:16-alpine`), bez portu na hoście
   - `DATABASE_URL` wskazuje bazę; od 2026-09 jest **wymagany** (SQLite usunięty)

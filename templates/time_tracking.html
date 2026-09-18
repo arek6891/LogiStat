@@ -11,6 +11,7 @@
     <div style="display:inline-flex;gap:4px;background:var(--bg-secondary);border-radius:var(--radius-sm);
                 padding:4px;margin-bottom:2rem;">
         <button class="shift-tab active" id="tab-break"    onclick="switchMode('break')">☕ Przerwa</button>
+        <button class="shift-tab"        id="tab-other"    onclick="switchMode('other')">🚪 Inne</button>
         <button class="shift-tab"        id="tab-work-end" onclick="switchMode('work_end')">🏁 Koniec pracy</button>
     </div>
 
@@ -41,23 +42,32 @@
     const scanInput = document.getElementById('scanInput');
     const LABELS = {
         break:    { badge: '☕', label: 'Skanuj aby wejść / wyjść z przerwy' },
+        other:    { badge: '🚪', label: 'Skanuj aby wyjść / wrócić — Inne (np. wyjście do HR)' },
         work_end: { badge: '🏁', label: 'Skanuj aby zarejestrować koniec pracy' },
     };
     const EVENT_COLORS = {
         break_start: 'var(--warning)',
         break_end:   'var(--success)',
+        other_start: 'var(--accent)',
+        other_end:   'var(--success)',
         work_end:    'var(--danger)',
     };
-    const EVENT_ICONS = { break_start: '☕', break_end: '✅', work_end: '🏁' };
+    const EVENT_ICONS = {
+        break_start: '☕', break_end: '✅',
+        other_start: '🚪', other_end: '✅',
+        work_end: '🏁',
+    };
     const EVENT_LABELS = {
         break_start: 'Wyjście na przerwę',
         break_end:   'Powrót z przerwy',
+        other_start: 'Wyjście — Inne',
+        other_end:   'Powrót z „Inne"',
         work_end:    'Koniec pracy',
     };
 
     function switchMode(m) {
         mode = m;
-        ['break','work_end'].forEach(t => {
+        ['break','other','work_end'].forEach(t => {
             document.getElementById('tab-' + t.replace('_','-')).classList.toggle('active', t === m);
         });
         document.getElementById('modeBadge').textContent = LABELS[m].badge;

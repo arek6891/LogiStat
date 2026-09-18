@@ -33,12 +33,43 @@
                 <th rowspan="2" style="min-width:80px;">List-ID</th>
                 <th rowspan="2" style="min-width:120px;">Country of destination</th>
                 <th rowspan="2" style="min-width:120px;">Country ledger</th>
-                <th rowspan="2" style="min-width:70px;">Amounts</th>
-                <th rowspan="2" style="min-width:70px;background:rgba(96,165,250,.08);color:#60a5fa;">Total Amount</th>
+                <th rowspan="2" style="min-width:70px;">
+                    Amounts
+                    <span class="podpowiedz" tabindex="0" aria-label="Skąd się bierze Amounts">ⓘ
+                        <span class="podpowiedz-tresc">
+                            <strong>Amounts</strong> — suma <em>Stückzahl</em> wszystkich paczek
+                            tej linii (List-ID + Country ledger + Loading date), prosto z importu
+                            CSV/Excel. Mówi, ile sztuk <u>przyjechało</u>. Liczona automatycznie,
+                            nie da się jej wpisać ręcznie.
+                        </span>
+                    </span>
+                </th>
+                <th rowspan="2" style="min-width:70px;background:rgba(96,165,250,.08);color:#60a5fa;">
+                    Total Amount
+                    <span class="podpowiedz" tabindex="0" aria-label="Skąd się bierze Total Amount">ⓘ
+                        <span class="podpowiedz-tresc">
+                            <strong>Total Amount</strong> — ilość z kategorii
+                            <strong>{{ category_labels[total_amount_category] }}</strong>
+                            ({{ category_labels_pl[total_amount_category] }}), czyli z ilości
+                            wpisywanych przez pracownika przy zakończeniu paczki
+                            („Czasy paczek" → Koniec) i poprawianych w „Paczki (dane)" → ✎ Ilości.<br><br>
+                            Świadomie <u>nie</u> jest to suma wszystkich kategorii: jedna sztuka
+                            przechodzi przez kilka czynności (etykietowanie, sortowanie…), więc
+                            taka suma liczyłaby ten sam towar wielokrotnie i przebijała Amounts.<br><br>
+                            <em>Amounts</em> = ile sztuk przyjechało · <em>Total Amount</em> = ile
+                            sztuk faktycznie przerobiono. Rozjazd między nimi jest normalny
+                            w trakcie zmiany — licznik 🔒 obok List-ID pokazuje, ile paczek
+                            linii jest już zeskanowanych.
+                        </span>
+                    </span>
+                </th>
                 {% for cat in categories %}
                 <th colspan="2"
                     style="text-align:center;background:rgba(99,102,241,.08);border-bottom:2px solid var(--accent);min-width:160px;">
                     {{ category_labels[cat] }}
+                    <span style="display:block;font-weight:400;font-size:.72rem;color:var(--text-muted);">
+                        {{ category_labels_pl[cat] }}
+                    </span>
                 </th>
                 {% endfor %}
                 <th rowspan="2" style="min-width:100px;background:rgba(34,197,94,.08);">Total cost (EUR)</th>
@@ -94,16 +125,16 @@
                 </td>
                 {% set cd = s.get_category_data() %}
                 {% set row_total = namespace(val=0) %}
-                {% set row_total_amount = namespace(val=0) %}
                 {% for cat in categories %}
                 {% set amt = cd.get(cat, {}).get('amount', 0) %}
                 {% set rate = rates.get(cat, 0.0) %}
                 {% set computed_cost = amt * rate %}
                 {% set row_total.val = row_total.val + computed_cost %}
-                {% set row_total_amount.val = row_total_amount.val + amt %}
                 {% endfor %}
+                {# Total Amount = wylacznie Labelling one — patrz dymek w naglowku. #}
+                {% set row_total_amount = cd.get(total_amount_category, {}).get('amount', 0) %}
                 <td class="row-total-amount" style="font-weight:700; color:#60a5fa;"
-                    data-val="{{ row_total_amount.val }}">{{ row_total_amount.val }}</td>
+                    data-val="{{ row_total_amount }}">{{ row_total_amount }}</td>
 
                 {% for cat in categories %}
                 {% set amt = cd.get(cat, {}).get('amount', 0) %}
@@ -256,6 +287,7 @@
     });
 
     const ratesByYm = JSON.parse('{{ rates_by_ym|tojson|safe }}');
+    const TOTAL_AMOUNT_CATEGORY = '{{ total_amount_category }}';
 
     function updateRowTotal(row) {
         let total = 0;
@@ -264,13 +296,17 @@
         const ym = row.dataset.ym;
         const rates = ratesByYm[ym] || {};
 
+        // Zwykly wiersz: Total Amount = tylko TOTAL_AMOUNT_CATEGORY (Labelling one).
+        // Zolty wiersz double rate zostaje na sumie wszystkich kategorii.
+        const wierszDoubleRate = row.dataset.drRow === 'true';
+
         categories.forEach(cat => {
             const amountInput = row.querySelector(`[data-cat="${cat}"][data-field="amount"]`);
             const costInput = row.querySelector(`[data-cat="${cat}"][data-field="cost"]`);
             if (amountInput && costInput) {
                 const amt = parseInt(amountInput.value) || 0;
                 const rate = parseFloat(rates[cat]) || 0.0;
-                totalAmount += amt;
+                if (wierszDoubleRate || cat === TOTAL_AMOUNT_CATEGORY) totalAmount += amt;
                 const cst = amt * rate;
                 costInput.value = cst.toFixed(2);
                 total += cst;
