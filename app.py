@@ -4,6 +4,7 @@ import io
 import json
 import calendar
 import math
+import statistics
 from datetime import datetime, date, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 from functools import wraps
@@ -711,6 +712,17 @@ SETTING_DEFAULTS = {
     # Progi dla filtra bledow na ekranie „Czasy pracownikow"
     'max_work_minutes': '660',      # 11 h
     'min_break_minutes': '15',
+    # Progi przegladu ogolnego na ekranie „Statystyki". Odniesieniem jest
+    # MEDIANA zespolu z wybranego okresu, nie zadana z gory norma — takiej w
+    # systemie nie ma i nikt jej nie ustawia. Procenty ponizej to odchylenie od
+    # tej mediany; `min_packages_rank` chroni ranking przed osoba z jedna
+    # paczka, ktora wyladowalaby na szczycie albo dnie na czystym szumie.
+    'norm_good_pct': '110',
+    'norm_weak_pct': '90',
+    'min_packages_rank': '3',
+    # Docelowa wydajnosc (szt./h) wpisana przez lidera. 0 = NIE USTAWIONO —
+    # wtedy kolumna celu w ogole sie nie pokazuje i nic sie przez nia nie dzieli.
+    'target_szt_h': '0',
 }
 
 
@@ -948,7 +960,8 @@ def stats():
         .order_by(User.display_name).all()
     activities = Activity.query.filter_by(is_active=True)\
         .order_by(Activity.sort_order).all()
-    return render_template('stats.html', users=users, activities=activities)
+    return render_template('stats.html', users=users, activities=activities,
+                           cel_szt_h=get_setting_int('target_szt_h', 0))
 
 
 @app.route('/admin/activities')
@@ -991,7 +1004,10 @@ def admin_settings():
     return render_template('admin_settings.html',
                            break_threshold=get_setting_int('break_threshold_minutes', 30),
                            max_work=get_setting_int('max_work_minutes', 660),
-                           min_break=get_setting_int('min_break_minutes', 15))
+                           min_break=get_setting_int('min_break_minutes', 15),
+                           norm_good=get_setting_int('norm_good_pct', 110),
+                           norm_weak=get_setting_int('norm_weak_pct', 90),
+                           min_packages=get_setting_int('min_packages_rank', 3))
 
 
 @app.route('/api/settings', methods=['PUT'])
@@ -1002,6 +1018,9 @@ def api_settings_update():
         ('break_threshold_minutes', 'Próg przerwy'),
         ('max_work_minutes',        'Maksymalny czas pracy'),
         ('min_break_minutes',       'Minimalna przerwa'),
+        ('norm_good_pct',           'Próg dobrego wyniku'),
+        ('norm_weak_pct',           'Próg słabego wyniku'),
+        ('min_packages_rank',       'Minimum paczek do rankingu'),
     ]
     for klucz, nazwa in pola:
         if klucz not in data:
@@ -1019,6 +1038,9 @@ def api_settings_update():
         'break_threshold_minutes': get_setting_int('break_threshold_minutes', 30),
         'max_work_minutes': get_setting_int('max_work_minutes', 660),
         'min_break_minutes': get_setting_int('min_break_minutes', 15),
+        'norm_good_pct': get_setting_int('norm_good_pct', 110),
+        'norm_weak_pct': get_setting_int('norm_weak_pct', 90),
+        'min_packages_rank': get_setting_int('min_packages_rank', 3),
     }), 200
 
 
@@ -1865,6 +1887,177 @@ def api_daily_stat_update(stat_id):
 # ══════════════════════════════════════════════════════════════════════════════
 #  API: STATISTICS
 # ══════════════════════════════════════════════════════════════════════════════
+
+def wydajnosc_pracownikow(date_from=None, date_to=None):
+    """Wydajnosc kazdego pracownika liczona z ZAKONCZONYCH PACZEK.
+
+    Dlaczego z paczek, a nie z `DailyStat`: wpis ilosci jest uzupelniany
+    sporadycznie (na `.31` to kilka wierszy), a skan paczek leci przy kazdej
+    sztuce — to jedyne zrodlo, ktore realnie pokrywa zespol.
+
+    Czas liczy `suma_zlaczonych_okresow()`, a nie suma dlugosci paczek: nic w
+    schemacie nie zabrania trzymania dwoch paczek otwartych naraz, a wtedy
+    zsumowane czasy liczylyby ten sam kwadrans dwa razy i zanizyly szt./h.
+    To ten sam helper, ktorego uzywa `_compute_worker_times` dla przerw.
+
+    Uwaga na interpretacje: mianownikiem jest czas SKANOWANIA paczek, nie czas
+    obecnosci na zmianie — przerwy i „Inne" go nie pomniejszaja, bo ich tu nie
+    ma. To „sztuki na godzine skanowania", nie „na godzine pracy".
+    """
+    q = db.session.query(
+        ImportedCarton.scan_end_by,
+        ImportedCarton.scan_start_at,
+        ImportedCarton.scan_end_at,
+        ImportedCarton.stueckzahl,
+    ).filter(
+        ImportedCarton.scan_end_at.isnot(None),
+        ImportedCarton.scan_end_by.isnot(None),
+    )
+    # `scan_end_at` to naive UTC — granice doby jak wszedzie indziej.
+    if date_from:
+        q = q.filter(ImportedCarton.scan_end_at >= local_day_bounds(date_from)[0])
+    if date_to:
+        q = q.filter(ImportedCarton.scan_end_at < local_day_bounds(date_to)[1])
+
+    per_osoba = {}
+    for uid, start, koniec, sztuk in q.all():
+        wpis = per_osoba.setdefault(uid, {'paczek': 0, 'sztuk': 0, 'okresy': []})
+        wpis['paczek'] += 1
+        wpis['sztuk'] += (sztuk or 0)
+        if start:                      # bez startu nie da sie zmierzyc czasu
+            wpis['okresy'].append((start, koniec))
+    return per_osoba
+
+
+@app.route('/api/stats/target', methods=['PUT'])
+@leader_required
+def api_stats_target_update():
+    """Docelowa wydajnosc (szt./h) wpisywana przez lidera na ekranie Statystyk.
+
+    Celowo `@leader_required`, mimo ze reszta `AppSetting` idzie przez
+    admin-only `PUT /api/settings`: cel jest **wylacznie informacyjny** —
+    koloruje kolumne i nie dotyka ani rozliczen, ani zadnej blokady. Lider
+    prowadzi zmiane, wiec to on ustala poprzeczke. Endpoint przyjmuje ten jeden
+    klucz i nic wiecej, zeby nie otwierac liderowi calych ustawien.
+    """
+    data = json_body()
+    try:
+        wartosc = int(data.get('target_szt_h'))
+    except (TypeError, ValueError):
+        abort(400, 'Docelowa wydajność musi być liczbą całkowitą.')
+    if wartosc < 0:
+        abort(400, 'Docelowa wydajność nie może być ujemna.')
+
+    set_setting('target_szt_h', wartosc)
+    db.session.commit()
+    return jsonify({
+        'message': 'Zapisano cel.' if wartosc else 'Cel wyłączony.',
+        'target_szt_h': wartosc,
+    }), 200
+
+
+@app.route('/api/stats/overview', methods=['GET'])
+@leader_required
+def api_stats_overview():
+    """Przeglad calego zespolu: kto wyrabia najlepiej, kto odstaje.
+
+    Odniesieniem jest **mediana zespolu** z wybranego okresu (nie srednia —
+    jedna osoba z ekstremalnym wynikiem nie przesuwa poprzeczki dla reszty).
+    """
+    date_from = parse_date(request.args.get('date_from'), 'date_from') \
+        if request.args.get('date_from') else None
+    date_to = parse_date(request.args.get('date_to'), 'date_to') \
+        if request.args.get('date_to') else None
+
+    prog_dobry = get_setting_int('norm_good_pct', 110)
+    prog_slaby = get_setting_int('norm_weak_pct', 90)
+    min_paczek = get_setting_int('min_packages_rank', 3)
+    cel = get_setting_int('target_szt_h', 0) or None      # 0 = nie ustawiono
+
+    dane = wydajnosc_pracownikow(date_from, date_to)
+    uzytkownicy = {u.id: u for u in User.query.filter(
+        User.id.in_(dane.keys())).all()} if dane else {}
+
+    wiersze = []
+    for uid, w in dane.items():
+        user = uzytkownicy.get(uid)
+        if not user:
+            continue                   # konto skasowane twardo — pomijamy
+        sekundy = suma_zlaczonych_okresow(w['okresy'])
+        godziny = sekundy / 3600.0
+        wiersze.append({
+            'user_id': uid,
+            'display_name': user.display_name,
+            'is_active_user': user.is_active_user,
+            'paczek': w['paczek'],
+            'sztuk': w['sztuk'],
+            'godzin': round(godziny, 2),
+            # Bez zmierzonego czasu szt./h nie istnieje — nie udajemy zera.
+            'szt_h': round(w['sztuk'] / godziny, 1) if godziny > 0 else None,
+        })
+
+    # Do rankingu wchodzi tylko ten, kto ma dosc paczek i zmierzony czas.
+    # Reszta ladu je w osobnym koszyku — ukrycie jej sugerowaloby, ze nie
+    # pracowala, a to nieprawda: po prostu nie ma z czego liczyc sredniej.
+    def kwalifikuje(r):
+        return r['paczek'] >= min_paczek and r['szt_h'] is not None
+
+    ranking = [r for r in wiersze if kwalifikuje(r)]
+    za_malo = [r for r in wiersze if not kwalifikuje(r)]
+
+    mediana = statistics.median(sorted(r['szt_h'] for r in ranking)) if ranking else None
+
+    for r in ranking:
+        if mediana and mediana > 0:
+            proc = round(r['szt_h'] / mediana * 100)
+            r['proc_mediany'] = proc
+            r['ocena'] = ('dobra' if proc >= prog_dobry
+                          else 'slaba' if proc <= prog_slaby else 'ok')
+        else:
+            r['proc_mediany'] = None
+            r['ocena'] = None
+        # Cel jest poprzeczka do przeskoczenia, wiec ocena jest dwustanowa:
+        # 100% = spelnia. NIE uzywamy tu pasm norm_good/norm_weak — te opisuja
+        # odchylenie od mediany zespolu, a lider, ktory wpisal liczbe jako
+        # wymagany poziom, przeczytalby „rowno w celu = tylko ok" jako blad.
+        if cel:
+            proc_celu = round(r['szt_h'] / cel * 100)
+            r['proc_celu'] = proc_celu
+            r['ocena_celu'] = 'spelnia' if proc_celu >= 100 else 'ponizej'
+        else:
+            r['proc_celu'] = None
+            r['ocena_celu'] = None
+    for r in za_malo:
+        r['proc_mediany'] = None
+        r['ocena'] = None
+        r['proc_celu'] = None
+        r['ocena_celu'] = None
+
+    ranking.sort(key=lambda r: r['szt_h'], reverse=True)
+    za_malo.sort(key=lambda r: r['display_name'])
+
+    return jsonify({
+        'date_from': date_from.isoformat() if date_from else None,
+        'date_to': date_to.isoformat() if date_to else None,
+        'mediana_szt_h': round(mediana, 1) if mediana else None,
+        'cel_szt_h': cel,
+        'progi': {'dobry': prog_dobry, 'slaby': prog_slaby, 'min_paczek': min_paczek},
+        # Bez celu albo bez nikogo w rankingu nie ma czego zliczac — `None`,
+        # nie 0. „0 / 0" czytaloby sie jak „nikt nie spelnia" albo, gorzej,
+        # jak komplet (0 z 0 to przeciez wszyscy).
+        'spelnia_cel': (sum(1 for r in ranking if r['ocena_celu'] == 'spelnia')
+                        if cel and ranking else None),
+        'pracownicy': ranking,
+        'za_malo_danych': za_malo,
+        'podsumowanie': {
+            'osob': len(wiersze),
+            'w_rankingu': len(ranking),
+            'paczek': sum(r['paczek'] for r in wiersze),
+            'sztuk': sum(r['sztuk'] for r in wiersze),
+            'godzin': round(sum(r['godzin'] for r in wiersze), 2),
+        },
+    }), 200
+
 
 @app.route('/api/stats/user/<int:user_id>', methods=['GET'])
 @leader_required

@@ -36,9 +36,44 @@
         Krótsza (lub żadna) przerwa jest oznaczana jako błąd — liczone dopiero po
         zarejestrowaniu końca pracy, żeby trwająca zmiana nie świeciła się na czerwono.
     </p>
+    <input type="number" id="minBreak" class="form-control" style="width:120px;"
+           min="1" step="1" value="{{ min_break }}">
+
+    <h3 style="margin:2rem 0 0;">Przegląd wydajności (Statystyki)</h3>
+    <p style="color:var(--text-muted);font-size:.85rem;margin:.35rem 0 0;">
+        Odniesieniem jest <strong>mediana zespołu</strong> z wybranego okresu, nie zadana
+        z góry norma — takiej system nie przechowuje. Poniższe progi decydują tylko o tym,
+        kogo ekran pokoloruje.
+    </p>
+
+    <label style="display:block;margin:1.5rem 0 .35rem;font-weight:600;">
+        Próg dobrego wyniku (% mediany)
+    </label>
+    <p style="color:var(--text-muted);font-size:.85rem;margin:0 0 .5rem;">
+        Od tej wartości w górę pracownik jest oznaczany 🟢. Domyślnie 110%.
+    </p>
+    <input type="number" id="normGood" class="form-control" style="width:120px;"
+           min="1" step="1" value="{{ norm_good }}">
+
+    <label style="display:block;margin:1.5rem 0 .35rem;font-weight:600;">
+        Próg słabego wyniku (% mediany)
+    </label>
+    <p style="color:var(--text-muted);font-size:.85rem;margin:0 0 .5rem;">
+        Od tej wartości w dół pracownik trafia do „🔴 do dopracowania". Domyślnie 90%.
+    </p>
+    <input type="number" id="normWeak" class="form-control" style="width:120px;"
+           min="1" step="1" value="{{ norm_weak }}">
+
+    <label style="display:block;margin:1.5rem 0 .35rem;font-weight:600;">
+        Minimum paczek do rankingu
+    </label>
+    <p style="color:var(--text-muted);font-size:.85rem;margin:0 0 .5rem;">
+        Poniżej tylu zakończonych paczek średnia jest przypadkowa, więc osoba trafia do
+        osobnej sekcji „za mało danych" zamiast na szczyt lub dno rankingu. Domyślnie 3.
+    </p>
     <div style="display:flex;gap:.75rem;align-items:center;">
-        <input type="number" id="minBreak" class="form-control" style="width:120px;"
-               min="1" step="1" value="{{ min_break }}">
+        <input type="number" id="minPackages" class="form-control" style="width:120px;"
+               min="1" step="1" value="{{ min_packages }}">
         <button class="btn btn-primary" id="saveBtn" onclick="saveSettings()">Zapisz</button>
     </div>
 </div>
@@ -51,7 +86,13 @@ async function saveSettings() {
         break_threshold_minutes: parseInt(document.getElementById('breakThreshold').value, 10),
         max_work_minutes:        parseInt(document.getElementById('maxWork').value, 10),
         min_break_minutes:       parseInt(document.getElementById('minBreak').value, 10),
+        norm_good_pct:           parseInt(document.getElementById('normGood').value, 10),
+        norm_weak_pct:           parseInt(document.getElementById('normWeak').value, 10),
+        min_packages_rank:       parseInt(document.getElementById('minPackages').value, 10),
     };
+    if (pola.norm_weak_pct >= pola.norm_good_pct) {
+        showToast('Próg słabego wyniku musi być niższy niż próg dobrego.', 'error'); return;
+    }
     if (Object.values(pola).some(v => !v || v < 1)) {
         showToast('Wszystkie wartości muszą być większe od zera.', 'error'); return;
     }

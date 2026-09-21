@@ -126,7 +126,7 @@ Korekta pojedynczego wpisu.
 
 | Method | URL | Opis |
 |--------|-----|------|
-| PUT | `/api/settings` | Zapis ustawień systemowych (admin). Klucze: `break_threshold_minutes` (30), `max_work_minutes` (660), `min_break_minutes` (15) — każdy liczbą ≥ 1, wszystkie opcjonalne. Przechowywane w tabeli `AppSetting`. Zła wartość → 400 i **nic się nie zapisuje**. |
+| PUT | `/api/settings` | Zapis ustawień systemowych (admin). Klucze czasu pracy: `break_threshold_minutes` (30), `max_work_minutes` (660), `min_break_minutes` (15). Klucze przeglądu wydajności: `norm_good_pct` (110), `norm_weak_pct` (90), `min_packages_rank` (3). Każdy liczbą ≥ 1, wszystkie opcjonalne. Przechowywane w tabeli `AppSetting`. Zła wartość → 400 i **nic się nie zapisuje**. |
 
 ## Dashboard
 
@@ -134,6 +134,50 @@ Korekta pojedynczego wpisu.
 |--------|-----|------|
 | GET | `/api/dashboard` | Dane dashboardu dziennego (dziś): karty zbiorcze, per pracownik, czynności. |
 | GET | `/api/dashboard/shifts?date=YYYY-MM-DD` | **Podział per zmiana** dla wybranego dnia (domyślnie dziś). Zwraca `shifts[]` (zmiana 1 i 2: `present_count`, `packages`, `pieces`, `activities[]`) oraz `unattributed` (paczki pracowników bez jednoznacznej obecności). Paczki przypisywane do zmiany wg obecności pracownika (`ShiftAttendance`); DailyStat wg `shift_id`. |
+
+## Statystyki — przegląd zespołu
+
+### GET `/api/stats/overview?date_from=&date_to=`
+Przegląd wydajności **wszystkich** pracowników (lider+) — zakładka „Przegląd ogólny" na `/stats`.
+
+Liczone z **zakończonych paczek**, nie z `DailyStat` (wpis ilości jest uzupełniany sporadycznie, skan paczek leci przy każdej sztuce). Miara: **sztuki na godzinę skanowania**.
+
+Czas to **suma złączonych okresów** `(scan_start_at, scan_end_at)`, nie suma ich długości — dwie paczki otwarte równocześnie liczyłyby ten sam kwadrans dwa razy. Mianownikiem jest czas *skanowania*, nie czas obecności: przerwy i „Inne" go nie pomniejszają.
+
+Odniesieniem jest **mediana zespołu** z okresu (nie średnia — jeden skrajny wynik nie przesuwa poprzeczki reszcie), a **nie zadana norma** — takiej system nie przechowuje.
+
+```json
+{
+  "date_from": "2026-08-22", "date_to": "2026-09-21",
+  "mediana_szt_h": 300.0,
+  "progi": { "dobry": 110, "slaby": 90, "min_paczek": 3 },
+  "pracownicy": [
+    { "user_id": 12, "display_name": "...", "paczek": 8, "sztuk": 731,
+      "godzin": 1.86, "szt_h": 392.3, "proc_mediany": 131, "ocena": "dobra" }
+  ],
+  "za_malo_danych": [ { "…": "…", "szt_h": null, "ocena": null } ],
+  "podsumowanie": { "osob": 11, "w_rankingu": 9, "paczek": 91, "sztuk": 6961, "godzin": 22.8 }
+}
+```
+
+`ocena`: `dobra` (≥ `norm_good_pct`) · `ok` · `slaba` (≤ `norm_weak_pct`). Oba progi są **domknięte**.
+
+**Cel wpisany przez lidera** (`target_szt_h`, 0 = nieustawiony) dokłada `cel_szt_h`, `spelnia_cel` oraz per pracownik `proc_celu` i `ocena_celu` — **obok** kolumn mediany, nie zamiast nich. Ocena celu jest **dwustanowa**: `spelnia` (≥ 100%) albo `ponizej`. Celowo nie używa pasm `norm_good_pct`/`norm_weak_pct` — te opisują odchylenie od mediany zespołu, a „równo w celu" musi znaczyć „spełnia". Przy nieustawionym celu albo pustym rankingu `spelnia_cel` = `null` (nie 0 — „0 / 0" czytałoby się jak komplet).
+
+### PUT `/api/stats/target`
+Ustawia docelową wydajność (**lider+**, inaczej niż admin-only `PUT /api/settings`).
+
+```json
+{ "target_szt_h": 250 }
+```
+
+Liczba całkowita ≥ 0; **0 wyłącza** kolumnę celu. Endpoint przyjmuje **wyłącznie ten klucz** — nie jest furtką do reszty `AppSetting`. Uzasadnienie uprawnień: cel jest informacyjny (koloruje kolumnę), nie dotyka rozliczeń ani żadnej blokady, a poprzeczkę ustala lider prowadzący zmianę.
+
+**Skok do paczek:** każdy wiersz przeglądu linkuje do `/paczki?osoba=<id>&date_typ=koniec&date_from=&date_to=` — paczki, które złożyły się na wynik, w tym samym zakresie dat. `date_typ=koniec` sam zdejmuje domyślne „tylko niezrobione".
+
+**`za_malo_danych`** — osoby poniżej `min_packages_rank` paczek albo bez zmierzonego czasu (`szt_h: null`). Nie są ukrywane: pracowały, tylko nie ma z czego liczyć średniej. Bez tego progu konto z jedną błyskawiczną paczką ląduje na szczycie rankingu (na `.31` realnie: 26 038 szt./h przy 2 paczkach).
+
+Zakres dat filtruje `scan_end_at` przez `local_day_bounds()`, górna granica półotwarta.
 
 ## Statystyki użytkownika
 

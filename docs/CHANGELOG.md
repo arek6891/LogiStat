@@ -1,5 +1,63 @@
 # LogiStat — Changelog
 
+## 2026-09-21 — przeglad ogolny pracownikow w Statystykach
+
+### Dodane — Statystyki
+- **Zakladka „Przeglad ogolny"** na `/stats` (`GET /api/stats/overview`, lider+).
+  Do tej pory ekran wymagal klikania w kazda osobe z osobna; lider nie mial jak
+  zobaczyc, jak idzie calemu zespolowi. Teraz widac wszystkich naraz, posortowanych
+  od najlepszego wyniku, z kolorowym oznaczeniem 🟢 / ⚪ / 🔴.
+- **Miara: sztuki na godzine skanowania paczek.** Liczone z **zakonczonych paczek**,
+  nie z `DailyStat` — wpis ilosci jest uzupelniany sporadycznie (na `.31` to 3 wiersze),
+  a skan paczek leci przy kazdej sztuce. Ranking oparty o `DailyStat` bylby pusty dla
+  wiekszosci zespolu.
+- Czas liczy **suma zlaczonych okresow**, a nie suma dlugosci paczek: nic w schemacie
+  nie zabrania trzymania dwoch paczek otwartych naraz, a wtedy ten sam kwadrans bylby
+  policzony dwa razy. Ten sam helper, ktorego uzywa `_compute_worker_times` dla przerw.
+- **Odniesieniem jest MEDIANA zespolu z okresu, nie zadana norma** — takiej system nie
+  przechowuje, `Activity` nie ma takiej kolumny i nikt jej nie ustawia. Mediana, nie
+  srednia: jedna osoba ze skrajnym wynikiem nie przesuwa poprzeczki reszcie. Ekran
+  mowi to wprost, bo liczba podpisana „norma" czyta sie jak cel bezwzgledny.
+- **Sekcja „za malo danych"** dla osob ponizej progu paczek albo bez zmierzonego czasu.
+  Nie sa ukrywane — pracowaly, tylko nie ma z czego liczyc sredniej. Bez tego progu
+  konto z jedna blyskawiczna paczka lezy na szczycie rankingu: na `.31` realnie
+  **26 038 szt./h przy 2 paczkach** (8679% mediany) i 1829 szt./h przy jednej.
+- Klikniecie nazwiska przenosi na zakladke „Per pracownik" z ta osoba wybrana.
+
+### Dodane — cel wpisywany przez lidera
+- **Pole „🎯 Cel (szt./h)"** wprost na ekranie przegladu (`PUT /api/stats/target`).
+  Cel jest **wspolny dla wszystkich** i **dokladany obok** mediany, nie zamiast niej:
+  `% mediany` mowi, jak ktos wypada na tle zespolu, `% celu` — czy przeskakuje
+  wpisana poprzeczke. `0` chowa kolumny celu.
+- Ocena celu jest **dwustanowa** (≥100% = spelnia). Celowo NIE uzywa pasm
+  `norm_good_pct`/`norm_weak_pct` — te opisuja odchylenie od mediany, a lider, ktory
+  wpisal liczbe jako wymagany poziom, przeczytalby „rowno w celu = tylko ok" jako blad.
+- Endpoint jest **`@leader_required`**, inaczej niz admin-only `PUT /api/settings`:
+  cel jest wylacznie informacyjny (koloruje kolumne, nie dotyka rozliczen ani zadnej
+  blokady), a poprzeczke ustala lider prowadzacy zmiane. Przyjmuje **ten jeden klucz
+  i nic wiecej** — nie jest furtka do reszty ustawien (jest na to test).
+
+### Dodane — skok do paczek
+- Przycisk **📦** w kazdym wierszu przenosi na `/paczki` z filtrem po tej osobie,
+  po **dacie konca** i w tym samym zakresie dat — czyli dokladnie te paczki, ktore
+  zlozyly sie na jej wynik. Reuzywa filtra `osoba` zamiast wymyslac czwarte „kto":
+  blokada wlasnosci sprawia, ze kto zaczyna paczke, ten ja konczy.
+
+### Dodane — ustawienia admina
+- `norm_good_pct` (110), `norm_weak_pct` (90), `min_packages_rank` (3) w `/admin/settings`,
+  obok istniejacych progow czasu pracy. Oba progi procentowe sa **domkniete** (`>=` / `<=`).
+  Formularz nie pozwoli ustawic progu slabego wyzej niz dobry.
+
+### Testy
+- `tests/test_przeglad_pracownikow.py` — 30 testow, **354 w calym zestawie**.
+  Pokryte: liczenie szt./h, nakladajace sie paczki (czas liczony raz), prog minimalnej
+  liczby paczek i jego konfigurowalnosc, mediana zamiast sredniej, domkniete progi ocen,
+  zakres dat z polotwarta gorna granica, paczka bez startu, zerowy czas (brak dzielenia
+  przez zero), uprawnienia.
+- Statyczna regula z `test_xss.py` zlapala pierwsza wersje szablonu: inline `onclick`
+  sklejal nazwe pracownika z bazy. Przepisane na `data-*` + delegacje, jak
+  `podepnijAkcje()` w `worker_times.html`.
+
 ## 2026-09-21 — filtry dat na Paczkach, wymuszony zakres przy „pokaz zrobione"
 
 ### Dodane — Paczki (dane)

@@ -8,10 +8,109 @@
 {% block content %}
 <div class="page-header">
     <h2>📊 Statystyki</h2>
-    <p class="subtitle">Sprawdź wyniki pracowników per czynność, dzień i miesiąc</p>
+    <p class="subtitle">Przegląd całego zespołu albo wyniki pojedynczej osoby</p>
 </div>
 
-<div class="stats-grid">
+<div style="display:flex;gap:.5rem;margin-bottom:1.25rem;flex-wrap:wrap;">
+    <button type="button" id="tabPrzeglad" class="btn btn-primary" onclick="pokazZakladke('przeglad')">📋 Przegląd ogólny</button>
+    <button type="button" id="tabOsoba" class="btn btn-secondary" onclick="pokazZakladke('osoba')">👤 Per pracownik</button>
+</div>
+
+<!-- ══ Zakładka: przegląd ogólny ══════════════════════════════════════════ -->
+<div id="widokPrzeglad">
+    <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Od</label>
+                <input type="date" id="przegladOd" class="form-control" style="width:160px;" onchange="ladujPrzeglad()">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label>Do</label>
+                <input type="date" id="przegladDo" class="form-control" style="width:160px;" onchange="ladujPrzeglad()">
+            </div>
+            <button class="btn btn-secondary" onclick="zakresDni(7)">7 dni</button>
+            <button class="btn btn-secondary" onclick="zakresDni(30)">30 dni</button>
+            <button class="btn btn-secondary" onclick="zakresDni(null)">Całość</button>
+
+            <div style="margin-left:auto;display:flex;gap:.5rem;align-items:flex-end;">
+                <div class="form-group" style="margin-bottom:0;">
+                    <label title="Poprzeczka ustalana przez lidera. Wspólna dla wszystkich. 0 = wyłącz kolumnę celu.">
+                        🎯 Cel (szt./h)
+                    </label>
+                    <input type="number" id="celSztH" class="form-control" style="width:110px;"
+                           min="0" step="1" value="{{ cel_szt_h }}">
+                </div>
+                <button class="btn btn-secondary" id="zapiszCelBtn" onclick="zapiszCel()">Zapisz cel</button>
+            </div>
+        </div>
+        <p style="color:var(--text-muted);font-size:.8rem;margin:.75rem 0 0;">
+            Cel wpisuje lider i obowiązuje wszystkich. Nie zastępuje mediany — obie kolumny
+            są widoczne obok siebie: <strong>% mediany</strong> mówi, jak ktoś wypada na tle
+            zespołu, <strong>% celu</strong> — czy przeskakuje wpisaną poprzeczkę. Wpisz
+            <strong>0</strong>, żeby schować kolumnę celu.
+        </p>
+    </div>
+
+    <div id="przegladPodsumowanie" class="card" style="margin-bottom:16px;"></div>
+
+    <div class="card" style="margin-bottom:16px;">
+        <div class="card-header"><h3>Wydajność zespołu</h3></div>
+        <p style="color:var(--text-secondary);font-size:.85rem;margin-top:0;">
+            Miarą jest <strong>liczba sztuk na godzinę skanowania paczek</strong>.
+            Odniesieniem jest <strong>mediana tego zespołu</strong> w wybranym okresie —
+            nie zadana z góry norma, bo takiej system nie przechowuje. Kolumna „% mediany"
+            mówi więc, jak ktoś wypada <em>na tle koleżanek</em>, a nie wobec celu.
+        </p>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:40px;">#</th>
+                        <th>Pracownik</th>
+                        <th style="text-align:right;">Paczek</th>
+                        <th style="text-align:right;">Sztuk</th>
+                        <th style="text-align:right;">Godzin</th>
+                        <th style="text-align:right;">Szt./h</th>
+                        <th style="text-align:right;">% mediany</th>
+                        <th>Ocena</th>
+                        <th style="text-align:right;" class="kol-cel">% celu</th>
+                        <th class="kol-cel">Wobec celu</th>
+                        <th style="width:60px;"></th>
+                    </tr>
+                </thead>
+                <tbody id="przegladBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="przegladZaMalo" class="card" style="margin-bottom:16px;display:none;">
+        <div class="card-header"><h3>⚪ Za mało danych do oceny</h3></div>
+        <p style="color:var(--text-secondary);font-size:.85rem;margin-top:0;">
+            Te osoby <strong>pracowały</strong> — po prostu nie ma z czego liczyć średniej.
+            Jedna paczka potrafi wylądować na szczycie albo na dnie rankingu przez sam przypadek.
+            Dwa różne powody, warto je rozróżnić:
+        </p>
+        <ul style="color:var(--text-secondary);font-size:.85rem;margin:0 0 1rem;padding-left:1.2rem;">
+            <li><strong>Paczek mniej niż <span id="progMinPaczek"></span></strong> — za mała próbka, nic nadzwyczajnego.</li>
+            <li><strong>Godzin = 0 mimo paczek</strong> — paczki zamykane bez skanu „Start" albo
+                start i koniec w tej samej sekundzie. Tu nie chodzi o wydajność, tylko o to,
+                <em>jak</em> skanuje: bez startu nie da się zmierzyć czasu. Warto pokazać obsługę.</li>
+        </ul>
+        <p style="color:var(--text-secondary);font-size:.85rem;margin-top:0;">
+        </p>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr><th>Pracownik</th><th style="text-align:right;">Paczek</th><th style="text-align:right;">Sztuk</th><th style="text-align:right;">Godzin</th><th style="width:60px;"></th></tr>
+                </thead>
+                <tbody id="zaMaloBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ══ Zakładka: per pracownik ════════════════════════════════════════════ -->
+<div class="stats-grid" id="widokOsoba" style="display:none;">
     <!-- User list -->
     <div class="card">
         <div class="card-header">
@@ -129,6 +228,207 @@
     let currentUserId = null;
     let dailyChart = null;
 
+    // ── Zakładki ──────────────────────────────────────────────────────────
+    function pokazZakladke(ktora) {
+        const przeglad = ktora === 'przeglad';
+        document.getElementById('widokPrzeglad').style.display = przeglad ? '' : 'none';
+        document.getElementById('widokOsoba').style.display = przeglad ? 'none' : '';
+        document.getElementById('tabPrzeglad').className = przeglad ? 'btn btn-primary' : 'btn btn-secondary';
+        document.getElementById('tabOsoba').className = przeglad ? 'btn btn-secondary' : 'btn btn-primary';
+    }
+
+    // ── Przegląd ogólny ───────────────────────────────────────────────────
+    function zakresDni(ile) {
+        const od = document.getElementById('przegladOd');
+        const doo = document.getElementById('przegladDo');
+        if (ile === null) {
+            od.value = ''; doo.value = '';
+        } else {
+            const dzis = new Date();
+            const start = new Date(dzis);
+            start.setDate(start.getDate() - (ile - 1));
+            // Data LOKALNA, nie toISOString() — ten zwraca UTC, wiec miedzy
+            // polnoca a 2:00 czasu polskiego ustawialby zakres konczacy sie
+            // wczoraj. Druga zmiana pracuje przez polnoc, wiec ktos by na to
+            // trafil.
+            const fmt = d => `${d.getFullYear()}-`
+                + String(d.getMonth() + 1).padStart(2, '0') + '-'
+                + String(d.getDate()).padStart(2, '0');
+            od.value = fmt(start); doo.value = fmt(dzis);
+        }
+        ladujPrzeglad();
+    }
+
+    async function ladujPrzeglad() {
+        const p = new URLSearchParams();
+        const od = document.getElementById('przegladOd').value;
+        const doo = document.getElementById('przegladDo').value;
+        if (od) p.set('date_from', od);
+        if (doo) p.set('date_to', doo);
+
+        const body = document.getElementById('przegladBody');
+        body.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-secondary);">Ładowanie…</td></tr>';
+
+        let dane;
+        try {
+            const r = await fetch('/api/stats/overview?' + p.toString());
+            dane = await r.json();
+            if (!r.ok) throw new Error(dane.error || 'Błąd pobierania danych');
+        } catch (err) {
+            body.innerHTML = `<tr><td colspan="11" style="text-align:center;color:var(--danger);">${escapeHtml(err.message)}</td></tr>`;
+            return;
+        }
+
+        przelaczKolumnyCelu(dane.cel_szt_h !== null);
+        renderujPodsumowanie(dane);
+        renderujRanking(dane);
+        renderujZaMalo(dane);
+    }
+
+    function renderujPodsumowanie(d) {
+        const s = d.podsumowanie;
+        const kafel = (etykieta, wartosc, kolor) => `
+            <div style="flex:1;min-width:130px;">
+                <div style="color:var(--text-secondary);font-size:.8rem;">${etykieta}</div>
+                <div style="font-size:1.5rem;font-weight:700;${kolor ? 'color:' + kolor + ';' : ''}">${wartosc}</div>
+            </div>`;
+        document.getElementById('przegladPodsumowanie').innerHTML =
+            '<div style="display:flex;gap:1.5rem;flex-wrap:wrap;">'
+            + kafel('Pracowników', s.osob)
+            + kafel('W rankingu', s.w_rankingu)
+            + kafel('Paczek', s.paczek)
+            + kafel('Sztuk', s.sztuk.toLocaleString('pl'))
+            + kafel('Godzin skanowania', s.godzin.toLocaleString('pl'))
+            + kafel('Mediana szt./h', d.mediana_szt_h !== null ? d.mediana_szt_h.toLocaleString('pl') : '—', 'var(--accent)')
+            + (d.cel_szt_h !== null
+                ? kafel('🎯 Cel szt./h', d.cel_szt_h.toLocaleString('pl'), 'var(--accent)')
+                  + (d.spelnia_cel !== null
+                      ? kafel('Spełnia cel', `${d.spelnia_cel} / ${s.w_rankingu}`,
+                              d.spelnia_cel === s.w_rankingu ? '#22c55e' : 'var(--danger)')
+                      : kafel('Spełnia cel', '—'))
+                : '')
+            + '</div>';
+    }
+
+    function renderujRanking(d) {
+        const body = document.getElementById('przegladBody');
+        if (!d.pracownicy.length) {
+            body.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-secondary);padding:2rem;">'
+                + 'Nikt nie ma jeszcze dość zakończonych paczek w tym okresie (próg: '
+                + d.progi.min_paczek + ').</td></tr>';
+            return;
+        }
+        const styl = {
+            dobra: { tlo: 'rgba(34,197,94,.12)', kolor: '#22c55e', tekst: '🟢 dobra' },
+            ok:    { tlo: '',                    kolor: 'var(--text-secondary)', tekst: '⚪ w normie' },
+            slaba: { tlo: 'rgba(239,68,68,.12)', kolor: 'var(--danger)', tekst: '🔴 do dopracowania' },
+        };
+        const stylCelu = {
+            spelnia: { kolor: '#22c55e', tekst: '🟢 spełnia' },
+            ponizej: { kolor: 'var(--danger)', tekst: '🔴 poniżej celu' },
+        };
+        body.innerHTML = d.pracownicy.map((r, i) => {
+            const s = styl[r.ocena] || styl.ok;
+            const c = stylCelu[r.ocena_celu] || { kolor: 'var(--text-muted)', tekst: '—' };
+            return `<tr style="${s.tlo ? 'background:' + s.tlo + ';' : ''}">
+                <td style="color:var(--text-secondary);">${i + 1}</td>
+                <td><a href="#" class="js-osoba" data-user-id="${r.user_id}" data-user-name="${escapeHtml(r.display_name)}">${escapeHtml(r.display_name)}</a>${plakietkaNieaktywna(r)}</td>
+                <td style="text-align:right;">${r.paczek}</td>
+                <td style="text-align:right;">${r.sztuk.toLocaleString('pl')}</td>
+                <td style="text-align:right;">${r.godzin.toLocaleString('pl')}</td>
+                <td style="text-align:right;font-weight:700;">${r.szt_h.toLocaleString('pl')}</td>
+                <td style="text-align:right;color:${s.kolor};font-weight:600;">${r.proc_mediany !== null ? r.proc_mediany + '%' : '—'}</td>
+                <td style="color:${s.kolor};white-space:nowrap;">${s.tekst}</td>
+                <td style="text-align:right;color:${c.kolor};font-weight:600;" class="kol-cel">${r.proc_celu !== null ? r.proc_celu + '%' : '—'}</td>
+                <td style="color:${c.kolor};white-space:nowrap;" class="kol-cel">${c.tekst}</td>
+                <td>${linkDoPaczek(r)}</td>
+            </tr>`;
+        }).join('');
+        podepnijLinkiOsob(body);
+    }
+
+    function renderujZaMalo(d) {
+        const karta = document.getElementById('przegladZaMalo');
+        if (!d.za_malo_danych.length) { karta.style.display = 'none'; return; }
+        karta.style.display = '';
+        document.getElementById('progMinPaczek').textContent = d.progi.min_paczek;
+        document.getElementById('zaMaloBody').innerHTML = d.za_malo_danych.map(r => `
+            <tr>
+                <td><a href="#" class="js-osoba" data-user-id="${r.user_id}" data-user-name="${escapeHtml(r.display_name)}">${escapeHtml(r.display_name)}</a>${plakietkaNieaktywna(r)}</td>
+                <td style="text-align:right;">${r.paczek}</td>
+                <td style="text-align:right;">${r.sztuk.toLocaleString('pl')}</td>
+                <td style="text-align:right;">${r.godzin.toLocaleString('pl')}</td>
+                <td>${linkDoPaczek(r)}</td>
+            </tr>`).join('');
+        podepnijLinkiOsob(document.getElementById('zaMaloBody'));
+    }
+
+    // Skok na /paczki z filtrem po tej osobie i po DACIE KONCA, w tym samym
+    // zakresie dat co przeglad — czyli dokladnie te paczki, ktore zlozyly sie na
+    // jej wynik. `date_typ=koniec` sam zdejmuje domyslne „tylko niezrobione",
+    // wiec nie trzeba dokladac `pokaz_zrobione`.
+    function linkDoPaczek(r) {
+        const p = new URLSearchParams({ osoba: r.user_id, date_typ: 'koniec' });
+        const od = document.getElementById('przegladOd').value;
+        const doo = document.getElementById('przegladDo').value;
+        if (od) p.set('date_from', od);
+        if (doo) p.set('date_to', doo);
+        return `<a href="/paczki?${p.toString()}" class="btn btn-secondary"
+                   style="padding:.2rem .5rem;font-size:.8rem;white-space:nowrap;"
+                   title="Pokaż paczki zakończone przez tę osobę w tym okresie">📦</a>`;
+    }
+
+    async function zapiszCel() {
+        const btn = document.getElementById('zapiszCelBtn');
+        const wartosc = parseInt(document.getElementById('celSztH').value, 10);
+        if (isNaN(wartosc) || wartosc < 0) {
+            showToast('Cel musi być liczbą całkowitą ≥ 0.', 'error'); return;
+        }
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/stats/target', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target_szt_h: wartosc })
+            });
+            const dane = await res.json().catch(() => ({}));
+            if (!res.ok) { showToast(dane.error || 'Błąd zapisu.', 'error'); return; }
+            showToast(dane.message || 'Zapisano.', 'success');
+            ladujPrzeglad();
+        } catch {
+            showToast('Błąd połączenia.', 'error');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    // Bez ustawionego celu kolumny celu nie maja co pokazywac — chowamy je,
+    // zamiast wypelniac kreskami.
+    function przelaczKolumnyCelu(jest) {
+        document.querySelectorAll('.kol-cel').forEach(el => el.style.display = jest ? '' : 'none');
+    }
+
+    // Konto zdezaktywowane (soft-delete) nadal ma swoja prace w sumach, ale lider
+    // nie powinien planowac rozmowy z kims, kogo juz nie ma — stad plakietka.
+    function plakietkaNieaktywna(r) {
+        return r.is_active_user ? '' :
+            ' <span style="font-size:.7rem;padding:.1rem .35rem;border-radius:4px;'
+            + 'background:var(--border);color:var(--text-muted);">nieaktywna</span>';
+    }
+
+    // Zamiast onclick z wklejona nazwa: data-* + jedna delegacja — nazwy z bazy
+    // nigdy nie trafiaja do kodu JS, tylko do wartosci atrybutu. Ten sam wzorzec
+    // co podepnijAkcje() w worker_times.html; pilnuje go tests/test_xss.py.
+    function podepnijLinkiOsob(korzen) {
+        korzen.querySelectorAll('.js-osoba').forEach(a => {
+            a.addEventListener('click', (e) => {
+                e.preventDefault();
+                pokazZakladke('osoba');
+                selectUser(parseInt(a.dataset.userId), a.dataset.userName);
+            });
+        });
+    }
+
     // User search
     document.getElementById('userSearch').addEventListener('input', (e) => {
         const q = e.target.value.toLowerCase();
@@ -197,7 +497,7 @@
     function renderDaily(daily) {
         const tbody = document.getElementById('dailyBody');
         if (!daily.length) {
-            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">Brak danych</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Brak danych</td></tr>';
             return;
         }
         tbody.innerHTML = daily.map(d => {
@@ -298,5 +598,10 @@
             showToast('Błąd połączenia.', 'error');
         }
     }
+
+    // Wchodzimy od razu na przeglad — to on odpowiada na pytanie „jak idzie
+    // zespolowi", a widok per pracownik wymaga najpierw wybrania osoby.
+    // Domyslny zakres 30 dni, zeby jeden slaby dzien nie przesadzal o ocenie.
+    zakresDni(30);
 </script>
 {% endblock %}

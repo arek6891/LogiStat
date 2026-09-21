@@ -41,7 +41,7 @@ serwer (domena, backupy) opisuje **`docs/DEPLOY.md`**.
 
 ```bash
 pip install -r requirements-dev.txt
-pytest                       # 324 testy
+pytest                       # 354 testów
 ```
 
 Ten sam zestaw można przejechać po Postgresie (tak chodzi test i produkcja):
@@ -98,6 +98,7 @@ LogiStat/
 │   ├── test_package_times.py       # Blokada właściciela paczki
 │   ├── test_filtry_paczek.py       # Filtry /paczki (daty, osoba, błędy) + odblokowanie
 │   ├── test_czas_inne.py           # Tryb „Inne" i złączanie okresów
+│   ├── test_przeglad_pracownikow.py # Ranking wydajności zespołu (szt./h)
 │   ├── test_progi_bledow.py        # Progi filtra błędów (ustawienia admina)
 │   ├── test_permissions.py         # Guardy ról, is_active_user
 │   ├── test_day_boundary.py        # Doba lokalna vs UTC (DST)
@@ -176,7 +177,7 @@ zalogowanego lidera, bo to ekran stanowiskowy).
 - 📈 **Forecast** (`/forecast`) — prognoza ilości per dzień
 - 📋 **Przydzielanie** (`/assignment`) — drag & drop operatorów do czynności
 - ✏️ **Wpis ilości** (`/data-entry`) — ilości zrobione per osoba
-- 📊 **Statystyki** (`/stats`) — wykresy i tabele per pracownik
+- 📊 **Statystyki** (`/stats`) — przegląd całego zespołu (ranking szt./h, cel lidera) + wykresy per pracownik
 - 📦 **Paczki (dane)** (`/paczki`) — surowe dane paczek z filtrami (patrz niżej)
 - 👥 **Czasy pracowników** (`/worker-times`) — przegląd i korekta czasów + filtry
 - 📥 **Import danych** (`/import-csv`) — CSV (`;`) lub Excel (`.xlsx`), dedup po barcode
