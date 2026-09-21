@@ -41,7 +41,7 @@ serwer (domena, backupy) opisuje **`docs/DEPLOY.md`**.
 
 ```bash
 pip install -r requirements-dev.txt
-pytest                       # 313 testów
+pytest                       # 324 testy
 ```
 
 Ten sam zestaw można przejechać po Postgresie (tak chodzi test i produkcja):
@@ -96,7 +96,7 @@ LogiStat/
 │   ├── test_total_amount.py        # Total Amount = Labelling one (ekran + eksport)
 │   ├── test_packages_api.py        # Ręczne dodanie/edycja paczki
 │   ├── test_package_times.py       # Blokada właściciela paczki
-│   ├── test_filtry_paczek.py       # Filtry /paczki + odblokowanie paczki
+│   ├── test_filtry_paczek.py       # Filtry /paczki (daty, osoba, błędy) + odblokowanie
 │   ├── test_czas_inne.py           # Tryb „Inne" i złączanie okresów
 │   ├── test_progi_bledow.py        # Progi filtra błędów (ustawienia admina)
 │   ├── test_permissions.py         # Guardy ról, is_active_user
@@ -128,7 +128,7 @@ LogiStat/
 │   ├── admin_settings.html # Ustawienia (progi czasu pracy)
 │   ├── import_csv.html     # Importowanie pliku CSV
 │   ├── general_stats.html  # Statystyki ogólne z CSV (+ żółta linia double rate)
-│   ├── paczki.html         # Surowe paczki CSV (+ filtry, double rate, odblokowanie)
+│   ├── paczki.html         # Surowe paczki CSV (+ filtry dat, double rate, odblokowanie)
 │   ├── scan_package.html   # Skan paczek — podgląd statusu (read-only)
 │   ├── scan_paczki.html    # Czasy paczek — Start/Koniec
 │   ├── dashboard.html      # Dashboard dzienny
@@ -221,8 +221,35 @@ sumę ich długości.
 
 ### Paczki (dane) — filtry i odblokowanie
 **Domyślnie widać tylko paczki niezrobione** (bez zarejestrowanego „Końca paczki").
-Filtry: zakres dat, barcode, land, **pracownik** (kto przejął / rozpoczął / zakończył),
-**tylko double rate**, **pokaż zrobione**, **⚠️ pokaż błędy**.
+Filtry: **typ daty + zakres dat**, barcode, land, **pracownik** (kto przejął / rozpoczął
+/ zakończył), **tylko double rate**, **pokaż zrobione**, **⚠️ pokaż błędy**.
+
+Pusty filtr pracownika znaczy **wszyscy** — nigdy nie zawęża wyników.
+
+**Zakres dat działa na wybranym polu** (lista przed polami dat):
+
+| Opcja | Pole | Uwagi |
+|---|---|---|
+| **Ziel-Datum** (domyślnie) | `ziel_datum` | data z importu CSV |
+| **Data importu** | `imported_at` | kiedy paczka trafiła do systemu |
+| **Start paczki** | `scan_start_at` | kiedy pracownik zaczął |
+| **Koniec paczki** | `scan_end_at` | kiedy skończył |
+
+Wcześniej zakres działał tylko po `Ziel-Datum`, więc paczki, których `Ziel-Datum` nie
+pokrywa się z dniem skanowania, wypadały z widoku — wyglądało to, jakby filtr pracownika
+gubił ludzi. Szukając „co zrobiono wczoraj", wybierz **Koniec paczki**.
+
+Trzy ostatnie opcje liczą dobę **po warszawsku** (jak dashboard i statystyki), więc
+nocna zmiana nie ląduje w złym dniu. Granica „do" jest półotwarta — „do 15.06" nie
+wciąga paczek z 16.06 nad ranem.
+
+**„Koniec paczki" automatycznie pokazuje zakończone** — z definicji tylko takie mają tę
+datę, więc trzymanie domyślnego „tylko niezrobione" dawałoby zawsze pustą listę.
+**„Start paczki"** tego nie robi: bez „pokaż zrobione" znaczy „rozpoczęte w zakresie
+i wciąż otwarte".
+
+⚠️ **„Pokaż zrobione" wymaga zakresu dat** — bez niego widok objąłby całą historię
+(tysiące paczek). Zaznaczenie bez daty blokuje filtrowanie i podświetla pola dat.
 
 Filtr błędów łapie dwie rzeczy:
 1. paczkę **rozpoczętą i nigdy nie zakończoną**,
