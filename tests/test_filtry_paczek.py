@@ -59,7 +59,10 @@ def test_pokaz_zrobione_bez_daty_nie_dziala(leader_client):
 
     assert 'WTOKU' in widoczne
     assert 'GOTOWA' not in widoczne
-    assert 'wymaga zakresu dat' in odpowiedz.get_data(as_text=True)
+    # Fraza wystepuje WYLACZNIE w komunikacie o braku daty. Krotsze „wymaga
+    # zakresu dat" pasowaloby takze do komentarza w <script>, wiec asercja
+    # przechodzilaby zawsze — takze po usunieciu komunikatu.
+    assert 'i filtruj ponownie' in odpowiedz.get_data(as_text=True)
 
 
 def test_pokaz_zrobione_wystarczy_jedna_granica_daty(leader_client):
