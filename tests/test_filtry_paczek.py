@@ -4,7 +4,7 @@ Domyslnie widac tylko paczki niezrobione („zrobiona" = ma `scan_end_at`, ta sa
 definicja co `finished` na /scan-package). Filtr bledow liczy sie w Pythonie,
 bo ilosci ze skanu siedza w JSON-ie w kolumnie tekstowej — SQL ich nie widzi.
 """
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import app as logistat
 from conftest import make_user
@@ -13,8 +13,9 @@ ZIEL = date(2026, 9, 10)
 
 
 def karton(barcode, stueckzahl=10, **kw):
-    c = logistat.ImportedCarton(barcode=barcode, land='PL', stueckzahl=stueckzahl,
-                                ziel_datum=ZIEL, uebergabe_nr='UB-1', **kw)
+    kw.setdefault('ziel_datum', ZIEL)
+    kw.setdefault('uebergabe_nr', 'UB-1')
+    c = logistat.ImportedCarton(barcode=barcode, land='PL', stueckzahl=stueckzahl, **kw)
     logistat.db.session.add(c)
     logistat.db.session.commit()
     return c
@@ -42,9 +43,152 @@ def test_pokaz_zrobione_dokłada_zakonczone(leader_client):
     karton('WTOKU')
     karton('GOTOWA', scan_end_at=datetime.utcnow())
 
-    widoczne = kody(leader_client.get('/paczki?pokaz_zrobione=1'))
+    widoczne = kody(leader_client.get(
+        f'/paczki?pokaz_zrobione=1&date_from={ZIEL}&date_to={ZIEL}'))
 
     assert {'WTOKU', 'GOTOWA'} <= widoczne
+
+
+def test_pokaz_zrobione_bez_daty_nie_dziala(leader_client):
+    """Bez zakresu dat widok objalby cala historie — zakres jest wymagany."""
+    karton('WTOKU')
+    karton('GOTOWA', scan_end_at=datetime.utcnow())
+
+    odpowiedz = leader_client.get('/paczki?pokaz_zrobione=1')
+    widoczne = kody(odpowiedz)
+
+    assert 'WTOKU' in widoczne
+    assert 'GOTOWA' not in widoczne
+    assert 'wymaga zakresu dat' in odpowiedz.get_data(as_text=True)
+
+
+def test_pokaz_zrobione_wystarczy_jedna_granica_daty(leader_client):
+    karton('GOTOWA', scan_end_at=datetime.utcnow())
+
+    widoczne = kody(leader_client.get(f'/paczki?pokaz_zrobione=1&date_from={ZIEL}'))
+
+    assert 'GOTOWA' in widoczne
+
+
+def test_bez_wyboru_osoby_widac_paczki_wszystkich(leader_client):
+    """Pusty filtr pracownika = wszyscy, takze przy „pokaz zrobione" z data."""
+    a = make_user('operator', username='op-x')
+    b = make_user('operator', username='op-y')
+    karton('OD-A', scan_end_by=a.id, scan_end_at=datetime.utcnow())
+    karton('OD-B', scan_end_by=b.id, scan_end_at=datetime.utcnow())
+
+    widoczne = kody(leader_client.get(
+        f'/paczki?pokaz_zrobione=1&date_from={ZIEL}&date_to={ZIEL}'))
+
+    assert {'OD-A', 'OD-B'} <= widoczne
+
+
+# ── filtr po typie daty (Ziel-Datum / import / start / koniec) ───────────────
+
+def test_domyslny_typ_daty_to_ziel_datum(leader_client):
+    karton('W-ZAKRESIE')
+    karton('POZA-ZAKRESEM', ziel_datum=date(2026, 1, 1))
+
+    widoczne = kody(leader_client.get(f'/paczki?date_from={ZIEL}&date_to={ZIEL}'))
+
+    assert 'W-ZAKRESIE' in widoczne
+    assert 'POZA-ZAKRESEM' not in widoczne
+
+
+def test_filtr_po_dacie_importu(leader_client):
+    dzis = logistat.local_today()
+    karton('DZIS', imported_at=datetime.utcnow())
+    karton('DAWNO', imported_at=datetime(2026, 1, 2, 12, 0))
+
+    widoczne = kody(leader_client.get(
+        f'/paczki?date_typ=import&date_from={dzis}&date_to={dzis}'))
+
+    assert 'DZIS' in widoczne
+    assert 'DAWNO' not in widoczne
+
+
+def test_filtr_po_dacie_startu(leader_client):
+    dzis = logistat.local_today()
+    karton('START-DZIS', scan_start_at=datetime.utcnow())
+    karton('START-DAWNO', scan_start_at=datetime(2026, 1, 2, 12, 0))
+
+    widoczne = kody(leader_client.get(
+        f'/paczki?date_typ=start&date_from={dzis}&date_to={dzis}'))
+
+    assert 'START-DZIS' in widoczne
+    assert 'START-DAWNO' not in widoczne
+
+
+def test_filtr_po_dacie_konca_zdejmuje_domyslne_niezrobione(leader_client):
+    """Sam filtr po koncu wybiera tylko zakonczone — domyslne „tylko
+    niezrobione" dawaloby zawsze pusta liste, wiec musi zostac zdjete."""
+    dzis = logistat.local_today()
+    karton('KONIEC-DZIS', scan_end_at=datetime.utcnow())
+    karton('NIEZROBIONA')
+
+    widoczne = kody(leader_client.get(
+        f'/paczki?date_typ=koniec&date_from={dzis}&date_to={dzis}'))
+
+    assert 'KONIEC-DZIS' in widoczne
+    assert 'NIEZROBIONA' not in widoczne
+
+
+def test_filtr_po_koncu_lapie_paczki_wszystkich_mimo_obcego_ziel_datum(leader_client):
+    """Regresja zgloszonego objawu: przy filtrze po Ziel-Datum z widoku znikaly
+    paczki, ktorych `ziel_datum` nie pokrywa sie z dniem skanowania — wygladalo
+    to, jakby filtr pracownika gubil ludzi. Filtr po dacie konca ma je pokazac,
+    dla wszystkich pracownikow naraz (pusty filtr osoby)."""
+    dzis = logistat.local_today()
+    a = make_user('operator', username='op-p')
+    b = make_user('operator', username='op-q')
+    # Ziel-Datum daleko poza zakresem, ale zakonczone dzisiaj.
+    karton('SKAN-A', ziel_datum=date(2026, 1, 5),
+           scan_end_by=a.id, scan_end_at=datetime.utcnow())
+    karton('SKAN-B', ziel_datum=date(2026, 2, 9),
+           scan_end_by=b.id, scan_end_at=datetime.utcnow())
+
+    po_ziel = kody(leader_client.get(
+        f'/paczki?pokaz_zrobione=1&date_from={dzis}&date_to={dzis}'))
+    po_koncu = kody(leader_client.get(
+        f'/paczki?date_typ=koniec&date_from={dzis}&date_to={dzis}'))
+
+    assert not {'SKAN-A', 'SKAN-B'} & po_ziel, 'Ziel-Datum poza zakresem — maja wypasc'
+    assert {'SKAN-A', 'SKAN-B'} <= po_koncu, 'Filtr po koncu ma pokazac oba, bez wyboru osoby'
+
+
+def test_gorna_granica_daty_nie_lapie_nastepnej_doby(leader_client):
+    """Granica jest polotwarta: paczka z poczatku kolejnej doby lokalnej
+    nie moze wpasc do zakresu konczacego sie dzien wczesniej."""
+    dzien = date(2026, 6, 15)
+    poczatek_nastepnej = logistat.local_day_bounds(dzien + timedelta(days=1))[0]
+    karton('W-DNIU', scan_end_at=logistat.local_day_bounds(dzien)[0])
+    karton('NASTEPNY-DZIEN', scan_end_at=poczatek_nastepnej)
+
+    widoczne = kody(leader_client.get(
+        f'/paczki?date_typ=koniec&date_from={dzien}&date_to={dzien}'))
+
+    assert 'W-DNIU' in widoczne
+    assert 'NASTEPNY-DZIEN' not in widoczne
+
+
+def test_nieznany_typ_daty_wraca_do_ziel_datum(leader_client):
+    karton('W-ZAKRESIE')
+    karton('POZA-ZAKRESEM', ziel_datum=date(2026, 1, 1))
+
+    widoczne = kody(leader_client.get(
+        f'/paczki?date_typ=bzdura&date_from={ZIEL}&date_to={ZIEL}'))
+
+    assert 'W-ZAKRESIE' in widoczne
+    assert 'POZA-ZAKRESEM' not in widoczne
+
+
+def test_stronicowanie_zachowuje_typ_daty(leader_client):
+    for i in range(logistat.PACZKI_NA_STRONE + 5):
+        karton(f'STRONA-{i}')
+
+    html = leader_client.get(f'/paczki?date_typ=ziel&date_from={ZIEL}').get_data(as_text=True)
+
+    assert 'date_typ=ziel' in html
 
 
 # ── filtr po osobie ──────────────────────────────────────────────────────────

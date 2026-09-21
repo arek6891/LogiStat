@@ -312,12 +312,29 @@ Soft-delete (`DELETE`) ustawia `is_active_user=False`, co **odbiera też trwają
 | POST | `/api/package-time/end` | Rejestracja końca + czas procesowania (to samo body) |
 | POST | `/api/packages/<id>/unlock-scan` | **Odblokowanie paczki** rozpoczętej i nigdy nie zakończonej (lider+): kasuje `scan_start_at`/`scan_start_by`, ustawia `modified_by`/`modified_at`. Paczka wraca do stanu „nierozpoczęta". Paczka zakończona → 409, nierozpoczęta → 400. |
 
-**Filtry na `/paczki`** (query string): `date_from`, `date_to`, `barcode`, `land`,
-`osoba` (id — kto przejął / rozpoczął / zakończył), `double_rate=1`,
+**Filtry na `/paczki`** (query string): `date_from`, `date_to`, `date_typ`, `barcode`,
+`land`, `osoba` (id — kto przejął / rozpoczął / zakończył), `double_rate=1`,
 `pokaz_zrobione=1`, `bledy=1`, `page`. **Domyślnie widać tylko paczki bez
 `scan_end_at`.** `bledy=1` ignoruje ten domyślny filtr (błąd ilości występuje na
 paczce już zakończonej) i liczy się w Pythonie — ilości ze skanu to JSON w kolumnie
 tekstowej, SQL ich nie przefiltruje.
+
+`date_typ` wybiera, **po którym polu daty** działa zakres `date_from`/`date_to`:
+
+| `date_typ` | Pole | Uwagi |
+|---|---|---|
+| `ziel` (domyślne) | `ziel_datum` | `db.Date` — porównanie wprost |
+| `import` | `imported_at` | naive UTC → granice doby przez `local_day_bounds()` |
+| `start` | `scan_start_at` | j.w. |
+| `koniec` | `scan_end_at` | j.w.; **zdejmuje domyślny filtr „tylko niezrobione"**, bo inaczej wynik zawsze byłby pusty |
+
+Górna granica jest półotwarta (`<` północ następnej doby lokalnej) — `<=` wciągałoby
+paczki z pierwszych godzin kolejnego dnia. Nieznana wartość `date_typ` → `ziel`.
+
+**`pokaz_zrobione=1` wymaga zakresu dat** (`date_from` lub `date_to`). Bez niego widok
+obejmowałby całą historię, więc parametr jest ignorowany, a strona pokazuje komunikat
+i widok domyślny. W formularzu pilnuje tego JS; warunek po stronie serwera łapie ręcznie
+sklejony URL i zakładkę.
 
 **Blokady czasu paczek** (`/api/package-time/*`):
 - Paczkę w trakcie (start bez końca) obsługuje **tylko** pracownik, który ją rozpoczął:

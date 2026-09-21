@@ -6,23 +6,30 @@
         <h1>📦 Paczki (dane)</h1>
         <p style="color:var(--text-muted);">Surowe dane paczek: zaimportowane z plików CSV/Excel oraz dodane ręcznie.<br>
             <span style="font-size:.85rem;">
-            {% if tylko_bledy %}Filtr błędów: paczki rozpoczęte bez końca lub z ilością przekraczającą Stückzahl o ponad 10%.
-            {% elif pokaz_zrobione %}Widok: wszystkie paczki, także zakończone.
-            {% else %}Widok domyślny: <strong>tylko paczki niezrobione</strong> (bez skanu „Koniec paczki"). Zaznacz „pokaż zrobione", aby zobaczyć resztę.
+            {% if brak_daty_dla_zrobionych %}<strong style="color:var(--danger);">⚠️ „Pokaż zrobione" wymaga zakresu dat</strong> — bez niego widok obejmowałby całą historię. Ustaw datę „od" lub „do" i filtruj ponownie. Poniżej widok domyślny.
+            {% elif tylko_bledy %}Filtr błędów: paczki rozpoczęte bez końca lub z ilością przekraczającą Stückzahl o ponad 10%.
+            {% elif filtr_po_koncu %}Filtr po <strong>dacie końca paczki</strong> — z definicji obejmuje wyłącznie paczki zakończone.
+            {% elif pokaz_zrobione %}Widok: wszystkie paczki, także zakończone, w zadanym zakresie dat.
+            {% else %}Widok domyślny: <strong>tylko paczki niezrobione</strong> (bez skanu „Koniec paczki"). Zaznacz „pokaż zrobione" wraz z zakresem dat, aby zobaczyć resztę.
             {% endif %}
             </span>
         </p>
     </div>
     <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;">
         <button type="button" class="btn btn-primary" onclick="openAddPackage()">➕ Dodaj paczkę</button>
-        <form method="GET" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
-            <input type="date" name="date_from" value="{{ date_from }}" class="form-control" style="width:130px;" placeholder="Od (Ziel-Datum)">
+        <form method="GET" id="filtryPaczek" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+            <select name="date_typ" id="fpDateTyp" class="form-control" style="width:150px;" title="Które pole daty filtrujemy">
+                {% for klucz, etykieta in pola_dat %}
+                <option value="{{ klucz }}" {% if date_typ == klucz %}selected{% endif %}>{{ etykieta }}</option>
+                {% endfor %}
+            </select>
+            <input type="date" name="date_from" id="fpDateFrom" value="{{ date_from }}" class="form-control" style="width:130px;" title="Data od">
             <span style="color:var(--text-muted);">—</span>
-            <input type="date" name="date_to" value="{{ date_to }}" class="form-control" style="width:130px;" placeholder="Do (Ziel-Datum)">
+            <input type="date" name="date_to" id="fpDateTo" value="{{ date_to }}" class="form-control" style="width:130px;" title="Data do">
             <input type="text" name="barcode" value="{{ barcode }}" class="form-control" style="width:150px;" placeholder="Barcode">
             <input type="text" name="land" value="{{ land }}" class="form-control" style="width:100px;" placeholder="Land">
-            <select name="osoba" class="form-control" style="width:180px;" title="Kto przejął / rozpoczął / zakończył paczkę">
-                <option value="">— pracownik —</option>
+            <select name="osoba" class="form-control" style="width:180px;" title="Kto przejął / rozpoczął / zakończył paczkę. Puste = wszyscy pracownicy.">
+                <option value="">— wszyscy pracownicy —</option>
                 {% for u in users %}
                 <option value="{{ u.id }}" {% if osoba_id == u.id %}selected{% endif %}>{{ u.display_name }}</option>
                 {% endfor %}
@@ -34,9 +41,10 @@
             </label>
             <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;white-space:nowrap;font-size:.85rem;"
                    title="Domyślnie widać tylko paczki bez zarejestrowanego końca skanu">
-                <input type="checkbox" name="pokaz_zrobione" value="1" {% if pokaz_zrobione %}checked{% endif %}
+                {# Filtr po dacie konca sam pokazuje zakonczone — checkbox musi sie z tym zgadzac #}
+                <input type="checkbox" name="pokaz_zrobione" id="fpPokazZrobione" value="1" {% if pokaz_zrobione or filtr_po_koncu %}checked{% endif %}
                        style="width:16px;height:16px;cursor:pointer;">
-                <span>pokaż zrobione</span>
+                <span>pokaż zrobione <span style="color:var(--text-muted);">(wymaga daty)</span></span>
             </label>
             <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;white-space:nowrap;font-size:.85rem;"
                    title="Paczka rozpoczęta i nigdy nie zakończona, albo ilość w kategorii przekracza Stückzahl o ponad 10%">
@@ -250,11 +258,11 @@
 {% if pagination and pagination.pages > 1 %}
 <div style="margin-top: 1.5rem; display: flex; justify-content: center; gap: .5rem;">
     {% if pagination.has_prev %}
-    <a href="{{ url_for('paczki_view', page=pagination.prev_num, date_from=date_from, date_to=date_to, barcode=barcode, land=land, osoba=osoba_id, double_rate='1' if tylko_double else None, pokaz_zrobione='1' if pokaz_zrobione else None, bledy='1' if tylko_bledy else None) }}" class="btn btn-secondary">« Poprzednia</a>
+    <a href="{{ url_for('paczki_view', page=pagination.prev_num, date_from=date_from, date_to=date_to, date_typ=date_typ, barcode=barcode, land=land, osoba=osoba_id, double_rate='1' if tylko_double else None, pokaz_zrobione='1' if pokaz_zrobione else None, bledy='1' if tylko_bledy else None) }}" class="btn btn-secondary">« Poprzednia</a>
     {% endif %}
     <span style="display:flex; align-items:center; padding: 0 1rem; color: var(--text-muted);">Strona {{ pagination.page }} z {{ pagination.pages }}</span>
     {% if pagination.has_next %}
-    <a href="{{ url_for('paczki_view', page=pagination.next_num, date_from=date_from, date_to=date_to, barcode=barcode, land=land, osoba=osoba_id, double_rate='1' if tylko_double else None, pokaz_zrobione='1' if pokaz_zrobione else None, bledy='1' if tylko_bledy else None) }}" class="btn btn-secondary">Następna »</a>
+    <a href="{{ url_for('paczki_view', page=pagination.next_num, date_from=date_from, date_to=date_to, date_typ=date_typ, barcode=barcode, land=land, osoba=osoba_id, double_rate='1' if tylko_double else None, pokaz_zrobione='1' if pokaz_zrobione else None, bledy='1' if tylko_bledy else None) }}" class="btn btn-secondary">Następna »</a>
     {% endif %}
 </div>
 {% endif %}
@@ -281,6 +289,40 @@
 
 {% block scripts %}
 <script>
+// ── Filtry: „pokaż zrobione" wymaga zakresu dat ───────────────────────────
+// Bez daty ten widok obejmowałby całą historię paczek. Serwer i tak odrzuci
+// taki zestaw (ręcznie sklejony URL), ale tu zatrzymujemy go zanim strona
+// się przeładuje i pokazujemy, czego brakuje.
+(function () {
+    const form = document.getElementById('filtryPaczek');
+    if (!form) return;
+    const zrobione = document.getElementById('fpPokazZrobione');
+    const od = document.getElementById('fpDateFrom');
+    const doo = document.getElementById('fpDateTo');
+
+    function brakujeDaty() {
+        return zrobione.checked && !od.value && !doo.value;
+    }
+
+    function odswiezPodpowiedz() {
+        const brak = brakujeDaty();
+        [od, doo].forEach(p => p.style.outline = brak ? '2px solid var(--danger)' : '');
+    }
+
+    form.addEventListener('submit', function (e) {
+        if (brakujeDaty()) {
+            e.preventDefault();
+            odswiezPodpowiedz();
+            od.focus();
+            alert('Zaznaczono „pokaż zrobione" — ustaw datę „od" lub „do".\n\n'
+                + 'Bez zakresu dat widok objąłby całą historię paczek.');
+        }
+    });
+
+    [zrobione, od, doo].forEach(p => p.addEventListener('change', odswiezPodpowiedz));
+    odswiezPodpowiedz();
+})();
+
 // ── Dodawanie / edycja paczki ręcznie ─────────────────────────────────────
 let editingCartonId = null;   // null = tryb dodawania, id = tryb edycji
 let editingScanned = false;   // czy edytowana paczka ma czasy skanowania
