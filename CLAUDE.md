@@ -13,7 +13,7 @@ docker compose down
 # Tests — need a Postgres; the compose file below provides one (port 55432, tmpfs)
 docker compose -f docker-compose.test.yml up -d
 pip install -r requirements-dev.txt
-pytest                               # 265 tests
+pytest                               # 324 tests
 docker compose -f docker-compose.test.yml down
 LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://u:p@host:5432/db pytest   # another DB
 
@@ -29,7 +29,7 @@ Default admin credentials after seed: `admin` / `admin123` — override with the
 
 ## Architecture
 
-**Everything is in `app.py`** — models, routes, API endpoints, seed data (~3200 lines). There are no separate modules.
+**Everything is in `app.py`** — models, routes, API endpoints, seed data (~4000 lines). There are no separate modules.
 
 **Tests:** `tests/` (pytest). `conftest.py` sets `DATABASE_URL` **before importing `app`** (the module runs `init_db()` at import time) — it points at the Postgres from `docker-compose.test.yml` (`…@127.0.0.1:55432/logistat_test`), overridable with `LOGISTAT_TEST_DATABASE_URL`; if the DB is unreachable the import raises with the command that starts it and gives every test a fresh schema + seed. Coverage is deliberately concentrated on the money-affecting paths — import aggregation, `recompute_general_stat`, double rate, cost math — plus permissions, day boundaries, validation and a page smoke test. `IsolatedClient` clears `g._login_user` / `g._rates_cache` per request: the fixture holds one app context per test and Flask reuses it, so without that two clients in one test would share the cached login.
 

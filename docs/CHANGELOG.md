@@ -1,5 +1,45 @@
 # LogiStat — Changelog
 
+## 2026-09-21 — filtry dat na Paczkach, wymuszony zakres przy „pokaz zrobione"
+
+### Dodane — Paczki (dane)
+- **Wybor pola daty (`date_typ`)** przed zakresem dat. Do tej pory zakres dzialal
+  wylacznie po `Ziel-Datum`, przez co paczki o `Ziel-Datum` niezgodnym z dniem
+  skanowania wypadaly z widoku — wygladalo to, jakby filtr pracownika gubil ludzi.
+  Do wyboru: **Ziel-Datum** (domyslne), **Data importu** (`imported_at`),
+  **Start paczki** (`scan_start_at`), **Koniec paczki** (`scan_end_at`).
+- Trzy nowe pola to naive-UTC `DateTime`, wiec granice doby licza sie przez
+  `local_day_bounds()` — ta sama definicja „dnia", co na dashboardzie i statystykach.
+  Gorna granica jest **polotwarta** (`<` polnoc nastepnej doby lokalnej); `<=`
+  wciagaloby paczki z pierwszych godzin kolejnego dnia. Nieznane `date_typ` → `ziel`.
+- **`date_typ=koniec` zdejmuje domyslne „tylko niezrobione"** — warunek
+  `scan_end_at w zakresie` AND `scan_end_at IS NULL` to zawsze zbior pusty, wiec ekran
+  wygladalby na zepsuty. Ta sama logika, co przy filtrze bledow. **`date_typ=start`
+  celowo go nie zdejmuje** (= „rozpoczete w zakresie i wciaz otwarte").
+
+### Zmienione — Paczki (dane)
+- **„Pokaz zrobione" wymaga teraz zakresu dat.** Bez niego widok obejmowal cala
+  historie (na `.31` ponad 5000 paczek). JS blokuje wyslanie formularza; warunek na
+  serwerze lapie recznie sklejony URL i zakladke — parametr jest ignorowany, a strona
+  mowi dlaczego. To strona Jinja, nie `/api/`, wiec bez `abort()`.
+- Etykieta filtra pracownika: **„— wszyscy pracownicy —"** zamiast „— pracownik —".
+  Zachowanie bez zmian — puste pole nigdy nie zawezalo wynikow; mylaca byla etykieta.
+- Checkbox „pokaz zrobione" zaznacza sie sam przy filtrze po dacie konca, zeby nie
+  klocil sie z tym, co widac na liscie.
+
+### Testy
+- `tests/test_filtry_paczek.py`: 28 testow (bylo 17) — **324 w calym zestawie**.
+  Nowe pokrycie: wymuszenie daty, obie granice doby, kazdy `date_typ`, fallback
+  nieznanej wartosci, zachowanie `date_typ` przy stronicowaniu oraz regresja
+  zgloszonego objawu (paczki dwoch pracownikow z `Ziel-Datum` poza zakresem, widoczne
+  po dacie konca bez wybierania osoby).
+- `test_pokaz_zrobione_dokłada_zakonczone` wolal endpoint bez daty — czyli to, co
+  teraz zabraniamy. Dostal zakres, a obok doszedl test pilnujacy, ze wersja bez daty
+  **nie** pokazuje zrobionych.
+- Asercja komunikatu o braku daty szukala frazy `wymaga zakresu dat`, ktora wystepuje
+  **takze w komentarzu bloku `<script>`** w `paczki.html` — test przechodzil zawsze,
+  takze po usunieciu komunikatu. Teraz sprawdza fraze unikalna dla komunikatu.
+
 ## 2026-09-18 — filtry czasow i paczek, Total Amount z Labelling one, „Inne"
 
 ### Zmienione — rozliczenia

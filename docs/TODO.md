@@ -40,7 +40,7 @@
 
 ## 🟡 Planowane usprawnienia
 
-- [x] **Testy** — `tests/` (pytest, 178 testów), nacisk na ścieżki rozliczeniowe
+- [x] **Testy** — `tests/` (pytest, 324 testy), nacisk na ścieżki rozliczeniowe
   - `pip install -r requirements-dev.txt && pytest`
   - Ten sam zestaw na Postgresie: `LOGISTAT_TEST_DATABASE_URL=... pytest`
   - Zestaw przechodzi pod `TZ=UTC`, `Europe/Warsaw` i `America/New_York`
@@ -55,7 +55,7 @@
       `general_stat.double_rate` rozjechał się jeszcze bardziej. Schemat bierze się
       wyłącznie z `db.create_all()` — ORM jest jedynym źródłem prawdy.
 
-- [ ] **Rozbicie `app.py`** (~3200 linii) — modele / API / widoki do osobnych
+- [ ] **Rozbicie `app.py`** (~4000 linii) — modele / API / widoki do osobnych
       modułów. Teraz jest to bezpieczniejsze niż wcześniej, bo testy pokrywają
       ścieżki rozliczeniowe i uprawnienia.
 
