@@ -1032,6 +1032,18 @@ PACZKI_NA_STRONE = 100
 #  niz 10% traktujemy jako pomylke wpisujacego.
 TOLERANCJA_ILOSCI = 1.10
 
+#  Po ktorym polu daty filtruje ekran /paczki (`date_typ`). Klucz -> (etykieta,
+#  kolumna, czy to DateTime). `ziel_datum` to db.Date i porownuje sie wprost;
+#  pozostale trzy to naive-UTC DateTime, wiec granice doby musi liczyc
+#  local_day_bounds() — inaczej „dzien" na tym ekranie znaczylby co innego niz
+#  na dashboardzie i statystykach (patrz uwaga o strefach w CLAUDE.md).
+PACZKI_POLA_DAT = {
+    'ziel':   ('Ziel-Datum',     ImportedCarton.ziel_datum,    False),
+    'import': ('Data importu',   ImportedCarton.imported_at,   True),
+    'start':  ('Start paczki',   ImportedCarton.scan_start_at, True),
+    'koniec': ('Koniec paczki',  ImportedCarton.scan_end_at,   True),
+}
+
 
 class StroniceLista:
     """Minimalny odpowiednik `Pagination` Flask-SQLAlchemy dla listy w pamieci.
@@ -1088,6 +1100,9 @@ def bledy_paczki(carton):
 def paczki_view():
     date_from_str = request.args.get('date_from', '')
     date_to_str = request.args.get('date_to', '')
+    date_typ = request.args.get('date_typ', 'ziel')
+    if date_typ not in PACZKI_POLA_DAT:
+        date_typ = 'ziel'
     barcode = request.args.get('barcode', '').strip()
     land = request.args.get('land', '').strip()
     osoba_id = request.args.get('osoba', type=int)
@@ -1098,19 +1113,30 @@ def paczki_view():
 
     query = ImportedCarton.query
 
-    if date_from_str:
+    def _dzien(wartosc):
         try:
-            date_from = datetime.strptime(date_from_str, '%Y-%m-%d').date()
-            query = query.filter(ImportedCarton.ziel_datum >= date_from)
+            return datetime.strptime(wartosc, '%Y-%m-%d').date() if wartosc else None
         except ValueError:
-            pass
+            return None
 
-    if date_to_str:
-        try:
-            date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date()
-            query = query.filter(ImportedCarton.ziel_datum <= date_to)
-        except ValueError:
-            pass
+    date_from = _dzien(date_from_str)
+    date_to = _dzien(date_to_str)
+    _, kolumna_daty, kolumna_jest_czasem = PACZKI_POLA_DAT[date_typ]
+
+    if date_from:
+        if kolumna_jest_czasem:
+            query = query.filter(kolumna_daty >= local_day_bounds(date_from)[0])
+        else:
+            query = query.filter(kolumna_daty >= date_from)
+
+    if date_to:
+        # Gorna granica doby jest polotwarta (`<` na poczatek nastepnego dnia) —
+        # `<=` wciagneloby paczki z pierwszych godzin kolejnego dnia lokalnego.
+        # Dlatego ta galaz uzywa `<`, a `ziel_datum` (czysta data) `<=`.
+        if kolumna_jest_czasem:
+            query = query.filter(kolumna_daty < local_day_bounds(date_to)[1])
+        else:
+            query = query.filter(kolumna_daty <= date_to)
 
     if barcode:
         query = query.filter(ImportedCarton.barcode.ilike(f'%{barcode}%'))
@@ -1130,9 +1156,23 @@ def paczki_view():
     if tylko_double:
         query = query.filter(ImportedCarton.double_rate.is_(True))
 
+    # „Pokaz zrobione" bez zakresu dat wyciagalo cala historie (tysiace paczek),
+    # wiec zakres jest teraz wymagany. W formularzu pilnuje tego JS; ten warunek
+    # lapie recznie sklejony URL i zakladke — zamiast bledu pokazujemy widok
+    # domyslny z komunikatem (to strona Jinja, nie /api/, wiec abort() dalby
+    # surowa strone bledu).
+    brak_daty_dla_zrobionych = pokaz_zrobione and not (date_from or date_to)
+    if brak_daty_dla_zrobionych:
+        pokaz_zrobione = False
+
+    # Filtr po dacie konca skanu sam z siebie wybiera wylacznie paczki
+    # zakonczone, wiec domyslne „tylko niezrobione" dawaloby zawsze pusta liste.
+    # Zdejmujemy je z tego samego powodu, dla ktorego ignoruje je filtr bledow.
+    filtr_po_koncu = date_typ == 'koniec' and (date_from or date_to)
+
     # Domyslnie widac tylko paczki niezrobione — „zrobiona" to ta z zarejestrowanym
     # koncem skanu (ta sama definicja, co `finished` na /scan-package).
-    if not pokaz_zrobione and not tylko_bledy:
+    if not pokaz_zrobione and not tylko_bledy and not filtr_po_koncu:
         query = query.filter(ImportedCarton.scan_end_at.is_(None))
 
     query = query.order_by(ImportedCarton.imported_at.desc())
@@ -1152,11 +1192,15 @@ def paczki_view():
                            items=pagination.items,
                            date_from=date_from_str,
                            date_to=date_to_str,
+                           date_typ=date_typ,
+                           pola_dat=[(k, v[0]) for k, v in PACZKI_POLA_DAT.items()],
                            barcode=barcode,
                            land=land,
                            osoba_id=osoba_id,
                            tylko_double=tylko_double,
                            pokaz_zrobione=pokaz_zrobione,
+                           brak_daty_dla_zrobionych=brak_daty_dla_zrobionych,
+                           filtr_po_koncu=filtr_po_koncu,
                            tylko_bledy=tylko_bledy,
                            bledy_map={c.id: bledy_paczki(c) for c in pagination.items},
                            users=users,
