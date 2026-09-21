@@ -40,7 +40,7 @@
 
 ## 🟡 Planowane usprawnienia
 
-- [x] **Testy** — `tests/` (pytest, 324 testy), nacisk na ścieżki rozliczeniowe
+- [x] **Testy** — `tests/` (pytest, 354 testów), nacisk na ścieżki rozliczeniowe
   - `pip install -r requirements-dev.txt && pytest`
   - Ten sam zestaw na Postgresie: `LOGISTAT_TEST_DATABASE_URL=... pytest`
   - Zestaw przechodzi pod `TZ=UTC`, `Europe/Warsaw` i `America/New_York`
