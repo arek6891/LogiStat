@@ -29,7 +29,7 @@
             <div style="font-size:.8rem;color:var(--text-muted);">paczek</div>
         </div>
         <div class="card" style="text-align:center;">
-            <div style="font-size:.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem;">Sztuki dziś</div>
+            <div style="font-size:.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem;">Zrobione dziś</div>
             <div id="piecesTodayVal" style="font-size:2.8rem;font-weight:800;color:var(--success);">—</div>
             <div style="font-size:.8rem;color:var(--text-muted);">szt.</div>
         </div>
@@ -37,6 +37,11 @@
             <div style="font-size:.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem;">Pozostało</div>
             <div id="remainingVal" style="font-size:2.8rem;font-weight:800;color:var(--warning);">—</div>
             <div style="font-size:.8rem;color:var(--text-muted);">paczek</div>
+        </div>
+        <div class="card" style="text-align:center;">
+            <div style="font-size:.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem;">Pozostało</div>
+            <div id="remainingPiecesVal" style="font-size:2.8rem;font-weight:800;color:var(--warning);">—</div>
+            <div style="font-size:.8rem;color:var(--text-muted);">szt.</div>
         </div>
         <div class="card" style="text-align:center;">
             <div style="font-size:.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem;">Wszystkich zrobiono</div>
@@ -189,6 +194,7 @@
             document.getElementById('doneTodayVal').textContent = d.done_today;
             document.getElementById('piecesTodayVal').textContent = d.pieces_today.toLocaleString('pl');
             document.getElementById('remainingVal').textContent = d.remaining_cartons.toLocaleString('pl');
+            document.getElementById('remainingPiecesVal').textContent = d.remaining_pieces.toLocaleString('pl');
             document.getElementById('doneAllVal').textContent = d.done_cartons.toLocaleString('pl');
             document.getElementById('doneAllSub').textContent = `z ${d.total_cartons.toLocaleString('pl')} paczek`;
             document.getElementById('presentVal').textContent = d.present_count;

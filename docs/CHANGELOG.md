@@ -17,6 +17,32 @@
   `GET /api/stats/user/<id>`). Wczesniej srednie byly tylko w tabeli miesiecznej,
   jako wiersze „📦" wymieszane z czynnosciami, i znikaly po wybraniu czynnosci.
   Mianownikiem sa dni i miesiace z co najmniej jedna zakonczona paczka.
+## 2026-09-28 — stanowisko „Czasy paczek" po przegladzie logow `.31`
+
+Przeglad logow z 14–28.09 pokazal, ze pracownicy gubili na tym ekranie prace:
+paczki zostawaly otwarte, a wpisane ilosci przepadaly.
+
+### Poprawione
+- **Kod pracownika sprawdzany w kroku 1** (`GET /api/employee-lookup`), a pod polem
+  pojawia sie nazwisko. Wczesniej zly kod wychodzil dopiero przy zapisie konca, juz po
+  wpisaniu ilosci. Formularz sie czyscil, ilosci przepadaly, a paczka zostawala otwarta
+  (dwie takie wisza od 14.09).
+- **Obcy pracownik przy koncu** jest odrzucany przed otwarciem panelu ilosci, a nie
+  dopiero po zapisie (403). `package-lookup` zwraca teraz `scan_start_by`.
+- **Dwa rownolegle „koniec" tej samej paczki** oba dostawaly `200` (15.09, podwojny
+  Enter). Start i koniec czytaja karton z `FOR UPDATE`, a ekran blokuje ponowna
+  wysylke w trakcie zapytania.
+- **Identyfikator w polu paczki** (`LSMOLIACHENKO`, `RMACIEJEWSKA` w logach) daje
+  komunikat z nazwiskiem zamiast „nieznany kod paczki". Ekran zostaje przy kroku
+  paczki i nie kasuje pracownika.
+- **Pole paczki blokowane na czas zapytania.** 28.09 skaner doklejal ten sam kod
+  czterokrotnie do niewyczyszczonego pola.
+- **Panel ilosci mowi wprost „Paczka NIE jest jeszcze zakonczona"**. Pracownicy
+  brali otwarcie panelu za zakonczenie i szli do nastepnej paczki (3 paczki wisza od
+  21–22.09). Zmiana zakladki albo wyjscie ze strony przy otwartym panelu pyta o
+  potwierdzenie.
+- **Ilosc ≥ 100 000 odrzucana jako zeskanowany kod.** Najwieksza paczka na `.31` ma
+  708 szt., a kody paczek maja 10 cyfr.
 
 ## 2026-09-21 — przeglad ogolny pracownikow w Statystykach
 

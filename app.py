@@ -508,6 +508,7 @@ class ImportedCarton(db.Model):
             'processed_by_name': self.processed_by_user.display_name if self.processed_by_user else None,
             'processed_at': iso_z(self.processed_at),
             'scan_start_at': iso_z(self.scan_start_at),
+            'scan_start_by': self.scan_start_by,
             'scan_start_by_name': self.scan_start_by_user.display_name if self.scan_start_by_user else None,
             'scan_end_at': iso_z(self.scan_end_at),
             'scan_end_by_name': self.scan_end_by_user.display_name if self.scan_end_by_user else None,
@@ -2862,6 +2863,10 @@ def api_dashboard():
     total_cartons = ImportedCarton.query.count()
     done_cartons = ImportedCarton.query.filter(ImportedCarton.scan_end_at.isnot(None)).count()
     remaining_cartons = total_cartons - done_cartons
+    # Te same paczki co `remaining_cartons`, liczone w sztukach — lider planuje
+    # obsade po ilosci towaru, a paczki potrafia miec od 1 do kilkuset sztuk.
+    remaining_pieces = db.session.query(func.sum(ImportedCarton.stueckzahl))\
+        .filter(ImportedCarton.scan_end_at.is_(None)).scalar() or 0
 
     # Paczki zakończone dziś
     dzis = and_(ImportedCarton.scan_end_at >= today_start,
@@ -2944,6 +2949,7 @@ def api_dashboard():
         'total_cartons': total_cartons,
         'done_cartons': done_cartons,
         'remaining_cartons': remaining_cartons,
+        'remaining_pieces': int(remaining_pieces),
         'done_today': done_today,
         'pieces_today': int(pieces_today),
         'progress_pct': progress_pct,
@@ -3056,6 +3062,46 @@ def scan_package():
     return render_template('scan_package.html')
 
 
+def blad_nieznanej_paczki(barcode, komunikat='Nieznany kod paczki.'):
+    """Odpowiedz na nieznany kod w polu PACZKI.
+
+    Na hali zdarza sie zeskanowac w to pole identyfikator pracownika
+    (`LSMOLIACHENKO` w logach .31) — goly „nieznany kod paczki" nic wtedy nie
+    mowi, wiec nazywamy pomylke po imieniu. Sprawdzane dopiero po nietrafionym
+    kartonie, zeby szczesliwa sciezka nie placila dodatkowego zapytania.
+    """
+    user = User.query.filter_by(barcode_id=barcode).first()
+    if user:
+        return jsonify({
+            'error': f'To jest kod pracownika ({user.display_name}), nie paczki — '
+                     'zeskanuj etykietę paczki.',
+            'kod_pracownika': True,
+        }), 400
+    return jsonify({'error': komunikat}), 404
+
+
+@app.route('/api/employee-lookup', methods=['GET'])
+@leader_required
+def api_employee_lookup():
+    """Krok 1 na /scan-paczki — sprawdza kod pracownika ZANIM pojdzie dalej.
+
+    Wczesniej zly kod wychodzil dopiero przy zapisie konca, juz po wpisaniu
+    ilosci — formularz sie czyscil, ilosci przepadaly, a paczka zostawala
+    otwarta (dwie takie wisza od 14.09).
+    """
+    barcode = (request.args.get('barcode') or '').strip()
+    if not barcode:
+        return jsonify({'error': 'Brak kodu pracownika.'}), 400
+
+    user = User.query.filter_by(barcode_id=barcode, is_active_user=True).first()
+    if not user:
+        if ImportedCarton.query.filter_by(barcode=barcode).first():
+            return jsonify({'error': 'To jest kod paczki, nie pracownika — '
+                                     'najpierw zeskanuj identyfikator.'}), 400
+        return jsonify({'error': 'Nieznany kod pracownika.'}), 404
+    return jsonify({'user': {'id': user.id, 'display_name': user.display_name}}), 200
+
+
 @app.route('/api/package-lookup', methods=['GET'])
 @leader_required
 def api_package_lookup():
@@ -3066,7 +3112,8 @@ def api_package_lookup():
 
     carton = ImportedCarton.query.filter_by(barcode=barcode).first()
     if not carton:
-        return jsonify({'error': 'Nieznany kod paczki. Upewnij się, że paczka została zaimportowana.'}), 404
+        return blad_nieznanej_paczki(
+            barcode, 'Nieznany kod paczki. Upewnij się, że paczka została zaimportowana.')
 
     d = carton.to_dict()
     # Derived status: przeskanowana = przypisana LUB rozpoczęto pomiar czasu
@@ -3396,9 +3443,13 @@ def api_package_time_start():
     if not user:
         return jsonify({'error': 'Nieznany kod pracownika.'}), 404
 
-    carton = ImportedCarton.query.filter_by(barcode=package_barcode).first()
+    # FOR UPDATE: sprawdzenie stanu i zapis musza byc atomowe. Bez blokady dwa
+    # rownolegle zadania (podwojny Enter, dwa stanowiska) oba przechodzily
+    # kontrole — na .31 15.09 ta sama paczka dostala dwa „koniec" z 200.
+    carton = (ImportedCarton.query.filter_by(barcode=package_barcode)
+              .with_for_update().first())
     if not carton:
-        return jsonify({'error': 'Nieznany kod paczki.'}), 404
+        return blad_nieznanej_paczki(package_barcode)
 
     # Paczka już zakończona — nie można jej rozpocząć ponownie
     if carton.scan_end_at:
@@ -3443,9 +3494,11 @@ def api_package_time_end():
     if not user:
         return jsonify({'error': 'Nieznany kod pracownika.'}), 404
 
-    carton = ImportedCarton.query.filter_by(barcode=package_barcode).first()
+    # FOR UPDATE — patrz api_package_time_start.
+    carton = (ImportedCarton.query.filter_by(barcode=package_barcode)
+              .with_for_update().first())
     if not carton:
-        return jsonify({'error': 'Nieznany kod paczki.'}), 404
+        return blad_nieznanej_paczki(package_barcode)
 
     if not carton.scan_start_at:
         return jsonify({'error': 'Brak zarejestrowanego startu dla tej paczki.'}), 400

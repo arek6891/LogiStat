@@ -111,6 +111,26 @@
     }
     .recent-item .barcode { font-family: monospace; color: var(--accent); }
 
+    /* Kto jest zeskanowany w kroku 1 — potwierdzenie, ze kod zostal rozpoznany */
+    .emp-name {
+        margin-top: 6px;
+        font-size: .85rem;
+        color: #22c55e;
+        min-height: 1.1em;
+    }
+
+    /* Panel ilosci otwarty = paczka jeszcze NIE zakonczona. Na .31 pracownicy
+       brali otwarcie panelu za zakonczenie i szli do nastepnej paczki. */
+    .qty-warning {
+        margin-bottom: 16px;
+        padding: 10px 14px;
+        border-radius: var(--radius-sm);
+        background: rgba(245,158,11,.12);
+        border: 1px solid rgba(245,158,11,.4);
+        color: #f59e0b;
+        font-weight: 600;
+    }
+
     /* Panel ilosci per kategoria (krok 3 przy koncu paczki) */
     .qty-panel {
         display: none;
@@ -195,6 +215,7 @@
                 <input type="text" id="start-emp" placeholder="Zeskanuj kod pracownika…"
                     autocomplete="off" autofocus
                     onkeydown="handleKey(event, 'start-emp', 'start-pkg')">
+                <div class="emp-name" id="start-emp-name"></div>
             </div>
         </div>
 
@@ -227,6 +248,7 @@
                 <input type="text" id="end-emp" placeholder="Zeskanuj kod pracownika…"
                     autocomplete="off"
                     onkeydown="handleKey(event, 'end-emp', 'end-pkg')">
+                <div class="emp-name" id="end-emp-name"></div>
             </div>
         </div>
 
@@ -240,6 +262,10 @@
         </div>
 
         <div class="qty-panel" id="end-qty-panel">
+            <div class="qty-warning">
+                ⚠️ Paczka NIE jest jeszcze zakończona — wpisz ilości i kliknij
+                „Zapisz koniec" (albo Enter w ostatnim polu).
+            </div>
             <div class="qty-head">
                 <div>
                     <div style="font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);">Paczka</div>
@@ -285,8 +311,32 @@ const TIMEOUT_MS = 300;
 let empTimers = {};
 const recentStart = [];
 const recentEnd = [];
+// Zadanie w locie per zakladka. Podwojny Enter / powtorny skan wysylal to samo
+// kilka razy (15.09 na .31: piec „koniec" jednej paczki w sekunde).
+const zajete = { start: false, end: false };
+// Pracownik potwierdzony w kroku 1 (id z /api/employee-lookup).
+const pracownik = { start: null, end: null };
+// Ilosc od tej wartosci to prawie na pewno kod kreskowy zeskanowany w pole
+// ilosci (najwieksza paczka na .31 ma 708 szt., kody paczek maja 10 cyfr).
+const ILOSC_WYGLADA_NA_KOD = 100000;
+
+function panelOtwarty() {
+    const panel = document.getElementById('end-qty-panel');
+    return !!panel && panel.style.display === 'block';
+}
+
+window.addEventListener('beforeunload', (e) => {
+    if (panelOtwarty()) { e.preventDefault(); e.returnValue = ''; }
+});
 
 function switchTab(name) {
+    if (panelOtwarty()) {
+        if (name === 'end') return;   // juz tu jestesmy — nie kasuj wpisanych ilosci
+        const pkg = document.getElementById('end-qty-barcode').textContent;
+        if (!confirm(`Koniec paczki ${pkg} NIE został zapisany.\n\n`
+                     + 'Przejść mimo to? Paczka zostanie otwarta.')) return;
+        anulujKoniec();
+    }
     document.querySelectorAll('.scan-tab').forEach((t, i) => {
         t.classList.toggle('active', (name === 'start' && i === 0) || (name === 'end' && i === 1));
     });
@@ -313,6 +363,8 @@ function resetSteps(prefix) {
     s2.className = 'scan-step-num waiting';
     pkg.disabled = true;
     emp.disabled = false;
+    pracownik[prefix] = null;
+    document.getElementById(prefix + '-emp-name').textContent = '';
     if (prefix === 'end') ukryjPanelIlosci();
 }
 
@@ -351,9 +403,23 @@ function anulujKoniec() {
     document.getElementById('end-emp').focus();
 }
 
+// Zly kod w polu paczki (np. identyfikator) — pracownik zostaje, skanuje paczke jeszcze raz.
+function ponowPaczke(prefix) {
+    const pkg = document.getElementById(prefix + '-pkg');
+    pkg.disabled = false;
+    pkg.value = '';
+    pkg.focus();
+}
+
 async function otworzPanelIlosci() {
-    const pkg = document.getElementById('end-pkg').value.trim();
+    if (zajete.end) return;
+    const pkgEl = document.getElementById('end-pkg');
+    const pkg = pkgEl.value.trim();
     if (!pkg) return;
+    // Zablokowane pole nie przyjmie kolejnego skanu — wczesniej 28.09 ten sam
+    // kod doklejal sie cztery razy i szly cztery zapytania.
+    zajete.end = true;
+    pkgEl.disabled = true;
 
     // Podglad jest read-only — sluzy tylko pokazaniu ile sztuk bylo w paczce
     // i wczesnemu zlapaniu paczki zakonczonej / bez startu.
@@ -361,9 +427,15 @@ async function otworzPanelIlosci() {
     try {
         const res = await fetch('/api/package-lookup?barcode=' + encodeURIComponent(pkg));
         data = await res.json();
-        if (!res.ok) { showResult('end', '❌ ' + data.error, 'error'); anulujKoniec(); return; }
+        if (!res.ok) {
+            showResult('end', '❌ ' + data.error, 'error');
+            if (data.kod_pracownika) ponowPaczke('end'); else anulujKoniec();
+            return;
+        }
     } catch (e) {
         showResult('end', '❌ Błąd połączenia.', 'error'); anulujKoniec(); return;
+    } finally {
+        zajete.end = false;
     }
 
     const carton = data.carton || {};
@@ -372,6 +444,12 @@ async function otworzPanelIlosci() {
     }
     if (!carton.scan_start_at) {
         showResult('end', '❌ Brak zarejestrowanego startu dla tej paczki.', 'error');
+        anulujKoniec(); return;
+    }
+    // Ten sam warunek co 403 w /api/package-time/end — sprawdzony przed
+    // wpisaniem ilosci, zeby nie przepadly przy odmowie.
+    if (carton.scan_start_by && pracownik.end && carton.scan_start_by !== pracownik.end.id) {
+        showResult('end', `❌ Paczkę rozpoczął ${carton.scan_start_by_name || 'inny pracownik'} — tylko on może ją zakończyć.`, 'error');
         anulujKoniec(); return;
     }
 
@@ -391,17 +469,45 @@ function handleKey(event, currentId, nextId, submitFn) {
     if (!val) return;
 
     if (nextId) {
-        // Move to next field
-        const next = document.getElementById(nextId);
-        const prefix = currentId.split('-')[0];
-        document.getElementById(prefix + '-step1-num').className = 'scan-step-num done';
-        document.getElementById(prefix + '-step2-num').className = 'scan-step-num active';
-        next.disabled = false;
-        next.value = '';
-        next.focus();
+        potwierdzPracownika(currentId.split('-')[0]);
     } else if (submitFn) {
         submitFn();
     }
+}
+
+// Krok 1: kod pracownika sprawdzamy od razu. Wczesniej zly kod wychodzil
+// dopiero przy zapisie konca — juz po wpisaniu ilosci, ktore wtedy przepadaly.
+async function potwierdzPracownika(prefix) {
+    if (zajete[prefix]) return;
+    const emp = document.getElementById(prefix + '-emp');
+    const kod = emp.value.trim();
+    if (!kod) return;
+    zajete[prefix] = true;
+    emp.disabled = true;
+
+    let res = null, data = {};
+    try {
+        res = await fetch('/api/employee-lookup?barcode=' + encodeURIComponent(kod));
+        data = await res.json();
+    } catch (e) {
+        res = null;
+    } finally {
+        zajete[prefix] = false;
+    }
+
+    if (!res || !res.ok) {
+        showResult(prefix, '❌ ' + (data.error || 'Błąd połączenia.'), 'error');
+        emp.disabled = false;
+        emp.value = '';
+        emp.focus();
+        return;
+    }
+
+    pracownik[prefix] = data.user;
+    document.getElementById(prefix + '-emp-name').textContent = '👤 ' + data.user.display_name;
+    document.getElementById(prefix + '-step1-num').className = 'scan-step-num done';
+    document.getElementById(prefix + '-step2-num').className = 'scan-step-num active';
+    ponowPaczke(prefix);
 }
 
 function showResult(prefix, msg, type) {
@@ -432,22 +538,33 @@ function addRecent(prefix, barcode, workerName, extraInfo) {
 }
 
 async function submitStart() {
+    if (zajete.start) return;
     const emp = document.getElementById('start-emp').value.trim();
-    const pkg = document.getElementById('start-pkg').value.trim();
+    const pkgEl = document.getElementById('start-pkg');
+    const pkg = pkgEl.value.trim();
     if (!emp || !pkg) return;
+    zajete.start = true;
+    pkgEl.disabled = true;
 
-    const res = await fetch('/api/package-time/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employee_barcode: emp, package_barcode: pkg })
-    });
-    const data = await res.json();
+    try {
+        const res = await fetch('/api/package-time/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ employee_barcode: emp, package_barcode: pkg })
+        });
+        const data = await res.json();
 
-    if (res.ok) {
-        showResult('start', '✅ ' + data.message, 'success');
-        addRecent('start', pkg, data.carton?.scan_start_by_name || emp, null);
-    } else {
-        showResult('start', '❌ ' + data.error, 'error');
+        if (res.ok) {
+            showResult('start', '✅ ' + data.message, 'success');
+            addRecent('start', pkg, data.carton?.scan_start_by_name || emp, null);
+        } else {
+            showResult('start', '❌ ' + data.error, 'error');
+            if (data.kod_pracownika) { ponowPaczke('start'); return; }
+        }
+    } catch (e) {
+        showResult('start', '❌ Błąd połączenia.', 'error');
+    } finally {
+        zajete.start = false;
     }
 
     // Reset for next scan
@@ -458,24 +575,42 @@ async function submitStart() {
 }
 
 async function submitEnd() {
+    if (zajete.end) return;
     const emp = document.getElementById('end-emp').value.trim();
     const pkg = document.getElementById('end-pkg').value.trim();
     if (!emp || !pkg) return;
 
     const kategorie = {};
-    poleIlosci().forEach(i => {
+    for (const i of poleIlosci()) {
         const n = parseInt(i.value, 10);
+        if (n >= ILOSC_WYGLADA_NA_KOD) {
+            showResult('end', `❌ Ilość ${n} wygląda na zeskanowany kod, nie liczbę sztuk — popraw pole.`, 'error');
+            i.focus();
+            i.select();
+            return;
+        }
         if (n > 0) kategorie[i.dataset.kategoria] = n;
-    });
+    }
 
-    const res = await fetch('/api/package-time/end', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            employee_barcode: emp, package_barcode: pkg, categories: kategorie
-        })
-    });
-    const data = await res.json();
+    zajete.end = true;
+    let res = null, data = {};
+    try {
+        res = await fetch('/api/package-time/end', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                employee_barcode: emp, package_barcode: pkg, categories: kategorie
+            })
+        });
+        data = await res.json();
+    } catch (e) {
+        // Nie wiemy, czy serwer zapisal — zostawiamy panel, zeby mozna bylo
+        // sprobowac ponownie (drugi zapis dostanie 409, nic sie nie zdubluje).
+        zajete.end = false;
+        showResult('end', '❌ Błąd połączenia — koniec NIE jest pewny, spróbuj zapisać jeszcze raz.', 'error');
+        return;
+    }
+    zajete.end = false;
 
     if (res.ok) {
         const secs = data.carton?.processing_seconds;
