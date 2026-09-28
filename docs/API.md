@@ -352,6 +352,7 @@ Soft-delete (`DELETE`) ustawia `is_active_user=False`, co **odbiera też trwają
 | GET | `/api/package-lookup?barcode=` | **Podgląd (read-only)** statusu paczki: `scanned`, `scanned_by`, `finished` + dane (land, stueckzahl, kategorie, ziel_datum, uebergabe_nr, double_rate, czasy) |
 | PUT | `/api/packages/<id>/assign` | Przepisanie paczki do pracownika `{ "user_id": 5 }` (lub `null`) |
 | PUT | `/api/packages/<id>/double-rate` | Oznaczenie paczki jako double rate `{ "double_rate": true }` |
+| GET | `/api/employee-lookup?barcode=` | **Krok 1 na `/scan-paczki`** — sprawdza kod pracownika przed skanem paczki: `200 { user: { id, display_name } }`; nieznany/nieaktywny → `404`; kod paczki zamiast identyfikatora → `400` |
 | POST | `/api/package-time/start` | Rejestracja startu procesowania `{ "employee_barcode", "package_barcode" }` |
 | POST | `/api/package-time/end` | Rejestracja końca + czas procesowania (to samo body) |
 | POST | `/api/packages/<id>/unlock-scan` | **Odblokowanie paczki** rozpoczętej i nigdy nie zakończonej (lider+): kasuje `scan_start_at`/`scan_start_by`, ustawia `modified_by`/`modified_at`. Paczka wraca do stanu „nierozpoczęta". Paczka zakończona → 409, nierozpoczęta → 400. |
@@ -386,6 +387,10 @@ sklejony URL i zakładkę.
   - inny pracownik robi koniec → `403` „tylko on może zakończyć"
   - ten sam pracownik robi start ponownie → `200`, start bez zmian
 - Paczka **zakończona** jest zablokowana: ponowny start → `409`, ponowny koniec → `409`
+- Start i koniec czytają karton z `SELECT … FOR UPDATE` — dwa równoległe żądania tej samej
+  paczki nie przejdą obu kontroli (drugie dostaje `409`)
+- **Kod pracownika w polu paczki** (`package-lookup`, `start`, `end`) → `400`
+  z `kod_pracownika: true` i nazwiskiem w `error`; naprawdę nieznany kod dalej `404`
 
 **Definicje statusu w `/api/package-lookup`:**
 - `scanned` = ma `processed_by` **lub** `scan_start_at`
