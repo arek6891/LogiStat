@@ -13,7 +13,7 @@ docker compose down
 # Tests — need a Postgres; the compose file below provides one (port 55432, tmpfs)
 docker compose -f docker-compose.test.yml up -d
 pip install -r requirements-dev.txt
-pytest                               # 368 tests
+pytest                               # 371 tests
 docker compose -f docker-compose.test.yml down
 LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://u:p@host:5432/db pytest   # another DB
 
@@ -76,7 +76,7 @@ Leader enters quantities per person → `DailyStat` records with audit trail
 `ImportedCarton.double_rate` checkbox in `/paczki`. In General Stats, any line with double-rate cartons gets a second **yellow** row: Amounts = auto sum of double-rate `stueckzahl` (`double_rate_amount_map()`), categories entered manually into `GeneralStat.double_rate_category_data`. Both lines bill ×1 — doubling is emergent (packages counted twice). The legacy per-line `GeneralStat.double_rate` ×2 multiplier is gone — the column, its `to_dict()` key and its only writer (`PUT /api/packages/uebergabe-double-rate`) were removed in the 2026-09 cleanup. Existing DB columns are simply left untouched.
 
 **Dashboard (`/dashboard`):**
-Three tabs — Podsumowanie / Per pracownik (both from `GET /api/dashboard`, today-only, 30s auto-refresh) and **Per zmiana** (`GET /api/dashboard/shifts?date=`, any date). DailyStat is already shift-tagged (`shift_id`) so it aggregates per shift directly; packages have no shift, so they're attributed **by attendance** — a package counts toward the single shift its `scan_end_by` worker was scanned into (`ShiftAttendance`) that day. Workers with no attendance or in both shifts → `unattributed` bucket (each package counted exactly once).
+Three tabs — Podsumowanie / Per pracownik (both from `GET /api/dashboard`, today-only, 30s auto-refresh) and **Per zmiana** (`GET /api/dashboard/shifts?date=`, any date). DailyStat is already shift-tagged (`shift_id`) so it aggregates per shift directly; packages have no shift, so they're attributed **by attendance** — a package counts toward the single shift its `scan_end_by` worker was scanned into (`ShiftAttendance`) that day. Workers with no attendance or in both shifts → `unattributed` bucket (each package counted exactly once). Podsumowanie shows **Zrobione dziś** and **Pozostało** each twice — in packages and in pieces (`pieces_today`, `remaining_pieces` = `SUM(stueckzahl)` of cartons with `scan_end_at IS NULL`). „Pozostało" is **all-time**, not today: every unfinished carton ever imported (on `.31`: 8 697 cartons / ~1 mln pieces, mostly old imports never scanned).
 
 **Time tracking:**
 Worker scans barcode on `/time-tracking` to toggle break (`break_start`/`break_end`), toggle **„Inne"** (`other_start`/`other_end` — time off the station that is not a break, e.g. a trip to HR) or record `work_end`. Tabs map to `mode` in `POST /api/time/scan`: `break` | `other` | `work_end`.

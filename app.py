@@ -2819,6 +2819,10 @@ def api_dashboard():
     total_cartons = ImportedCarton.query.count()
     done_cartons = ImportedCarton.query.filter(ImportedCarton.scan_end_at.isnot(None)).count()
     remaining_cartons = total_cartons - done_cartons
+    # Te same paczki co `remaining_cartons`, liczone w sztukach — lider planuje
+    # obsade po ilosci towaru, a paczki potrafia miec od 1 do kilkuset sztuk.
+    remaining_pieces = db.session.query(func.sum(ImportedCarton.stueckzahl))\
+        .filter(ImportedCarton.scan_end_at.is_(None)).scalar() or 0
 
     # Paczki zakończone dziś
     dzis = and_(ImportedCarton.scan_end_at >= today_start,
@@ -2901,6 +2905,7 @@ def api_dashboard():
         'total_cartons': total_cartons,
         'done_cartons': done_cartons,
         'remaining_cartons': remaining_cartons,
+        'remaining_pieces': int(remaining_pieces),
         'done_today': done_today,
         'pieces_today': int(pieces_today),
         'progress_pct': progress_pct,
