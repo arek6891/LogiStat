@@ -132,7 +132,7 @@ Korekta pojedynczego wpisu.
 
 | Method | URL | Opis |
 |--------|-----|------|
-| GET | `/api/dashboard` | Dane dashboardu dziennego (dziś): karty zbiorcze, per pracownik, czynności. |
+| GET | `/api/dashboard` | Dane dashboardu dziennego (dziś): karty zbiorcze, per pracownik, czynności. Karty w parach paczki / sztuki: `done_today` + `pieces_today` (zakończone dziś) oraz `remaining_cartons` + `remaining_pieces` (`SUM(stueckzahl)` paczek bez `scan_end_at`). „Pozostało” liczy **wszystkie** niezakończone paczki od początku, nie tylko dzisiejsze. |
 | GET | `/api/dashboard/shifts?date=YYYY-MM-DD` | **Podział per zmiana** dla wybranego dnia (domyślnie dziś). Zwraca `shifts[]` (zmiana 1 i 2: `present_count`, `packages`, `pieces`, `activities[]`) oraz `unattributed` (paczki pracowników bez jednoznacznej obecności). Paczki przypisywane do zmiany wg obecności pracownika (`ShiftAttendance`); DailyStat wg `shift_id`. |
 
 ## Statystyki — przegląd zespołu

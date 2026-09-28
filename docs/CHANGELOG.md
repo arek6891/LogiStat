@@ -17,6 +17,17 @@
   `GET /api/stats/user/<id>`). Wczesniej srednie byly tylko w tabeli miesiecznej,
   jako wiersze „📦" wymieszane z czynnosciami, i znikaly po wybraniu czynnosci.
   Mianownikiem sa dni i miesiace z co najmniej jedna zakonczona paczka.
+## 2026-09-28 — dashboard: „Pozostało" w sztukach
+
+### Dodane
+- **Kafel „Pozostało — szt."** na zakładce Podsumowanie (`remaining_pieces` w
+  `GET /api/dashboard`). Paczki mają od 1 do kilkuset sztuk, więc sama liczba paczek
+  nie mówiła, ile towaru zostało. Kafle idą teraz parami paczki / sztuki:
+  „Zrobione dziś" i „Pozostało". Dotychczasowy kafel „Sztuki dziś" nazywa się
+  „Zrobione dziś" (szt.).
+- „Pozostało" liczy **wszystkie** niezakończone paczki od początku, jak kafel w paczkach
+  (na `.31`: 8 697 paczek / ~1 mln szt.). Ustalone z operacjami, że tak zostaje.
+
 ## 2026-09-28 — stanowisko „Czasy paczek" po przegladzie logow `.31`
 
 Przeglad logow z 14–28.09 pokazal, ze pracownicy gubili na tym ekranie prace:
