@@ -177,7 +177,7 @@ zalogowanego lidera, bo to ekran stanowiskowy).
 - 📈 **Forecast** (`/forecast`) — prognoza ilości per dzień
 - 📋 **Przydzielanie** (`/assignment`) — drag & drop operatorów do czynności
 - ✏️ **Wpis ilości** (`/data-entry`) — ilości zrobione per osoba
-- 📊 **Statystyki** (`/stats`) — przegląd całego zespołu (ranking szt./h, cel lidera) + wykresy per pracownik
+- 📊 **Statystyki** (`/stats`) — przegląd całego zespołu (ranking szt./h względem średniej zespołu, cel lidera) + per pracownik średnie dzienne/miesięczne paczek i sztuk oraz wykresy
 - 📦 **Paczki (dane)** (`/paczki`) — surowe dane paczek z filtrami (patrz niżej)
 - 👥 **Czasy pracowników** (`/worker-times`) — przegląd i korekta czasów + filtry
 - 📥 **Import danych** (`/import-csv`) — CSV (`;`) lub Excel (`.xlsx`), dedup po barcode
