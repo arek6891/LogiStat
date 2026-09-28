@@ -509,6 +509,7 @@ class ImportedCarton(db.Model):
             'processed_by_name': self.processed_by_user.display_name if self.processed_by_user else None,
             'processed_at': iso_z(self.processed_at),
             'scan_start_at': iso_z(self.scan_start_at),
+            'scan_start_by': self.scan_start_by,
             'scan_start_by_name': self.scan_start_by_user.display_name if self.scan_start_by_user else None,
             'scan_end_at': iso_z(self.scan_end_at),
             'scan_end_by_name': self.scan_end_by_user.display_name if self.scan_end_by_user else None,

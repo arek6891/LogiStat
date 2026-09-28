@@ -131,6 +131,18 @@ def test_naprawde_nieznana_paczka_dalej_404(leader_client):
                              query_string={'barcode': 'BRAK'}).status_code == 404
 
 
+def test_podglad_paczki_podaje_kto_ja_rozpoczal(leader_client):
+    """Ekran porownuje to z pracownikiem z kroku 1, zanim otworzy panel ilosci
+    — inaczej 403 „tylko on moze zakonczyc" kasowaloby wpisane ilosci."""
+    w = make_user('operator', barcode_id='W1')
+    make_carton()
+    start(leader_client, 'W1')
+
+    r = leader_client.get('/api/package-lookup', query_string={'barcode': 'P1'})
+
+    assert r.get_json()['carton']['scan_start_by'] == w.id
+
+
 # ── Rownolegle zadania ───────────────────────────────────────────────────────
 
 def test_start_i_koniec_blokuja_wiersz_kartonu(leader_client, queries):

@@ -13,7 +13,7 @@ docker compose down
 # Tests — need a Postgres; the compose file below provides one (port 55432, tmpfs)
 docker compose -f docker-compose.test.yml up -d
 pip install -r requirements-dev.txt
-pytest                               # 367 tests
+pytest                               # 368 tests
 docker compose -f docker-compose.test.yml down
 LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://u:p@host:5432/db pytest   # another DB
 

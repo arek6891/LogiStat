@@ -314,6 +314,8 @@ const recentEnd = [];
 // Zadanie w locie per zakladka. Podwojny Enter / powtorny skan wysylal to samo
 // kilka razy (15.09 na .31: piec „koniec" jednej paczki w sekunde).
 const zajete = { start: false, end: false };
+// Pracownik potwierdzony w kroku 1 (id z /api/employee-lookup).
+const pracownik = { start: null, end: null };
 // Ilosc od tej wartosci to prawie na pewno kod kreskowy zeskanowany w pole
 // ilosci (najwieksza paczka na .31 ma 708 szt., kody paczek maja 10 cyfr).
 const ILOSC_WYGLADA_NA_KOD = 100000;
@@ -361,6 +363,7 @@ function resetSteps(prefix) {
     s2.className = 'scan-step-num waiting';
     pkg.disabled = true;
     emp.disabled = false;
+    pracownik[prefix] = null;
     document.getElementById(prefix + '-emp-name').textContent = '';
     if (prefix === 'end') ukryjPanelIlosci();
 }
@@ -443,6 +446,12 @@ async function otworzPanelIlosci() {
         showResult('end', '❌ Brak zarejestrowanego startu dla tej paczki.', 'error');
         anulujKoniec(); return;
     }
+    // Ten sam warunek co 403 w /api/package-time/end — sprawdzony przed
+    // wpisaniem ilosci, zeby nie przepadly przy odmowie.
+    if (carton.scan_start_by && pracownik.end && carton.scan_start_by !== pracownik.end.id) {
+        showResult('end', `❌ Paczkę rozpoczął ${carton.scan_start_by_name || 'inny pracownik'} — tylko on może ją zakończyć.`, 'error');
+        anulujKoniec(); return;
+    }
 
     document.getElementById('end-qty-barcode').textContent = pkg;
     document.getElementById('end-qty-stueckzahl').textContent =
@@ -494,6 +503,7 @@ async function potwierdzPracownika(prefix) {
         return;
     }
 
+    pracownik[prefix] = data.user;
     document.getElementById(prefix + '-emp-name').textContent = '👤 ' + data.user.display_name;
     document.getElementById(prefix + '-step1-num').className = 'scan-step-num done';
     document.getElementById(prefix + '-step2-num').className = 'scan-step-num active';
