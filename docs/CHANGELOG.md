@@ -1,5 +1,23 @@
 # LogiStat — Changelog
 
+## 2026-09-28 — Statystyki: srednia zamiast mediany, srednie pracownika
+
+### Zmienione — Przeglad ogolny
+- **Odniesieniem jest srednia zespolu, nie mediana.** Liczona jako **wszystkie sztuki /
+  wszystkie godziny skanowania**. Wchodza wszyscy ze zmierzonym czasem, takze osoby
+  z „za malo danych", a kazdy wazy tyle, ile przepracowal. Zwykla srednia z wynikow osob
+  dalaby na `.31` 2 570 szt./h zamiast 292, przez konto `test` z dwiema blyskawicznymi
+  paczkami. Kolumna i kafel: „% sredniej", „Srednia szt./h". W API: `srednia_szt_h`
+  i `proc_sredniej` (wczesniej `mediana_szt_h`, `proc_mediany`).
+- Prog `min_packages_rank` decyduje juz tylko o miejscu w rankingu i ocenie, nie o sredniej.
+
+### Dodane — Per pracownik
+- **Karta „📦 Paczki w okresie"**: paczki, sztuki, dni pracy, **srednio dziennie** i
+  **srednio miesiecznie**, w paczkach i w sztukach (`paczki_podsumowanie` w
+  `GET /api/stats/user/<id>`). Wczesniej srednie byly tylko w tabeli miesiecznej,
+  jako wiersze „📦" wymieszane z czynnosciami, i znikaly po wybraniu czynnosci.
+  Mianownikiem sa dni i miesiace z co najmniej jedna zakonczona paczka.
+
 ## 2026-09-21 — przeglad ogolny pracownikow w Statystykach
 
 ### Dodane — Statystyki

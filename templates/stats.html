@@ -44,8 +44,8 @@
             </div>
         </div>
         <p style="color:var(--text-muted);font-size:.8rem;margin:.75rem 0 0;">
-            Cel wpisuje lider i obowiązuje wszystkich. Nie zastępuje mediany — obie kolumny
-            są widoczne obok siebie: <strong>% mediany</strong> mówi, jak ktoś wypada na tle
+            Cel wpisuje lider i obowiązuje wszystkich. Nie zastępuje średniej — obie kolumny
+            są widoczne obok siebie: <strong>% średniej</strong> mówi, jak ktoś wypada na tle
             zespołu, <strong>% celu</strong> — czy przeskakuje wpisaną poprzeczkę. Wpisz
             <strong>0</strong>, żeby schować kolumnę celu.
         </p>
@@ -57,9 +57,10 @@
         <div class="card-header"><h3>Wydajność zespołu</h3></div>
         <p style="color:var(--text-secondary);font-size:.85rem;margin-top:0;">
             Miarą jest <strong>liczba sztuk na godzinę skanowania paczek</strong>.
-            Odniesieniem jest <strong>mediana tego zespołu</strong> w wybranym okresie —
-            nie zadana z góry norma, bo takiej system nie przechowuje. Kolumna „% mediany"
-            mówi więc, jak ktoś wypada <em>na tle koleżanek</em>, a nie wobec celu.
+            Odniesieniem jest <strong>średnia tego zespołu</strong> w wybranym okresie:
+            wszystkie sztuki podzielone przez wszystkie godziny skanowania, łącznie z osobami
+            z „za mało danych" — każdy waży tyle, ile przepracował. To nie jest zadana z góry
+            norma, bo takiej system nie przechowuje. Kolumna „% średniej" mówi więc, jak ktoś wypada <em>na tle koleżanek</em>, a nie wobec celu.
         </p>
         <div class="table-container">
             <table>
@@ -71,7 +72,7 @@
                         <th style="text-align:right;">Sztuk</th>
                         <th style="text-align:right;">Godzin</th>
                         <th style="text-align:right;">Szt./h</th>
-                        <th style="text-align:right;">% mediany</th>
+                        <th style="text-align:right;">% średniej</th>
                         <th>Ocena</th>
                         <th style="text-align:right;" class="kol-cel">% celu</th>
                         <th class="kol-cel">Wobec celu</th>
@@ -164,6 +165,18 @@
                             onchange="loadUserStats()">
                     </div>
                 </div>
+            </div>
+
+            <!-- Srednie paczek i sztuk w wybranym okresie -->
+            <div class="card" style="margin-bottom:16px;">
+                <div class="card-header">
+                    <h3>📦 Paczki w okresie</h3>
+                </div>
+                <div id="paczkiPodsumowanie"></div>
+                <p style="color:var(--text-muted);font-size:.8rem;margin:.75rem 0 0;">
+                    Średnie liczone po dniach i miesiącach, w których osoba zakończyła choć jedną
+                    paczkę — dni wolne nie zaniżają wyniku.
+                </p>
             </div>
 
             <!-- Monthly summary -->
@@ -299,7 +312,7 @@
             + kafel('Paczek', s.paczek)
             + kafel('Sztuk', s.sztuk.toLocaleString('pl'))
             + kafel('Godzin skanowania', s.godzin.toLocaleString('pl'))
-            + kafel('Mediana szt./h', d.mediana_szt_h !== null ? d.mediana_szt_h.toLocaleString('pl') : '—', 'var(--accent)')
+            + kafel('Średnia szt./h', d.srednia_szt_h !== null ? d.srednia_szt_h.toLocaleString('pl') : '—', 'var(--accent)')
             + (d.cel_szt_h !== null
                 ? kafel('🎯 Cel szt./h', d.cel_szt_h.toLocaleString('pl'), 'var(--accent)')
                   + (d.spelnia_cel !== null
@@ -337,7 +350,7 @@
                 <td style="text-align:right;">${r.sztuk.toLocaleString('pl')}</td>
                 <td style="text-align:right;">${r.godzin.toLocaleString('pl')}</td>
                 <td style="text-align:right;font-weight:700;">${r.szt_h.toLocaleString('pl')}</td>
-                <td style="text-align:right;color:${s.kolor};font-weight:600;">${r.proc_mediany !== null ? r.proc_mediany + '%' : '—'}</td>
+                <td style="text-align:right;color:${s.kolor};font-weight:600;">${r.proc_sredniej !== null ? r.proc_sredniej + '%' : '—'}</td>
                 <td style="color:${s.kolor};white-space:nowrap;">${s.tekst}</td>
                 <td style="text-align:right;color:${c.kolor};font-weight:600;" class="kol-cel">${r.proc_celu !== null ? r.proc_celu + '%' : '—'}</td>
                 <td style="color:${c.kolor};white-space:nowrap;" class="kol-cel">${c.tekst}</td>
@@ -469,12 +482,36 @@
         try {
             const res = await fetch(url);
             const data = await res.json();
+            renderPaczkiPodsumowanie(data.paczki_podsumowanie);
             renderMonthly(data.monthly);
             renderDaily(data.daily);
             renderChart(data.daily);
         } catch (err) {
             showToast('Błąd ładowania statystyk.', 'error');
         }
+    }
+
+    function renderPaczkiPodsumowanie(p) {
+        const el = document.getElementById('paczkiPodsumowanie');
+        if (!p || !p.paczek) {
+            el.innerHTML = '<p style="color:var(--text-muted);margin:0;">Brak zakończonych paczek w tym okresie.</p>';
+            return;
+        }
+        const liczba = v => v === null ? '—' : v.toLocaleString('pl');
+        const kafel = (etykieta, wartosc, kolor) => `
+            <div style="flex:1;min-width:120px;">
+                <div style="color:var(--text-secondary);font-size:.8rem;">${etykieta}</div>
+                <div style="font-size:1.4rem;font-weight:700;${kolor ? 'color:' + kolor + ';' : ''}">${wartosc}</div>
+            </div>`;
+        el.innerHTML = '<div style="display:flex;gap:1.5rem;flex-wrap:wrap;">'
+            + kafel('Paczek', liczba(p.paczek))
+            + kafel('Sztuk', liczba(p.sztuk))
+            + kafel('Dni pracy', liczba(p.dni_pracy))
+            + kafel('Śr. dziennie — paczek', liczba(p.srednio_dziennie.paczek), 'var(--accent)')
+            + kafel('Śr. dziennie — szt.', liczba(p.srednio_dziennie.sztuk), 'var(--accent)')
+            + kafel('Śr. miesięcznie — paczek', liczba(p.srednio_miesiecznie.paczek), 'var(--success)')
+            + kafel('Śr. miesięcznie — szt.', liczba(p.srednio_miesiecznie.sztuk), 'var(--success)')
+            + '</div>';
     }
 
     function renderMonthly(monthly) {

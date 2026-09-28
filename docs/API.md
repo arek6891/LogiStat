@@ -144,16 +144,16 @@ Liczone z **zakończonych paczek**, nie z `DailyStat` (wpis ilości jest uzupeł
 
 Czas to **suma złączonych okresów** `(scan_start_at, scan_end_at)`, nie suma ich długości — dwie paczki otwarte równocześnie liczyłyby ten sam kwadrans dwa razy. Mianownikiem jest czas *skanowania*, nie czas obecności: przerwy i „Inne" go nie pomniejszają.
 
-Odniesieniem jest **mediana zespołu** z okresu (nie średnia — jeden skrajny wynik nie przesuwa poprzeczki reszcie), a **nie zadana norma** — takiej system nie przechowuje.
+Odniesieniem jest **średnia zespołu** z okresu = **wszystkie sztuki / wszystkie godziny skanowania** (do 2026-09-28 była to mediana), a **nie zadana norma** — takiej system nie przechowuje. Do średniej wchodzą **wszyscy** ze zmierzonym czasem, także osoby z „za mało danych", ale każdy waży tyle, ile przepracował — dlatego konto z dwiema błyskawicznymi paczkami nie wypacza wyniku. Paczki bez zmierzonego czasu do średniej nie wchodzą. Próg `min_paczek` decyduje tylko o miejscu w rankingu i ocenie.
 
 ```json
 {
   "date_from": "2026-08-22", "date_to": "2026-09-21",
-  "mediana_szt_h": 300.0,
+  "srednia_szt_h": 300.0,
   "progi": { "dobry": 110, "slaby": 90, "min_paczek": 3 },
   "pracownicy": [
     { "user_id": 12, "display_name": "...", "paczek": 8, "sztuk": 731,
-      "godzin": 1.86, "szt_h": 392.3, "proc_mediany": 131, "ocena": "dobra" }
+      "godzin": 1.86, "szt_h": 392.3, "proc_sredniej": 131, "ocena": "dobra" }
   ],
   "za_malo_danych": [ { "…": "…", "szt_h": null, "ocena": null } ],
   "podsumowanie": { "osob": 11, "w_rankingu": 9, "paczek": 91, "sztuk": 6961, "godzin": 22.8 }
@@ -162,7 +162,7 @@ Odniesieniem jest **mediana zespołu** z okresu (nie średnia — jeden skrajny 
 
 `ocena`: `dobra` (≥ `norm_good_pct`) · `ok` · `slaba` (≤ `norm_weak_pct`). Oba progi są **domknięte**.
 
-**Cel wpisany przez lidera** (`target_szt_h`, 0 = nieustawiony) dokłada `cel_szt_h`, `spelnia_cel` oraz per pracownik `proc_celu` i `ocena_celu` — **obok** kolumn mediany, nie zamiast nich. Ocena celu jest **dwustanowa**: `spelnia` (≥ 100%) albo `ponizej`. Celowo nie używa pasm `norm_good_pct`/`norm_weak_pct` — te opisują odchylenie od mediany zespołu, a „równo w celu" musi znaczyć „spełnia". Przy nieustawionym celu albo pustym rankingu `spelnia_cel` = `null` (nie 0 — „0 / 0" czytałoby się jak komplet).
+**Cel wpisany przez lidera** (`target_szt_h`, 0 = nieustawiony) dokłada `cel_szt_h`, `spelnia_cel` oraz per pracownik `proc_celu` i `ocena_celu` — **obok** kolumn średniej, nie zamiast nich. Ocena celu jest **dwustanowa**: `spelnia` (≥ 100%) albo `ponizej`. Celowo nie używa pasm `norm_good_pct`/`norm_weak_pct` — te opisują odchylenie od średniej zespołu, a „równo w celu" musi znaczyć „spełnia". Przy nieustawionym celu albo pustym rankingu `spelnia_cel` = `null` (nie 0 — „0 / 0" czytałoby się jak komplet).
 
 ### PUT `/api/stats/target`
 Ustawia docelową wydajność (**lider+**, inaczej niż admin-only `PUT /api/settings`).
@@ -197,9 +197,18 @@ Parametry query: `activity_id`, `date_from`, `date_to`
   "monthly": [
     { "month": "2026-02", "activity": "Post Processing",
       "total_quantity": 2400, "days_worked": 20, "avg_per_day": 120.0 }
-  ]
+  ],
+  "paczki_podsumowanie": {
+    "paczek": 92, "sztuk": 6228, "dni_pracy": 5, "miesiecy_pracy": 1,
+    "srednio_dziennie": { "paczek": 18.4, "sztuk": 1245.6 },
+    "srednio_miesiecznie": { "paczek": 92.0, "sztuk": 6228.0 }
+  }
 }
 ```
+
+`paczki_podsumowanie` liczy się **zawsze**, także przy wybranym `activity_id`. Mianownikiem są
+dni i miesiące, w których osoba zakończyła choć jedną paczkę, a nie dni kalendarzowe
+zakresu — dzień wolny nie zaniża średniej. Bez paczek średnie mają wartość `null`, nie 0.
 
 ---
 
