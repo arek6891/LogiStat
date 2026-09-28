@@ -2,7 +2,8 @@
 
 Wydajnosc liczy sie z ZAKONCZONYCH PACZEK, nie z `DailyStat` — wpis ilosci jest
 uzupelniany sporadycznie, a skan paczek leci przy kazdej sztuce. Odniesieniem
-jest mediana zespolu z okresu, nie zadana z gory norma (takiej system nie ma).
+jest srednia zespolu z okresu — wszystkie sztuki / wszystkie godziny — nie
+zadana z gory norma (takiej system nie ma). Do 2026-09-28 byla to mediana.
 """
 from datetime import date, datetime, timedelta
 
@@ -129,22 +130,52 @@ def test_prog_minimalny_jest_konfigurowalny(leader_client):
     assert dane['za_malo_danych'] == []
 
 
-# ── ocena wzgledem mediany ───────────────────────────────────────────────────
+# ── ocena wzgledem sredniej ──────────────────────────────────────────────────
 
-def test_mediana_a_nie_srednia(leader_client):
-    """Jedna osoba z ekstremalnym wynikiem nie moze przesunac poprzeczki reszcie."""
+def test_srednia_to_wszystkie_sztuki_przez_wszystkie_godziny(leader_client):
     for nazwa, sztuk in (('A', 50), ('B', 50), ('C', 5000)):
         u = make_user('operator', username=nazwa.lower(), display_name=nazwa)
         godziny_pracy(u, 3, sztuk_na_paczke=sztuk, minut_na_paczke=30)
 
     dane = przeglad(leader_client)
 
-    # Mediana z (100, 100, 10000) szt/h = 100, srednia bylaby ~3400.
-    assert dane['mediana_szt_h'] == 100.0
+    # (150 + 150 + 15000) szt. / 4,5 h — decyzja z 2026-09-28: srednia, nie mediana.
+    assert dane['srednia_szt_h'] == 3400.0
+
+
+def test_srednia_obejmuje_osoby_spoza_rankingu_wazone_czasem(leader_client):
+    """„Liczymy wszystko": do sredniej wchodzi tez osoba z jedna paczka, ale
+    wazy tyle, ile przepracowala — blyskawiczna paczka (jak konto `test` na .31,
+    26 038 szt./h) nie wywraca poprzeczki reszcie."""
+    for nazwa in ('A', 'B', 'C'):
+        u = make_user('operator', username=nazwa.lower(), display_name=nazwa)
+        godziny_pracy(u, 3, sztuk_na_paczke=50, minut_na_paczke=30)   # 100 szt./h
+    t = make_user('operator', username='t', display_name='Test')
+    start = logistat.local_day_bounds(logistat.local_today())[0] + timedelta(hours=9)
+    paczka('BLYSK', t, 100, start, start + timedelta(minutes=1))     # 6000 szt./h
+
+    dane = przeglad(leader_client)
+
+    assert wiersz(dane, 'Test') in dane['za_malo_danych'], 'ranking dalej z progiem'
+    # (450 + 100) / (4,5 + 1/60) h
+    assert dane['srednia_szt_h'] == round(550 / (4.5 + 1 / 60), 1)
+
+
+def test_paczki_bez_czasu_nie_zawyzaja_sredniej(leader_client):
+    a = make_user('operator', username='a', display_name='Ala')
+    godziny_pracy(a, 3, sztuk_na_paczke=50, minut_na_paczke=30)       # 100 szt./h
+    b = make_user('operator', username='b', display_name='Bez')
+    logistat.db.session.add(logistat.ImportedCarton(
+        barcode='BEZ-CZASU', land='PL', stueckzahl=5000, ziel_datum=ZIEL,
+        uebergabe_nr='UB-1', scan_end_at=datetime.utcnow(), scan_end_by=b.id))
+    logistat.db.session.commit()
+
+    assert przeglad(leader_client)['srednia_szt_h'] == 100.0
 
 
 def test_oceny_dobra_ok_slaba(leader_client):
-    # progi domyslne: dobra >= 110% mediany, slaba <= 90%
+    # progi domyslne: dobra >= 110% sredniej, slaba <= 90%.
+    # Srednia (100+100+200+40)*1,5 h / 6 h = 110 szt./h.
     for nazwa, sztuk in (('Srednia1', 50), ('Srednia2', 50), ('Lepsza', 100), ('Slabsza', 20)):
         u = make_user('operator', username=nazwa.lower(), display_name=nazwa)
         godziny_pracy(u, 3, sztuk_na_paczke=sztuk, minut_na_paczke=30)
@@ -167,9 +198,9 @@ def test_progi_oceny_sa_konfigurowalne(leader_client):
     dane = przeglad(leader_client)
     oceny = {r['display_name']: r['ocena'] for r in dane['pracownicy']}
 
-    # Mediana (100, 100, 200) = 100, wiec „Lepsza" ma 200% — przy progu 250 to
-    # juz za malo na „dobra".
-    assert wiersz(dane, 'Lepsza')['proc_mediany'] == 200
+    # Srednia (100, 100, 200) = 133,3, wiec „Lepsza" ma 150% — przy progu 250
+    # to juz za malo na „dobra".
+    assert wiersz(dane, 'Lepsza')['proc_sredniej'] == 150
     assert oceny['Lepsza'] == 'ok'
 
 
@@ -177,13 +208,14 @@ def test_prog_dobrego_wyniku_jest_domkniety(leader_client):
     """Rowno na progu = juz „dobra" (`>=`), nie „ok"."""
     logistat.set_setting('norm_good_pct', 200)
     logistat.db.session.commit()
-    for nazwa, sztuk in (('A', 50), ('B', 50), ('Rowno', 100)):
+    # Srednia (100 + 100 + 400) / 3 = 200 szt./h, „Rowno" ma 400 = dokladnie 200%.
+    for nazwa, sztuk in (('A', 50), ('B', 50), ('Rowno', 200)):
         u = make_user('operator', username=nazwa.lower(), display_name=nazwa)
         godziny_pracy(u, 3, sztuk_na_paczke=sztuk, minut_na_paczke=30)
 
     dane = przeglad(leader_client)
 
-    assert wiersz(dane, 'Rowno')['proc_mediany'] == 200
+    assert wiersz(dane, 'Rowno')['proc_sredniej'] == 200
     assert wiersz(dane, 'Rowno')['ocena'] == 'dobra'
 
 
@@ -218,7 +250,7 @@ def test_brak_danych_nie_wywala(leader_client):
     dane = przeglad(leader_client)
 
     assert dane['pracownicy'] == []
-    assert dane['mediana_szt_h'] is None
+    assert dane['srednia_szt_h'] is None
     assert dane['podsumowanie']['paczek'] == 0
 
 
@@ -290,26 +322,26 @@ def test_bez_celu_kolumny_celu_sa_puste(leader_client):
     assert wiersz(dane, 'Ala')['ocena_celu'] is None
 
 
-def test_cel_daje_druga_statystyke_obok_mediany(leader_client):
-    """Mediana zostaje bez zmian — cel to DODATKOWA kolumna, nie zamiennik."""
+def test_cel_daje_druga_statystyke_obok_sredniej(leader_client):
+    """Srednia zostaje bez zmian — cel to DODATKOWA kolumna, nie zamiennik."""
     for nazwa, sztuk in (('A', 50), ('B', 50), ('Lepsza', 100)):
         u = make_user('operator', username=nazwa.lower(), display_name=nazwa)
         godziny_pracy(u, 3, sztuk_na_paczke=sztuk, minut_na_paczke=30)
-    ustaw_cel(leader_client, 200)                  # mediana zespolu = 100 szt/h
+    ustaw_cel(leader_client, 200)                  # srednia zespolu = 133,3 szt/h
 
     dane = przeglad(leader_client)
     lepsza = wiersz(dane, 'Lepsza')
     a = wiersz(dane, 'A')
 
     assert dane['cel_szt_h'] == 200
-    assert dane['mediana_szt_h'] == 100.0, 'mediana liczona jak dotad'
-    assert lepsza['proc_mediany'] == 200 and lepsza['proc_celu'] == 100
-    assert a['proc_mediany'] == 100 and a['proc_celu'] == 50
+    assert dane['srednia_szt_h'] == 133.3, 'srednia liczona jak dotad'
+    assert lepsza['proc_sredniej'] == 150 and lepsza['proc_celu'] == 100
+    assert a['proc_sredniej'] == 75 and a['proc_celu'] == 50
 
 
 def test_ocena_celu_jest_dwustanowa(leader_client):
     """Cel to poprzeczka: rowno 100% = spelnia (a nie „tylko ok", jak przy
-    pasmach wokol mediany)."""
+    pasmach wokol sredniej)."""
     for nazwa, sztuk in (('A', 50), ('B', 50), ('Rowno', 100)):
         u = make_user('operator', username=nazwa.lower(), display_name=nazwa)
         godziny_pracy(u, 3, sztuk_na_paczke=sztuk, minut_na_paczke=30)

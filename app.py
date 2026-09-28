@@ -4,7 +4,6 @@ import io
 import json
 import calendar
 import math
-import statistics
 from datetime import datetime, date, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 from functools import wraps
@@ -714,10 +713,11 @@ SETTING_DEFAULTS = {
     'max_work_minutes': '660',      # 11 h
     'min_break_minutes': '15',
     # Progi przegladu ogolnego na ekranie „Statystyki". Odniesieniem jest
-    # MEDIANA zespolu z wybranego okresu, nie zadana z gory norma — takiej w
-    # systemie nie ma i nikt jej nie ustawia. Procenty ponizej to odchylenie od
-    # tej mediany; `min_packages_rank` chroni ranking przed osoba z jedna
-    # paczka, ktora wyladowalaby na szczycie albo dnie na czystym szumie.
+    # SREDNIA zespolu z wybranego okresu (wszystkie sztuki / wszystkie godziny),
+    # nie zadana z gory norma — takiej w systemie nie ma i nikt jej nie ustawia.
+    # Procenty ponizej to odchylenie od tej sredniej; `min_packages_rank` chroni
+    # RANKING przed osoba z jedna paczka, ktora wyladowalaby na szczycie albo
+    # dnie na czystym szumie (do samej sredniej wchodza wszyscy).
     'norm_good_pct': '110',
     'norm_weak_pct': '90',
     'min_packages_rank': '3',
@@ -1962,8 +1962,13 @@ def api_stats_target_update():
 def api_stats_overview():
     """Przeglad calego zespolu: kto wyrabia najlepiej, kto odstaje.
 
-    Odniesieniem jest **mediana zespolu** z wybranego okresu (nie srednia —
-    jedna osoba z ekstremalnym wynikiem nie przesuwa poprzeczki dla reszty).
+    Odniesieniem jest **srednia zespolu** z wybranego okresu, liczona jako
+    wszystkie sztuki / wszystkie godziny skanowania (decyzja z 2026-09-28,
+    wczesniej mediana). Wchodza WSZYSCY ze zmierzonym czasem, takze osoby
+    ponizej `min_packages_rank` — ale kazda wazy tyle, ile przepracowala, wiec
+    konto z dwiema blyskawicznymi paczkami (26 038 szt./h na .31) nie wypacza
+    wyniku, jak zrobilaby to zwykla srednia z wynikow osob (2 570 zamiast 292).
+    Prog paczek nadal decyduje tylko o tym, kto jest w rankingu i dostaje ocene.
     """
     date_from = parse_date(request.args.get('date_from'), 'date_from') \
         if request.args.get('date_from') else None
@@ -1980,12 +1985,19 @@ def api_stats_overview():
         User.id.in_(dane.keys())).all()} if dane else {}
 
     wiersze = []
+    suma_sztuk_z_czasem = 0
+    suma_godzin_z_czasem = 0.0
     for uid, w in dane.items():
         user = uzytkownicy.get(uid)
         if not user:
             continue                   # konto skasowane twardo — pomijamy
         sekundy = suma_zlaczonych_okresow(w['okresy'])
         godziny = sekundy / 3600.0
+        if godziny > 0:
+            # Paczki bez zmierzonego czasu nie wchodza do sredniej — sztuki
+            # bez godzin zawyzylyby ja.
+            suma_sztuk_z_czasem += w['sztuk']
+            suma_godzin_z_czasem += godziny
         wiersze.append({
             'user_id': uid,
             'display_name': user.display_name,
@@ -2006,20 +2018,21 @@ def api_stats_overview():
     ranking = [r for r in wiersze if kwalifikuje(r)]
     za_malo = [r for r in wiersze if not kwalifikuje(r)]
 
-    mediana = statistics.median(sorted(r['szt_h'] for r in ranking)) if ranking else None
+    srednia = (suma_sztuk_z_czasem / suma_godzin_z_czasem
+               if suma_godzin_z_czasem > 0 else None)
 
     for r in ranking:
-        if mediana and mediana > 0:
-            proc = round(r['szt_h'] / mediana * 100)
-            r['proc_mediany'] = proc
+        if srednia and srednia > 0:
+            proc = round(r['szt_h'] / srednia * 100)
+            r['proc_sredniej'] = proc
             r['ocena'] = ('dobra' if proc >= prog_dobry
                           else 'slaba' if proc <= prog_slaby else 'ok')
         else:
-            r['proc_mediany'] = None
+            r['proc_sredniej'] = None
             r['ocena'] = None
         # Cel jest poprzeczka do przeskoczenia, wiec ocena jest dwustanowa:
         # 100% = spelnia. NIE uzywamy tu pasm norm_good/norm_weak — te opisuja
-        # odchylenie od mediany zespolu, a lider, ktory wpisal liczbe jako
+        # odchylenie od sredniej zespolu, a lider, ktory wpisal liczbe jako
         # wymagany poziom, przeczytalby „rowno w celu = tylko ok" jako blad.
         if cel:
             proc_celu = round(r['szt_h'] / cel * 100)
@@ -2029,7 +2042,7 @@ def api_stats_overview():
             r['proc_celu'] = None
             r['ocena_celu'] = None
     for r in za_malo:
-        r['proc_mediany'] = None
+        r['proc_sredniej'] = None
         r['ocena'] = None
         r['proc_celu'] = None
         r['ocena_celu'] = None
@@ -2040,7 +2053,7 @@ def api_stats_overview():
     return jsonify({
         'date_from': date_from.isoformat() if date_from else None,
         'date_to': date_to.isoformat() if date_to else None,
-        'mediana_szt_h': round(mediana, 1) if mediana else None,
+        'srednia_szt_h': round(srednia, 1) if srednia else None,
         'cel_szt_h': cel,
         'progi': {'dobry': prog_dobry, 'slaby': prog_slaby, 'min_paczek': min_paczek},
         # Bez celu albo bez nikogo w rankingu nie ma czego zliczac — `None`,
@@ -2058,6 +2071,34 @@ def api_stats_overview():
             'godzin': round(sum(r['godzin'] for r in wiersze), 2),
         },
     }), 200
+
+
+def podsumuj_paczki_pracownika(per_day):
+    """Srednie paczek i sztuk jednej osoby z `{'YYYY-MM-DD': {'cnt', 'pcs'}}`.
+
+    Mianownikiem sa dni i miesiace, w ktorych osoba FAKTYCZNIE zakonczyla
+    choc jedna paczke — nie dni kalendarzowe zakresu. Inaczej urlop albo
+    weekend zanizalyby srednia, a lider czyta ja jako „ile robi, kiedy jest".
+    Srednia miesieczna liczy miesiace z praca w wybranym okresie, wiec przy
+    zakresie „30 dni" przecinajacym dwa miesiace dzieli przez 2.
+    """
+    paczek = sum(a['cnt'] for a in per_day.values())
+    sztuk = sum(a['pcs'] for a in per_day.values())
+    dni = len(per_day)
+    miesiecy = len({d[:7] for d in per_day})
+
+    def srednio(ile, przez):
+        return round(ile / przez, 1) if przez else None
+
+    return {
+        'paczek': paczek,
+        'sztuk': sztuk,
+        'dni_pracy': dni,
+        'miesiecy_pracy': miesiecy,
+        'srednio_dziennie': {'paczek': srednio(paczek, dni), 'sztuk': srednio(sztuk, dni)},
+        'srednio_miesiecznie': {'paczek': srednio(paczek, miesiecy),
+                                'sztuk': srednio(sztuk, miesiecy)},
+    }
 
 
 @app.route('/api/stats/user/<int:user_id>', methods=['GET'])
@@ -2109,32 +2150,34 @@ def api_stats_user(user_id):
         monthly_agg[key]['total'] += stat.quantity
         monthly_agg[key]['days'] += 1
 
-    # Przetworzone (zakończone) paczki jako syntetyczne pozycje — tylko w widoku "Wszystkie"
+    # Zakonczone paczki pracownika w okresie, po DOBIE LOKALNEJ, tak samo jak
+    # dashboard. `func.date()` cielo po dacie UTC, wiec paczka zakonczona po
+    # lokalnej polnocy trafiala na inny dzien tutaj niz na dashboardzie.
+    # Konwersja jest w Pythonie: `local_day_bounds()` jest jedyna definicja doby
+    # w calej aplikacji, a zakres jest maly (paczki jednej osoby w okresie).
+    pq = db.session.query(
+        ImportedCarton.scan_end_at,
+        ImportedCarton.stueckzahl,
+    ).filter(
+        ImportedCarton.scan_end_by == user_id,
+        ImportedCarton.scan_end_at.isnot(None),
+    )
+    if date_from:
+        pq = pq.filter(ImportedCarton.scan_end_at >= local_day_bounds(date_from)[0])
+    if date_to:
+        pq = pq.filter(ImportedCarton.scan_end_at < local_day_bounds(date_to)[1])
+
+    per_day = {}
+    for scan_end_at, stueckzahl in pq.all():
+        d = utc_to_local(scan_end_at).date().isoformat()
+        agg = per_day.setdefault(d, {'cnt': 0, 'pcs': 0})
+        agg['cnt'] += 1
+        agg['pcs'] += stueckzahl or 0
+
+    paczki_podsumowanie = podsumuj_paczki_pracownika(per_day)
+
+    # Paczki jako syntetyczne pozycje tabel — tylko w widoku "Wszystkie"
     if not activity_id:
-        # Grupujemy po DOBIE LOKALNEJ, tak samo jak dashboard. `func.date()`
-        # cielo po dacie UTC, wiec paczka zakonczona po lokalnej polnocy trafiala
-        # na inny dzien tutaj niz na dashboardzie. Konwersja jest w Pythonie:
-        # `local_day_bounds()` jest jedyna definicja doby w calej aplikacji,
-        # a zakres jest maly (paczki jednego pracownika w wybranym okresie).
-        pq = db.session.query(
-            ImportedCarton.scan_end_at,
-            ImportedCarton.stueckzahl,
-        ).filter(
-            ImportedCarton.scan_end_by == user_id,
-            ImportedCarton.scan_end_at.isnot(None),
-        )
-        if date_from:
-            pq = pq.filter(ImportedCarton.scan_end_at >= local_day_bounds(date_from)[0])
-        if date_to:
-            pq = pq.filter(ImportedCarton.scan_end_at < local_day_bounds(date_to)[1])
-
-        per_day = {}
-        for scan_end_at, stueckzahl in pq.all():
-            d = utc_to_local(scan_end_at).date().isoformat()
-            agg = per_day.setdefault(d, {'cnt': 0, 'pcs': 0})
-            agg['cnt'] += 1
-            agg['pcs'] += stueckzahl or 0
-
         PKG_METRICS = [('📦 Paczki', lambda cnt, pcs: cnt),
                        ('📦 Paczki (szt.)', lambda cnt, pcs: pcs)]
         for d, agg in per_day.items():
@@ -2178,7 +2221,8 @@ def api_stats_user(user_id):
     return jsonify({
         'user': user.to_dict(),
         'daily': daily_stats,
-        'monthly': monthly_stats
+        'monthly': monthly_stats,
+        'paczki_podsumowanie': paczki_podsumowanie,
     }), 200
 
 
