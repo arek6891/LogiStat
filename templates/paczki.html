@@ -18,43 +18,48 @@
     </div>
     <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;">
         <button type="button" class="btn btn-primary" onclick="openAddPackage()">➕ Dodaj paczkę</button>
-        <form method="GET" id="filtryPaczek" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
-            <select name="date_typ" id="fpDateTyp" class="form-control" style="width:150px;" title="Które pole daty filtrujemy">
-                {% for klucz, etykieta in pola_dat %}
-                <option value="{{ klucz }}" {% if date_typ == klucz %}selected{% endif %}>{{ etykieta }}</option>
-                {% endfor %}
-            </select>
-            <input type="date" name="date_from" id="fpDateFrom" value="{{ date_from }}" class="form-control" style="width:130px;" title="Data od">
-            <span style="color:var(--text-muted);">—</span>
-            <input type="date" name="date_to" id="fpDateTo" value="{{ date_to }}" class="form-control" style="width:130px;" title="Data do">
-            <input type="text" name="barcode" value="{{ barcode }}" class="form-control" style="width:150px;" placeholder="Barcode">
-            <input type="text" name="land" value="{{ land }}" class="form-control" style="width:100px;" placeholder="Land">
-            <select name="osoba" class="form-control" style="width:180px;" title="Kto przejął / rozpoczął / zakończył paczkę. Puste = wszyscy pracownicy.">
-                <option value="">— wszyscy pracownicy —</option>
-                {% for u in users %}
-                <option value="{{ u.id }}" {% if osoba_id == u.id %}selected{% endif %}>{{ u.display_name }}</option>
-                {% endfor %}
-            </select>
-            <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;white-space:nowrap;font-size:.85rem;">
-                <input type="checkbox" name="double_rate" value="1" {% if tylko_double %}checked{% endif %}
-                       style="width:16px;height:16px;cursor:pointer;">
-                <span style="color:#fb923c;">tylko double rate</span>
-            </label>
-            {# Filtr po dacie konca sam pokazuje zakonczone — serwer ustawia wtedy „Zrobione" #}
-            <select name="status" id="fpStatus" class="form-control" style="width:140px;"
-                    title="Niezrobione = bez skanu „Koniec paczki”. Zrobione i Wszystkie wymagają zakresu dat.">
-                {% for klucz, etykieta in statusy.items() %}
-                <option value="{{ klucz }}" {% if status == klucz %}selected{% endif %}>{{ etykieta }}</option>
-                {% endfor %}
-            </select>
-            <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;white-space:nowrap;font-size:.85rem;"
-                   title="Paczka rozpoczęta i nigdy nie zakończona, albo ilość w kategorii przekracza Stückzahl o ponad 10%">
-                <input type="checkbox" name="bledy" value="1" {% if tylko_bledy %}checked{% endif %}
-                       style="width:16px;height:16px;cursor:pointer;">
-                <span style="color:var(--danger);">⚠️ pokaż błędy</span>
-            </label>
-            <button type="submit" class="btn btn-primary">Filtruj</button>
-            <a href="{{ url_for('paczki_view') }}" class="btn btn-secondary" style="padding:0.5rem;" title="Wyczyść">✖</a>
+        <form method="GET" id="filtryPaczek" style="display:flex;flex-direction:column;gap:.5rem;align-items:flex-end;">
+            <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+                <select name="date_typ" id="fpDateTyp" class="form-control" style="width:150px;" title="Które pole daty filtrujemy">
+                    {% for klucz, etykieta in pola_dat %}
+                    <option value="{{ klucz }}" {% if date_typ == klucz %}selected{% endif %}>{{ etykieta }}</option>
+                    {% endfor %}
+                </select>
+                <input type="date" name="date_from" id="fpDateFrom" value="{{ date_from }}" class="form-control" style="width:130px;" title="Data od">
+                <span style="color:var(--text-muted);">—</span>
+                <input type="date" name="date_to" id="fpDateTo" value="{{ date_to }}" class="form-control" style="width:130px;" title="Data do">
+                <input type="text" name="barcode" value="{{ barcode }}" class="form-control" style="width:150px;" placeholder="Barcode">
+                <input type="text" name="land" value="{{ land }}" class="form-control" style="width:100px;" placeholder="Land">
+                <select name="osoba" class="form-control" style="width:180px;" title="Kto przejął / rozpoczął / zakończył paczkę. Puste = wszyscy pracownicy.">
+                    <option value="">— wszyscy pracownicy —</option>
+                    {% for u in users %}
+                    <option value="{{ u.id }}" {% if osoba_id == u.id %}selected{% endif %}>{{ u.display_name }}</option>
+                    {% endfor %}
+                </select>
+                {# Filtr po dacie konca sam pokazuje zakonczone — serwer ustawia wtedy „Zrobione" #}
+                <select name="status" id="fpStatus" class="form-control" style="width:140px;"
+                        title="Niezrobione = bez skanu „Koniec paczki”. Zrobione i Wszystkie wymagają zakresu dat.">
+                    {% for klucz, etykieta in statusy.items() %}
+                    <option value="{{ klucz }}" {% if status == klucz %}selected{% endif %}>{{ etykieta }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-primary">Filtruj</button>
+                <a href="{{ url_for('paczki_view') }}" class="btn btn-secondary" style="padding:0.5rem;" title="Wyczyść">✖</a>
+            </div>
+            {# Znaczniki pod listami — w jednym rzedzie z polami wygladaly jak kolejne pole #}
+            <div style="display:flex;gap:1.25rem;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+                <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;white-space:nowrap;font-size:.85rem;">
+                    <input type="checkbox" name="double_rate" value="1" {% if tylko_double %}checked{% endif %}
+                           style="width:16px;height:16px;cursor:pointer;">
+                    <span style="color:#fb923c;">tylko double rate</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;white-space:nowrap;font-size:.85rem;"
+                       title="Paczka rozpoczęta i nigdy nie zakończona, albo ilość w kategorii przekracza Stückzahl o ponad 10%">
+                    <input type="checkbox" name="bledy" value="1" {% if tylko_bledy %}checked{% endif %}
+                           style="width:16px;height:16px;cursor:pointer;">
+                    <span style="color:var(--danger);">⚠️ pokaż błędy</span>
+                </label>
+            </div>
         </form>
     </div>
 </div>
