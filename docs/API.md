@@ -213,6 +213,29 @@ Parametry query: `activity_id`, `date_from`, `date_to`
 dni i miesiące, w których osoba zakończyła choć jedną paczkę, a nie dni kalendarzowe
 zakresu — dzień wolny nie zaniża średniej. Bez paczek średnie mają wartość `null`, nie 0.
 
+**`norma`** — ocena na tle zespołu, **wiersz wyjęty z tego samego `przeglad_zespolu()`** co
+`/api/stats/overview` (te same średnia, progi, cel), więc `% średniej` i ocena zgadzają się
+z rankingiem dla tego samego zakresu:
+```json
+"norma": {
+  "srednia_szt_h": 292.0, "cel_szt_h": null,
+  "progi": { "dobry": 110, "slaby": 90, "min_paczek": 3 },
+  "miejsce": 2, "w_rankingu": 9,
+  "powod_braku_oceny": null,
+  "wiersz": { "szt_h": 330.1, "proc_sredniej": 113, "ocena": "dobra", "…": "jak w overview" }
+}
+```
+`powod_braku_oceny`: `null` (oceniony) · `za_malo_paczek` · `brak_czasu` (paczki bez skanu
+„Start") · `brak_paczek` (`wiersz` = `null`).
+
+**`wykres_dzienny` / `wykres_miesieczny`** — lista `{okres, paczek, sztuk, godzin, szt_h}`
+rosnąco po `okres` (`YYYY-MM-DD` / `YYYY-MM`), tylko dni/miesiące z zakończoną paczką.
+`godzin` = suma **złączonych** okresów skanowania; bez zmierzonego czasu `szt_h` = `null`.
+`norma`, wykresy i `paczki_podsumowanie` **nie zależą** od `activity_id`.
+
+Ekran `/stats?user=<id>[&date_from=&date_to=]` otwiera od razu zakładkę tej osoby — tak
+linkuje dashboard (`user_id` jest w `workers_today` i `unattributed.workers`).
+
 ---
 
 ## Admin — Czynności

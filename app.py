@@ -2029,7 +2029,19 @@ def api_stats_target_update():
 @app.route('/api/stats/overview', methods=['GET'])
 @leader_required
 def api_stats_overview():
+    date_from = parse_date(request.args.get('date_from'), 'date_from') \
+        if request.args.get('date_from') else None
+    date_to = parse_date(request.args.get('date_to'), 'date_to') \
+        if request.args.get('date_to') else None
+    return jsonify(przeglad_zespolu(date_from, date_to)), 200
+
+
+def przeglad_zespolu(date_from, date_to):
     """Przeglad calego zespolu: kto wyrabia najlepiej, kto odstaje.
+
+    Jedyna definicja oceny — korzysta z niej i zakladka „Przeglad ogolny",
+    i karta oceny w widoku per pracownik (`norma_pracownika()`), zeby ta sama
+    osoba w tym samym okresie nigdy nie dostala dwoch roznych wynikow.
 
     Odniesieniem jest **srednia zespolu** z wybranego okresu, liczona jako
     wszystkie sztuki / wszystkie godziny skanowania (decyzja z 2026-09-28,
@@ -2039,11 +2051,6 @@ def api_stats_overview():
     wyniku, jak zrobilaby to zwykla srednia z wynikow osob (2 570 zamiast 292).
     Prog paczek nadal decyduje tylko o tym, kto jest w rankingu i dostaje ocene.
     """
-    date_from = parse_date(request.args.get('date_from'), 'date_from') \
-        if request.args.get('date_from') else None
-    date_to = parse_date(request.args.get('date_to'), 'date_to') \
-        if request.args.get('date_to') else None
-
     prog_dobry = get_setting_int('norm_good_pct', 110)
     prog_slaby = get_setting_int('norm_weak_pct', 90)
     min_paczek = get_setting_int('min_packages_rank', 3)
@@ -2123,7 +2130,7 @@ def api_stats_overview():
     ranking.sort(key=lambda r: r['szt_h'], reverse=True)
     za_malo.sort(key=lambda r: r['display_name'])
 
-    return jsonify({
+    return {
         'date_from': date_from.isoformat() if date_from else None,
         'date_to': date_to.isoformat() if date_to else None,
         'srednia_szt_h': round(srednia, 1) if srednia else None,
@@ -2143,7 +2150,59 @@ def api_stats_overview():
             'sztuk': sum(r['sztuk'] for r in wiersze),
             'godzin': round(sum(r['godzin'] for r in wiersze), 2),
         },
-    }), 200
+    }
+
+
+def norma_pracownika(user_id, date_from, date_to):
+    """Ocena jednej osoby na tle zespolu — wiersz wyjety z `przeglad_zespolu()`.
+
+    Nie liczymy niczego drugi raz: srednia, progi i cel sa te same co w
+    przegladzie, wiec % sredniej i ocena zgadzaja sie z rankingiem co do joty.
+    """
+    p = przeglad_zespolu(date_from, date_to)
+    wynik = {
+        'srednia_szt_h': p['srednia_szt_h'],
+        'cel_szt_h': p['cel_szt_h'],
+        'progi': p['progi'],
+        'w_rankingu': len(p['pracownicy']),
+        'miejsce': None,
+        'powod_braku_oceny': None,
+        'wiersz': None,
+    }
+    for i, r in enumerate(p['pracownicy']):
+        if r['user_id'] == user_id:
+            wynik['miejsce'] = i + 1
+            wynik['wiersz'] = r
+            return wynik
+    for r in p['za_malo_danych']:
+        if r['user_id'] == user_id:
+            wynik['wiersz'] = r
+            wynik['powod_braku_oceny'] = ('brak_czasu' if r['szt_h'] is None
+                                          else 'za_malo_paczek')
+            return wynik
+    wynik['powod_braku_oceny'] = 'brak_paczek'
+    return wynik
+
+
+def wykres_wydajnosci(okresy_per_klucz):
+    """`{klucz: {'cnt', 'pcs', 'okresy'}}` → lista punktow wykresu, rosnaco.
+
+    Godziny to suma ZLACZONYCH okresow skanowania w danym dniu/miesiacu —
+    ta sama miara co w przegladzie. Bez zmierzonego czasu `szt_h` = None, nie 0:
+    zero wygladaloby na fatalny dzien, a to po prostu brak skanu „Start".
+    """
+    punkty = []
+    for klucz in sorted(okresy_per_klucz):
+        a = okresy_per_klucz[klucz]
+        godziny = suma_zlaczonych_okresow(a['okresy']) / 3600.0
+        punkty.append({
+            'okres': klucz,
+            'paczek': a['cnt'],
+            'sztuk': a['pcs'],
+            'godzin': round(godziny, 2),
+            'szt_h': round(a['pcs'] / godziny, 1) if godziny > 0 else None,
+        })
+    return punkty
 
 
 def podsumuj_paczki_pracownika(per_day):
@@ -2229,6 +2288,7 @@ def api_stats_user(user_id):
     # Konwersja jest w Pythonie: `local_day_bounds()` jest jedyna definicja doby
     # w calej aplikacji, a zakres jest maly (paczki jednej osoby w okresie).
     pq = db.session.query(
+        ImportedCarton.scan_start_at,
         ImportedCarton.scan_end_at,
         ImportedCarton.stueckzahl,
     ).filter(
@@ -2241,11 +2301,15 @@ def api_stats_user(user_id):
         pq = pq.filter(ImportedCarton.scan_end_at < local_day_bounds(date_to)[1])
 
     per_day = {}
-    for scan_end_at, stueckzahl in pq.all():
+    per_month = {}
+    for scan_start_at, scan_end_at, stueckzahl in pq.all():
         d = utc_to_local(scan_end_at).date().isoformat()
-        agg = per_day.setdefault(d, {'cnt': 0, 'pcs': 0})
-        agg['cnt'] += 1
-        agg['pcs'] += stueckzahl or 0
+        for klucz, slownik in ((d, per_day), (d[:7], per_month)):
+            agg = slownik.setdefault(klucz, {'cnt': 0, 'pcs': 0, 'okresy': []})
+            agg['cnt'] += 1
+            agg['pcs'] += stueckzahl or 0
+            if scan_start_at:          # bez startu nie da sie zmierzyc czasu
+                agg['okresy'].append((scan_start_at, scan_end_at))
 
     paczki_podsumowanie = podsumuj_paczki_pracownika(per_day)
 
@@ -2296,6 +2360,11 @@ def api_stats_user(user_id):
         'daily': daily_stats,
         'monthly': monthly_stats,
         'paczki_podsumowanie': paczki_podsumowanie,
+        # Ocena i wykresy ida z paczek, wiec — jak podsumowanie — nie zaleza
+        # od filtra czynnosci.
+        'norma': norma_pracownika(user_id, date_from, date_to),
+        'wykres_dzienny': wykres_wydajnosci(per_day),
+        'wykres_miesieczny': wykres_wydajnosci(per_month),
     }), 200
 
 
@@ -3035,7 +3104,8 @@ def api_dashboard():
      .order_by(func.count(ImportedCarton.id).desc()).all()
 
     workers_today = [
-        {'name': r.display_name, 'packages': r.packages, 'pieces': int(r.pieces or 0)}
+        {'user_id': r.user_id, 'name': r.display_name,
+         'packages': r.packages, 'pieces': int(r.pieces or 0)}
         for r in worker_rows
     ]
 
@@ -3165,6 +3235,7 @@ def api_dashboard_shifts():
             unattributed['packages'] += pkgs
             unattributed['pieces'] += pcs
             unattributed['workers'].append({
+                'user_id': r.user_id,
                 'name': user_map.get(r.user_id, '?'),
                 'packages': pkgs, 'pieces': pcs,
                 'reason': 'brak obecności' if not attended else 'obie zmiany',

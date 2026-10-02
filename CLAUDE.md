@@ -13,7 +13,7 @@ docker compose down
 # Tests — need a Postgres; the compose file below provides one (port 55432, tmpfs)
 docker compose -f docker-compose.test.yml up -d
 pip install -r requirements-dev.txt
-pytest                               # 402 tests
+pytest                               # 417 tests
 docker compose -f docker-compose.test.yml down
 LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://u:p@host:5432/db pytest   # another DB
 
@@ -113,6 +113,9 @@ Quantities entered at package end are the **source of truth for `category_data`*
 - **The target's verdict is two-state (`>= 100 %` → `spelnia`), not the mean's three bands.** `norm_good_pct` / `norm_weak_pct` describe deviation from the team mean; reusing them here would render "exactly on target" as a mere ⚪, which a leader who typed that number as the required level reads as a bug.
 - **`PUT /api/stats/target` is `@leader_required`, unlike the admin-only `PUT /api/settings`.** Deliberate: the leader runs the shift and sets the bar, and the target is display-only — it colours a column and gates nothing, touching neither billing nor any lock. The endpoint accepts **that one key and nothing else**, so it is not a side door into the rest of `AppSetting` (`test_endpoint_celu_nie_rusza_innych_ustawien` pins this).
 - **Per-worker tab („Per pracownik")** — `GET /api/stats/user/<id>` returns `paczki_podsumowanie` (`podsumuj_paczki_pracownika()`): totals plus **average per day and per month, in packages and pieces**, rendered as the „📦 Paczki w okresie" card. The denominators are the days / months in which the person **finished at least one carton**, not calendar days of the range — a day off must not lower "how much she does when she's here". Computed regardless of `activity_id` (the table hides package rows under an activity filter; the averages must not vanish with them). No cartons → averages `null`, not 0.
+- **Per-worker rating (`norma`)** is **the worker's row lifted from `przeglad_zespolu()`** — the function behind `/api/stats/overview` — plus `miejsce` / `w_rankingu` / `powod_braku_oceny` (`za_malo_paczek` · `brak_czasu` · `brak_paczek`). Never compute it a second way: the same person in the same range must read the same % in both tabs (`test_ocena_osoby_zgadza_sie_z_przegladem`). Clicking a name in the overview copies its date range into the per-worker filters for the same reason.
+- **Charts (`wykres_dzienny` / `wykres_miesieczny`) come from finished packages**, bucketed by local day/month of `scan_end_at`: bars = pieces, line = szt./h (union of scan intervals per bucket, `null` without measured time), dashed = team mean and target. The old daily chart plotted `DailyStat` only and was blank for nearly everyone.
+- **Dashboard → Normy:** names link to `/stats?user=<id>` (`user_id` in `workers_today` and `unattributed.workers`); `stats.html` reads `?user=` (+ optional `date_from`/`date_to`) on load and takes the name from the API, since the left list holds active accounts only.
 - Each row links to **`/paczki?osoba=<id>&date_typ=koniec&date_from=&date_to=`** — the cartons behind the number, in the same range. It reuses the existing `osoba` filter rather than inventing a fourth "kto": the ownership lock means whoever starts a carton finishes it, so `scan_end_by` and "was involved with" coincide except after a leader-initiated unlock. `date_typ=koniec` already lifts the unfinished-only default, so no `pokaz_zrobione` is needed.
 
 **AI suggestions** (`/api/assignment/suggestions`): greedy algorithm using 30-day average `DailyStat.quantity` per user per activity.

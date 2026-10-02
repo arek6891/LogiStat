@@ -19,7 +19,21 @@
 - Kolumny dochodza przez `migrate_columns()`. Tabela nazywa sie `"user"`, slowo
   zastrzezone w Postgresie, wiec ALTER musi byc w cudzyslowie.
 
+- **Dashboard → Normy:** nazwisko pracownika (Podsumowanie, Per pracownik, nieprzypisani
+  w Per zmiana) to link do `/stats?user=<id>` — otwiera Normy tej osoby (domyslnie 30 dni).
+- **Normy per pracownik — karta „🎯 Norma":** szt./h, srednia zespolu, % sredniej, ocena,
+  miejsce w rankingu, cel; albo powod braku oceny. To ten sam wiersz co w przegladzie
+  (`norma` w `GET /api/stats/user/<id>`). Klik osoby w przegladzie przenosi jego zakres dat.
+- **Wykres miesieczny** obok dziennego.
+
 ### Poprawione
+- **Wykres dzienny byl pusty niemal u kazdego:** rysowal tylko „Wpis ilosci" (`DailyStat`,
+  na `.31` 3 wiersze), a paczki pomijal. Oba wykresy ida teraz z zakonczonych paczek:
+  slupki = sztuki, linia = szt./h, przerywane = srednia zespolu i cel.
+- Lista pracownikow w Normach wolala `onclick` z nazwa wklejona w JS — imie z apostrofem
+  psulo klik. Teraz `data-*` + delegacja.
+- Domyslny zakres w zakladce per pracownik liczony w czasie lokalnym (byl UTC) i tak samo
+  jak w przegladzie (30 dni z dzisiaj wlacznie).
 - Dwa testy `/general-stats` w `test_scan_categories.py` padaly od 1 pazdziernika:
   strona domyslnie pokazuje biezacy miesiac, a dane testowe sa z wrzesnia. Teraz
   podaja zakres jawnie.

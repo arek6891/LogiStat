@@ -172,7 +172,7 @@
                 box.innerHTML = `<div class="card" style="border-left:3px solid var(--warning);">
                     <div style="font-weight:600;margin-bottom:.35rem;">⚠️ Paczki nieprzypisane do zmiany: ${u.packages} (${u.pieces.toLocaleString('pl')} szt.)</div>
                     <div style="font-size:.85rem;color:var(--text-muted);margin-bottom:.5rem;">Pracownicy bez zeskanowanej obecności lub obecni na obu zmianach:</div>
-                    <div style="font-size:.85rem;line-height:1.6;">${u.workers.map(w => `${escapeHtml(w.name)} — ${w.packages} pacz. / ${w.pieces.toLocaleString('pl')} szt. <span style="color:var(--text-muted);">(${w.reason})</span>`).join('<br>')}</div>
+                    <div style="font-size:.85rem;line-height:1.6;">${u.workers.map(w => `<a href="/stats?user=${w.user_id}" title="Otwórz normy pracownika">${escapeHtml(w.name)}</a> — ${w.packages} pacz. / ${w.pieces.toLocaleString('pl')} szt. <span style="color:var(--text-muted);">(${w.reason})</span>`).join('<br>')}</div>
                 </div>`;
             } else {
                 box.innerHTML = '';
@@ -227,7 +227,7 @@
                                         display:flex;align-items:center;justify-content:center;
                                         font-size:.75rem;font-weight:700;color:#fff;flex-shrink:0;">${w.name[0]}</div>
                                     <div>
-                                        <div style="font-weight:600;font-size:.9rem;">${escapeHtml(w.name)}</div>
+                                        <div style="font-weight:600;font-size:.9rem;"><a href="/stats?user=${w.user_id}" title="Otwórz normy pracownika">${escapeHtml(w.name)}</a></div>
                                         <div style="height:4px;background:var(--bg-hover);border-radius:2px;width:100px;margin-top:4px;overflow:hidden;">
                                             <div style="height:100%;border-radius:2px;background:var(--accent);width:${Math.round(w.packages/maxPkg*100)}%;"></div>
                                         </div>
@@ -290,7 +290,7 @@
                                 display:flex;align-items:center;justify-content:center;
                                 font-weight:700;font-size:1rem;color:#fff;">${w.name[0]}</div>
                             <div style="flex:1;min-width:0;">
-                                <div style="font-weight:700;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(w.name)}</div>
+                                <div style="font-weight:700;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><a href="/stats?user=${w.id}" title="Otwórz normy pracownika">${escapeHtml(w.name)}</a></div>
                                 <div style="font-size:.75rem;color:var(--text-muted);">na zmianie dziś</div>
                             </div>
                         </div>
