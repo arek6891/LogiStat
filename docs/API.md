@@ -416,8 +416,9 @@ Ekran: `/admin/user-options` (Panel Admina → Listy użytkowników).
 
 **Filtry na `/paczki`** (query string): `date_from`, `date_to`, `date_typ`, `barcode`,
 `land`, `osoba` (id — kto przejął / rozpoczął / zakończył), `double_rate=1`,
-`pokaz_zrobione=1`, `bledy=1`, `page`. **Domyślnie widać tylko paczki bez
-`scan_end_at`.** `bledy=1` ignoruje ten domyślny filtr (błąd ilości występuje na
+`status`, `bledy=1`, `page`. **`status`**: `niezrobione` (domyślne — bez `scan_end_at`) ·
+`zrobione` (tylko z `scan_end_at`) · `wszystkie`. Stary `pokaz_zrobione=1` działa jako
+alias `status=wszystkie`. `bledy=1` ignoruje status (błąd ilości występuje na
 paczce już zakończonej) i liczy się w Pythonie — ilości ze skanu to JSON w kolumnie
 tekstowej, SQL ich nie przefiltruje.
 
@@ -428,13 +429,13 @@ tekstowej, SQL ich nie przefiltruje.
 | `ziel` (domyślne) | `ziel_datum` | `db.Date` — porównanie wprost |
 | `import` | `imported_at` | naive UTC → granice doby przez `local_day_bounds()` |
 | `start` | `scan_start_at` | j.w. |
-| `koniec` | `scan_end_at` | j.w.; **zdejmuje domyślny filtr „tylko niezrobione"**, bo inaczej wynik zawsze byłby pusty |
+| `koniec` | `scan_end_at` | j.w.; przy `status=niezrobione` serwer przestawia na **`zrobione`**, bo inaczej wynik zawsze byłby pusty |
 
 Górna granica jest półotwarta (`<` północ następnej doby lokalnej) — `<=` wciągałoby
 paczki z pierwszych godzin kolejnego dnia. Nieznana wartość `date_typ` → `ziel`.
 
-**`pokaz_zrobione=1` wymaga zakresu dat** (`date_from` lub `date_to`). Bez niego widok
-obejmowałby całą historię, więc parametr jest ignorowany, a strona pokazuje komunikat
+**`status=zrobione` i `status=wszystkie` wymagają zakresu dat** (`date_from` lub `date_to`). Bez niego widok
+obejmowałby całą historię, więc status wraca do `niezrobione`, a strona pokazuje komunikat
 i widok domyślny. W formularzu pilnuje tego JS; warunek po stronie serwera łapie ręcznie
 sklejony URL i zakładkę.
 

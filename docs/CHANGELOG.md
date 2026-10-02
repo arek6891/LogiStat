@@ -27,6 +27,11 @@
 - **Wykres miesieczny** obok dziennego.
 
 ### Poprawione
+- **`/paczki`: znacznik „pokaz zrobione" zastapiony lista „Status"** — Niezrobione
+  (domyslnie) / **Zrobione** / Wszystkie (`status=`). Znacznik DOKLADAL zrobione do
+  niezrobionych, wiec z data importu pokazywal np. 1030 paczek zamiast 49 zrobionych
+  (na `.31` zrobionych jest 1-5% dnia importu) — wygladalo, jakby filtr daty nie dzialal.
+  Filtr daty dzialal. Stary `pokaz_zrobione=1` = `status=wszystkie`.
 - **Wykres dzienny byl pusty niemal u kazdego:** rysowal tylko „Wpis ilosci" (`DailyStat`,
   na `.31` 3 wiersze), a paczki pomijal. Oba wykresy ida teraz z zakonczonych paczek:
   slupki = sztuki, linia = szt./h, przerywane = srednia zespolu i cel.

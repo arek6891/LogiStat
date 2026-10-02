@@ -411,7 +411,7 @@
     // Skok na /paczki z filtrem po tej osobie i po DACIE KONCA, w tym samym
     // zakresie dat co przeglad — czyli dokladnie te paczki, ktore zlozyly sie na
     // jej wynik. `date_typ=koniec` sam zdejmuje domyslne „tylko niezrobione",
-    // wiec nie trzeba dokladac `pokaz_zrobione`.
+    // wiec nie trzeba dokladac `status`.
     function linkDoPaczek(r) {
         const p = new URLSearchParams({ osoba: r.user_id, date_typ: 'koniec' });
         const od = document.getElementById('przegladOd').value;

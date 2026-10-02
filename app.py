@@ -1137,6 +1137,13 @@ PACZKI_POLA_DAT = {
 }
 
 
+PACZKI_STATUSY = {
+    'niezrobione': 'Niezrobione',
+    'zrobione':    'Zrobione',
+    'wszystkie':   'Wszystkie',
+}
+
+
 class StroniceLista:
     """Minimalny odpowiednik `Pagination` Flask-SQLAlchemy dla listy w pamieci.
 
@@ -1199,7 +1206,13 @@ def paczki_view():
     land = request.args.get('land', '').strip()
     osoba_id = request.args.get('osoba', type=int)
     tylko_double = request.args.get('double_rate') == '1'
-    pokaz_zrobione = request.args.get('pokaz_zrobione') == '1'
+    # Status: niezrobione (domyslnie) / zrobione (tylko zakonczone) / wszystkie.
+    # Stary `pokaz_zrobione=1` DOKLADAL zrobione do niezrobionych, co przy
+    # 1-5% zrobionych w dniu importu wygladalo jak „filtr nie dziala" —
+    # zostaje jako alias „wszystkie" dla zapisanych zakladek.
+    status = request.args.get('status', '')
+    if status not in PACZKI_STATUSY:
+        status = 'wszystkie' if request.args.get('pokaz_zrobione') == '1' else 'niezrobione'
     tylko_bledy = request.args.get('bledy') == '1'
     page = request.args.get('page', 1, type=int)
 
@@ -1253,19 +1266,25 @@ def paczki_view():
     # lapie recznie sklejony URL i zakladke — zamiast bledu pokazujemy widok
     # domyslny z komunikatem (to strona Jinja, nie /api/, wiec abort() dalby
     # surowa strone bledu).
-    brak_daty_dla_zrobionych = pokaz_zrobione and not (date_from or date_to)
+    brak_daty_dla_zrobionych = status != 'niezrobione' and not (date_from or date_to)
     if brak_daty_dla_zrobionych:
-        pokaz_zrobione = False
+        status = 'niezrobione'
 
     # Filtr po dacie konca skanu sam z siebie wybiera wylacznie paczki
     # zakonczone, wiec domyslne „tylko niezrobione" dawaloby zawsze pusta liste.
     # Zdejmujemy je z tego samego powodu, dla ktorego ignoruje je filtr bledow.
-    filtr_po_koncu = date_typ == 'koniec' and (date_from or date_to)
+    filtr_po_koncu = bool(date_typ == 'koniec' and (date_from or date_to))
+    if filtr_po_koncu and status == 'niezrobione':
+        status = 'zrobione'
 
-    # Domyslnie widac tylko paczki niezrobione — „zrobiona" to ta z zarejestrowanym
-    # koncem skanu (ta sama definicja, co `finished` na /scan-package).
-    if not pokaz_zrobione and not tylko_bledy and not filtr_po_koncu:
-        query = query.filter(ImportedCarton.scan_end_at.is_(None))
+    # „Zrobiona" to paczka z zarejestrowanym koncem skanu (ta sama definicja,
+    # co `finished` na /scan-package). Filtr bledow ignoruje status: blad ilosci
+    # siedzi na zakonczonej paczce, a „bez konca" na niezakonczonej.
+    if not tylko_bledy:
+        if status == 'niezrobione':
+            query = query.filter(ImportedCarton.scan_end_at.is_(None))
+        elif status == 'zrobione':
+            query = query.filter(ImportedCarton.scan_end_at.isnot(None))
 
     query = query.order_by(ImportedCarton.imported_at.desc())
 
@@ -1290,7 +1309,8 @@ def paczki_view():
                            land=land,
                            osoba_id=osoba_id,
                            tylko_double=tylko_double,
-                           pokaz_zrobione=pokaz_zrobione,
+                           status=status,
+                           statusy=PACZKI_STATUSY,
                            brak_daty_dla_zrobionych=brak_daty_dla_zrobionych,
                            filtr_po_koncu=filtr_po_koncu,
                            tylko_bledy=tylko_bledy,

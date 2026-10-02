@@ -6,11 +6,12 @@
         <h1>📦 Paczki (dane)</h1>
         <p style="color:var(--text-muted);">Surowe dane paczek: zaimportowane z plików CSV/Excel oraz dodane ręcznie.<br>
             <span style="font-size:.85rem;">
-            {% if brak_daty_dla_zrobionych %}<strong style="color:var(--danger);">⚠️ „Pokaż zrobione" wymaga zakresu dat</strong> — bez niego widok obejmowałby całą historię. Ustaw datę „od" lub „do" i filtruj ponownie. Poniżej widok domyślny.
+            {% if brak_daty_dla_zrobionych %}<strong style="color:var(--danger);">⚠️ Status „Zrobione" / „Wszystkie" wymaga zakresu dat</strong> — bez niego widok obejmowałby całą historię. Ustaw datę „od" lub „do" i filtruj ponownie. Poniżej widok domyślny.
             {% elif tylko_bledy %}Filtr błędów: paczki rozpoczęte bez końca lub z ilością przekraczającą Stückzahl o ponad 10%.
             {% elif filtr_po_koncu %}Filtr po <strong>dacie końca paczki</strong> — z definicji obejmuje wyłącznie paczki zakończone.
-            {% elif pokaz_zrobione %}Widok: wszystkie paczki, także zakończone, w zadanym zakresie dat.
-            {% else %}Widok domyślny: <strong>tylko paczki niezrobione</strong> (bez skanu „Koniec paczki"). Zaznacz „pokaż zrobione" wraz z zakresem dat, aby zobaczyć resztę.
+            {% elif status == 'zrobione' %}Widok: <strong>tylko paczki zakończone</strong> w zadanym zakresie dat.
+            {% elif status == 'wszystkie' %}Widok: wszystkie paczki — niezrobione i zakończone — w zadanym zakresie dat.
+            {% else %}Widok domyślny: <strong>tylko paczki niezrobione</strong> (bez skanu „Koniec paczki"). Status „Zrobione" lub „Wszystkie" wymaga zakresu dat.
             {% endif %}
             </span>
         </p>
@@ -39,13 +40,13 @@
                        style="width:16px;height:16px;cursor:pointer;">
                 <span style="color:#fb923c;">tylko double rate</span>
             </label>
-            <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;white-space:nowrap;font-size:.85rem;"
-                   title="Domyślnie widać tylko paczki bez zarejestrowanego końca skanu">
-                {# Filtr po dacie konca sam pokazuje zakonczone — checkbox musi sie z tym zgadzac #}
-                <input type="checkbox" name="pokaz_zrobione" id="fpPokazZrobione" value="1" {% if pokaz_zrobione or filtr_po_koncu %}checked{% endif %}
-                       style="width:16px;height:16px;cursor:pointer;">
-                <span>pokaż zrobione <span style="color:var(--text-muted);">(wymaga daty)</span></span>
-            </label>
+            {# Filtr po dacie konca sam pokazuje zakonczone — serwer ustawia wtedy „Zrobione" #}
+            <select name="status" id="fpStatus" class="form-control" style="width:140px;"
+                    title="Niezrobione = bez skanu „Koniec paczki”. Zrobione i Wszystkie wymagają zakresu dat.">
+                {% for klucz, etykieta in statusy.items() %}
+                <option value="{{ klucz }}" {% if status == klucz %}selected{% endif %}>{{ etykieta }}</option>
+                {% endfor %}
+            </select>
             <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;white-space:nowrap;font-size:.85rem;"
                    title="Paczka rozpoczęta i nigdy nie zakończona, albo ilość w kategorii przekracza Stückzahl o ponad 10%">
                 <input type="checkbox" name="bledy" value="1" {% if tylko_bledy %}checked{% endif %}
@@ -258,11 +259,11 @@
 {% if pagination and pagination.pages > 1 %}
 <div style="margin-top: 1.5rem; display: flex; justify-content: center; gap: .5rem;">
     {% if pagination.has_prev %}
-    <a href="{{ url_for('paczki_view', page=pagination.prev_num, date_from=date_from, date_to=date_to, date_typ=date_typ, barcode=barcode, land=land, osoba=osoba_id, double_rate='1' if tylko_double else None, pokaz_zrobione='1' if pokaz_zrobione else None, bledy='1' if tylko_bledy else None) }}" class="btn btn-secondary">« Poprzednia</a>
+    <a href="{{ url_for('paczki_view', page=pagination.prev_num, date_from=date_from, date_to=date_to, date_typ=date_typ, barcode=barcode, land=land, osoba=osoba_id, double_rate='1' if tylko_double else None, status=status, bledy='1' if tylko_bledy else None) }}" class="btn btn-secondary">« Poprzednia</a>
     {% endif %}
     <span style="display:flex; align-items:center; padding: 0 1rem; color: var(--text-muted);">Strona {{ pagination.page }} z {{ pagination.pages }}</span>
     {% if pagination.has_next %}
-    <a href="{{ url_for('paczki_view', page=pagination.next_num, date_from=date_from, date_to=date_to, date_typ=date_typ, barcode=barcode, land=land, osoba=osoba_id, double_rate='1' if tylko_double else None, pokaz_zrobione='1' if pokaz_zrobione else None, bledy='1' if tylko_bledy else None) }}" class="btn btn-secondary">Następna »</a>
+    <a href="{{ url_for('paczki_view', page=pagination.next_num, date_from=date_from, date_to=date_to, date_typ=date_typ, barcode=barcode, land=land, osoba=osoba_id, double_rate='1' if tylko_double else None, status=status, bledy='1' if tylko_bledy else None) }}" class="btn btn-secondary">Następna »</a>
     {% endif %}
 </div>
 {% endif %}
@@ -289,19 +290,19 @@
 
 {% block scripts %}
 <script>
-// ── Filtry: „pokaż zrobione" wymaga zakresu dat ───────────────────────────
+// ── Filtry: status „Zrobione" / „Wszystkie" wymaga zakresu dat ────────────
 // Bez daty ten widok obejmowałby całą historię paczek. Serwer i tak odrzuci
 // taki zestaw (ręcznie sklejony URL), ale tu zatrzymujemy go zanim strona
 // się przeładuje i pokazujemy, czego brakuje.
 (function () {
     const form = document.getElementById('filtryPaczek');
     if (!form) return;
-    const zrobione = document.getElementById('fpPokazZrobione');
+    const status = document.getElementById('fpStatus');
     const od = document.getElementById('fpDateFrom');
     const doo = document.getElementById('fpDateTo');
 
     function brakujeDaty() {
-        return zrobione.checked && !od.value && !doo.value;
+        return status.value !== 'niezrobione' && !od.value && !doo.value;
     }
 
     function odswiezPodpowiedz() {
@@ -314,12 +315,12 @@
             e.preventDefault();
             odswiezPodpowiedz();
             od.focus();
-            alert('Zaznaczono „pokaż zrobione" — ustaw datę „od" lub „do".\n\n'
+            alert('Status „Zrobione" / „Wszystkie" — ustaw datę „od" lub „do".\n\n'
                 + 'Bez zakresu dat widok objąłby całą historię paczek.');
         }
     });
 
-    [zrobione, od, doo].forEach(p => p.addEventListener('change', odswiezPodpowiedz));
+    [status, od, doo].forEach(p => p.addEventListener('change', odswiezPodpowiedz));
     odswiezPodpowiedz();
 })();
 
