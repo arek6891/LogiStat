@@ -68,6 +68,8 @@
                     <tr>
                         <th style="width:40px;">#</th>
                         <th>Pracownik</th>
+                        <th>Rodzaj pracownika</th>
+                        <th>Nazwa zmiany</th>
                         <th style="text-align:right;">Paczek</th>
                         <th style="text-align:right;">Sztuk</th>
                         <th style="text-align:right;">Godzin</th>
@@ -102,7 +104,7 @@
         <div class="table-container">
             <table>
                 <thead>
-                    <tr><th>Pracownik</th><th style="text-align:right;">Paczek</th><th style="text-align:right;">Sztuk</th><th style="text-align:right;">Godzin</th><th style="width:60px;"></th></tr>
+                    <tr><th>Pracownik</th><th>Rodzaj pracownika</th><th>Nazwa zmiany</th><th style="text-align:right;">Paczek</th><th style="text-align:right;">Sztuk</th><th style="text-align:right;">Godzin</th><th style="width:60px;"></th></tr>
                 </thead>
                 <tbody id="zaMaloBody"></tbody>
             </table>
@@ -280,7 +282,7 @@
         if (doo) p.set('date_to', doo);
 
         const body = document.getElementById('przegladBody');
-        body.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-secondary);">Ładowanie…</td></tr>';
+        body.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--text-secondary);">Ładowanie…</td></tr>';
 
         let dane;
         try {
@@ -288,7 +290,7 @@
             dane = await r.json();
             if (!r.ok) throw new Error(dane.error || 'Błąd pobierania danych');
         } catch (err) {
-            body.innerHTML = `<tr><td colspan="11" style="text-align:center;color:var(--danger);">${escapeHtml(err.message)}</td></tr>`;
+            body.innerHTML = `<tr><td colspan="13" style="text-align:center;color:var(--danger);">${escapeHtml(err.message)}</td></tr>`;
             return;
         }
 
@@ -326,7 +328,7 @@
     function renderujRanking(d) {
         const body = document.getElementById('przegladBody');
         if (!d.pracownicy.length) {
-            body.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-secondary);padding:2rem;">'
+            body.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--text-secondary);padding:2rem;">'
                 + 'Nikt nie ma jeszcze dość zakończonych paczek w tym okresie (próg: '
                 + d.progi.min_paczek + ').</td></tr>';
             return;
@@ -346,6 +348,8 @@
             return `<tr style="${s.tlo ? 'background:' + s.tlo + ';' : ''}">
                 <td style="color:var(--text-secondary);">${i + 1}</td>
                 <td><a href="#" class="js-osoba" data-user-id="${r.user_id}" data-user-name="${escapeHtml(r.display_name)}">${escapeHtml(r.display_name)}</a>${plakietkaNieaktywna(r)}</td>
+                <td>${escapeHtml(r.worker_type || '—')}</td>
+                <td>${escapeHtml(r.shift_group || '—')}</td>
                 <td style="text-align:right;">${r.paczek}</td>
                 <td style="text-align:right;">${r.sztuk.toLocaleString('pl')}</td>
                 <td style="text-align:right;">${r.godzin.toLocaleString('pl')}</td>
@@ -368,6 +372,8 @@
         document.getElementById('zaMaloBody').innerHTML = d.za_malo_danych.map(r => `
             <tr>
                 <td><a href="#" class="js-osoba" data-user-id="${r.user_id}" data-user-name="${escapeHtml(r.display_name)}">${escapeHtml(r.display_name)}</a>${plakietkaNieaktywna(r)}</td>
+                <td>${escapeHtml(r.worker_type || '—')}</td>
+                <td>${escapeHtml(r.shift_group || '—')}</td>
                 <td style="text-align:right;">${r.paczek}</td>
                 <td style="text-align:right;">${r.sztuk.toLocaleString('pl')}</td>
                 <td style="text-align:right;">${r.godzin.toLocaleString('pl')}</td>

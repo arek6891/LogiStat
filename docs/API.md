@@ -152,13 +152,16 @@ Odniesieniem jest **średnia zespołu** z okresu = **wszystkie sztuki / wszystki
   "srednia_szt_h": 300.0,
   "progi": { "dobry": 110, "slaby": 90, "min_paczek": 3 },
   "pracownicy": [
-    { "user_id": 12, "display_name": "...", "paczek": 8, "sztuk": 731,
+    { "user_id": 12, "display_name": "...", "is_active_user": true,
+      "worker_type": "Logwin", "shift_group": "Zmiana A", "paczek": 8, "sztuk": 731,
       "godzin": 1.86, "szt_h": 392.3, "proc_sredniej": 131, "ocena": "dobra" }
   ],
   "za_malo_danych": [ { "…": "…", "szt_h": null, "ocena": null } ],
   "podsumowanie": { "osob": 11, "w_rankingu": 9, "paczek": 91, "sztuk": 6961, "godzin": 22.8 }
 }
 ```
+
+`worker_type` / `shift_group` — nazwy pozycji z kont (Rodzaj pracownika, Nazwa zmiany), `null` gdy nieprzypisane; w obu listach (`pracownicy`, `za_malo_danych`).
 
 `ocena`: `dobra` (≥ `norm_good_pct`) · `ok` · `slaba` (≤ `norm_weak_pct`). Oba progi są **domknięte**.
 

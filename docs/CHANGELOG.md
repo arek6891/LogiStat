@@ -13,6 +13,9 @@
   (`/admin/user-options`, tabela `UserOption`). Seed: Logwin / Agencja 1 / Agencja 2
   oraz Zmiana A / B / C. Pozycji przypisanej komukolwiek nie da sie usunac (409),
   mozna ja przemianowac.
+- **Normy → „Wydajnosc zespolu"** (i „Za malo danych"): kolumny **Rodzaj pracownika**
+  i **Nazwa zmiany** obok pracownika (`worker_type`, `shift_group` w
+  `GET /api/stats/overview`; dociagane joinem, bez zapytania na wiersz).
 - Kolumny dochodza przez `migrate_columns()`. Tabela nazywa sie `"user"`, slowo
   zastrzezone w Postgresie, wiec ALTER musi byc w cudzyslowie.
 

@@ -2050,7 +2050,9 @@ def api_stats_overview():
     cel = get_setting_int('target_szt_h', 0) or None      # 0 = nie ustawiono
 
     dane = wydajnosc_pracownikow(date_from, date_to)
-    uzytkownicy = {u.id: u for u in User.query.filter(
+    # joinedload: rodzaj pracownika i nazwa zmiany ida do kazdego wiersza.
+    uzytkownicy = {u.id: u for u in User.query.options(
+        joinedload(User.worker_type), joinedload(User.shift_group)).filter(
         User.id.in_(dane.keys())).all()} if dane else {}
 
     wiersze = []
@@ -2071,6 +2073,8 @@ def api_stats_overview():
             'user_id': uid,
             'display_name': user.display_name,
             'is_active_user': user.is_active_user,
+            'worker_type': user.worker_type.name if user.worker_type else None,
+            'shift_group': user.shift_group.name if user.shift_group else None,
             'paczek': w['paczek'],
             'sztuk': w['sztuk'],
             'godzin': round(godziny, 2),
