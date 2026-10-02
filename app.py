@@ -4345,12 +4345,16 @@ def seed_data():
         else:
             print("[SEED] Admin user created (login: admin / haslo z ADMIN_PASSWORD)")
 
-    for kind, nazwy in USER_OPTION_DEFAULTS.items():
-        if UserOption.query.filter_by(kind=kind).count() == 0:
-            for i, name in enumerate(nazwy):
-                db.session.add(UserOption(kind=kind, name=name, sort_order=i))
-            db.session.commit()
-            print(f"[SEED] Default user options ({kind}) created.")
+    # Tylko raz (znacznik w AppSetting): gdyby warunkiem byla pusta lista, admin,
+    # ktory skasowal wszystkie pozycje, dostalby domyslne z powrotem po restarcie.
+    if db.session.get(AppSetting, 'user_options_seeded') is None:
+        for kind, nazwy in USER_OPTION_DEFAULTS.items():
+            if UserOption.query.filter_by(kind=kind).count() == 0:
+                for i, name in enumerate(nazwy):
+                    db.session.add(UserOption(kind=kind, name=name, sort_order=i))
+        db.session.add(AppSetting(key='user_options_seeded', value='1'))
+        db.session.commit()
+        print("[SEED] Default user options created.")
 
     if CountryMapping.query.count() == 0:
         for country, innenauftrag in DEFAULT_COUNTRY_MAPPINGS:

@@ -63,6 +63,20 @@ Pracownicy systemu. Trzy role: `operator` (skanuje barcode, bez loginu), `leader
 | role | VARCHAR(20) | NOT NULL DEFAULT 'operator' | operator / leader / admin |
 | is_active_user | BOOLEAN | NOT NULL DEFAULT TRUE | Soft-delete |
 | created_at | TIMESTAMP | NOT NULL DEFAULT NOW() | |
+| worker_type_id | INTEGER | FK → user_option.id, NULL | Rodzaj pracownika (Logwin / agencja) |
+| shift_group_id | INTEGER | FK → user_option.id, NULL | Nazwa zmiany (Zmiana A/B/C) — nie mylić z `shift` (zmiana 1/2 dnia) |
+
+---
+
+### `user_option`
+Pozycje list rozwijanych na koncie użytkownika, zarządzane przez admina (`/admin/user-options`). Seed jednorazowy (znacznik `user_options_seeded` w `app_setting`): Logwin / Agencja 1 / Agencja 2 oraz Zmiana A / B / C. Pozycji przypisanej komukolwiek nie da się usunąć.
+
+| Kolumna | Typ | Ograniczenia | Opis |
+|---|---|---|---|
+| id | SERIAL | PK | |
+| kind | VARCHAR(30) | NOT NULL | `worker_type` / `shift_group` |
+| name | VARCHAR(100) | NOT NULL, UNIQUE (kind, name) | Wyświetlana nazwa |
+| sort_order | INTEGER | DEFAULT 0 | Kolejność w liście |
 
 ---
 

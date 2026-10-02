@@ -25,6 +25,15 @@ def test_seed_nie_dubluje_po_restarcie(flask_app):
     assert logistat.UserOption.query.filter_by(kind='worker_type').count() == 3
 
 
+def test_skasowane_domyslne_nie_wracaja_po_restarcie(admin_client):
+    for o in logistat.user_options_by_kind()['shift_group']:
+        assert admin_client.delete(f'/api/user-options/{o.id}').status_code == 200
+
+    logistat.seed_data()
+
+    assert logistat.UserOption.query.filter_by(kind='shift_group').count() == 0
+
+
 # ── Przypisanie na koncie ────────────────────────────────────────────────────
 
 def test_lider_zaklada_operatora_z_obiema_listami(leader_client):
