@@ -12,6 +12,10 @@ import app as logistat
 from conftest import make_user
 from test_import_aggregation import ZIEL, gstat, row
 
+# /general-stats bez zakresu pokazuje BIEZACY miesiac — dane testowe maja stala
+# date, wiec bez jawnego zakresu testy padaly z dniem 1 nastepnego miesiaca.
+STRONA_STATYSTYK = f'/general-stats?date_from={ZIEL.replace(day=1)}&date_to={ZIEL}'
+
 
 def make_carton(barcode='P1', stueckzahl=10, uebergabe_nr='UB-1'):
     c = logistat.ImportedCarton(barcode=barcode, land='PL', stueckzahl=stueckzahl,
@@ -303,7 +307,7 @@ def test_statystyki_blokuja_pole_linii_ze_skanu(admin_client, acting_admin):
     start(admin_client, 'W1')
     end(admin_client, 'W1', categories={'textile': 6})
 
-    html = admin_client.get('/general-stats').get_data(as_text=True)
+    html = admin_client.get(STRONA_STATYSTYK).get_data(as_text=True)
 
     assert 'cat-amount locked' in html           # pole ilosci tylko do odczytu
     assert '🔒 1/1' in html                      # licznik pokrycia skanami
@@ -312,7 +316,7 @@ def test_statystyki_blokuja_pole_linii_ze_skanu(admin_client, acting_admin):
 def test_statystyki_zostawiaja_edytowalna_linie_reczna(admin_client, acting_admin):
     _linia_z_recznymi_kategoriami()
 
-    html = admin_client.get('/general-stats').get_data(as_text=True)
+    html = admin_client.get(STRONA_STATYSTYK).get_data(as_text=True)
 
     assert 'cat-amount locked' not in html
     assert 'cat-amount inline-input' in html
