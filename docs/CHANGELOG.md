@@ -1,5 +1,48 @@
 # LogiStat — Changelog
 
+## 2026-10-02 — „Normy", rodzaj pracownika i nazwa zmiany na koncie
+
+### Zmienione
+- Ekran `/stats` nazywa sie teraz **„Normy"** (menu, tytul, naglowek, sekcja w ustawieniach).
+  Trasa i API bez zmian. „Statystyki ogolne" (rozliczenie) zostaja pod stara nazwa.
+
+### Dodane
+- **Dwie listy rozwijane na koncie uzytkownika:** „Rodzaj pracownika" i „Nazwa zmiany"
+  (`User.worker_type_id`, `User.shift_group_id`), widoczne jako znaczki na liscie
+  uzytkownikow. Pozycje ustala admin w **Panel Admina → Listy uzytkownikow**
+  (`/admin/user-options`, tabela `UserOption`). Seed: Logwin / Agencja 1 / Agencja 2
+  oraz Zmiana A / B / C. Pozycji przypisanej komukolwiek nie da sie usunac (409),
+  mozna ja przemianowac.
+- **Normy → „Wydajnosc zespolu"** (i „Za malo danych"): kolumny **Rodzaj pracownika**
+  i **Nazwa zmiany** obok pracownika (`worker_type`, `shift_group` w
+  `GET /api/stats/overview`; dociagane joinem, bez zapytania na wiersz).
+- Kolumny dochodza przez `migrate_columns()`. Tabela nazywa sie `"user"`, slowo
+  zastrzezone w Postgresie, wiec ALTER musi byc w cudzyslowie.
+
+- **Dashboard → Normy:** nazwisko pracownika (Podsumowanie, Per pracownik, nieprzypisani
+  w Per zmiana) to link do `/stats?user=<id>` — otwiera Normy tej osoby (domyslnie 30 dni).
+- **Normy per pracownik — karta „🎯 Norma":** szt./h, srednia zespolu, % sredniej, ocena,
+  miejsce w rankingu, cel; albo powod braku oceny. To ten sam wiersz co w przegladzie
+  (`norma` w `GET /api/stats/user/<id>`). Klik osoby w przegladzie przenosi jego zakres dat.
+- **Wykres miesieczny** obok dziennego.
+
+### Poprawione
+- **`/paczki`: znacznik „pokaz zrobione" zastapiony lista „Status"** — Niezrobione
+  (domyslnie) / **Zrobione** / Wszystkie (`status=`). Znacznik DOKLADAL zrobione do
+  niezrobionych, wiec z data importu pokazywal np. 1030 paczek zamiast 49 zrobionych
+  (na `.31` zrobionych jest 1-5% dnia importu) — wygladalo, jakby filtr daty nie dzialal.
+  Filtr daty dzialal. Stary `pokaz_zrobione=1` = `status=wszystkie`.
+- **Wykres dzienny byl pusty niemal u kazdego:** rysowal tylko „Wpis ilosci" (`DailyStat`,
+  na `.31` 3 wiersze), a paczki pomijal. Oba wykresy ida teraz z zakonczonych paczek:
+  slupki = sztuki, linia = szt./h, przerywane = srednia zespolu i cel.
+- Lista pracownikow w Normach wolala `onclick` z nazwa wklejona w JS — imie z apostrofem
+  psulo klik. Teraz `data-*` + delegacja.
+- Domyslny zakres w zakladce per pracownik liczony w czasie lokalnym (byl UTC) i tak samo
+  jak w przegladzie (30 dni z dzisiaj wlacznie).
+- Dwa testy `/general-stats` w `test_scan_categories.py` padaly od 1 pazdziernika:
+  strona domyslnie pokazuje biezacy miesiac, a dane testowe sa z wrzesnia. Teraz
+  podaja zakres jawnie.
+
 ## 2026-09-28 — Statystyki: srednia zamiast mediany, srednie pracownika
 
 ### Zmienione — Przeglad ogolny

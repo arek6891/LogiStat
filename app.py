@@ -215,6 +215,13 @@ class User(UserMixin, db.Model):
     role = db.Column(db.String(20), default='operator')  # operator | leader | admin
     is_active_user = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # Pola opisowe z list slownikowych, ktore admin definiuje sam (UserOption).
+    # `shift_group`, nie `shift` — `Shift` / `shift_id` to juz zmiana 1/2 danego
+    # dnia, a „Zmiana A/B/C" to stala brygada pracownika.
+    worker_type_id = db.Column(db.Integer, db.ForeignKey('user_option.id'), nullable=True)
+    shift_group_id = db.Column(db.Integer, db.ForeignKey('user_option.id'), nullable=True)
+    worker_type = db.relationship('UserOption', foreign_keys=[worker_type_id])
+    shift_group = db.relationship('UserOption', foreign_keys=[shift_group_id])
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -231,8 +238,63 @@ class User(UserMixin, db.Model):
             'display_name': self.display_name,
             'barcode_id': self.barcode_id,
             'role': self.role,
-            'is_active_user': self.is_active_user
+            'is_active_user': self.is_active_user,
+            'worker_type_id': self.worker_type_id,
+            'worker_type': self.worker_type.name if self.worker_type else None,
+            'shift_group_id': self.shift_group_id,
+            'shift_group': self.shift_group.name if self.shift_group else None,
         }
+
+
+# Rodzaje list slownikowych przypisywanych uzytkownikom. Klucz = `kind` w
+# UserOption, wartosc = kolumna na User, ktora na nia wskazuje.
+USER_OPTION_KINDS = {
+    'worker_type': 'worker_type_id',   # Rodzaj pracownika: Logwin / agencje
+    'shift_group': 'shift_group_id',   # Nazwa zmiany: Zmiana A / B / C
+}
+
+USER_OPTION_DEFAULTS = {
+    'worker_type': ['Logwin', 'Agencja 1', 'Agencja 2'],
+    'shift_group': ['Zmiana A', 'Zmiana B', 'Zmiana C'],
+}
+
+
+class UserOption(db.Model):
+    """Pozycja listy rozwijanej na koncie uzytkownika — tresc ustala admin."""
+    id = db.Column(db.Integer, primary_key=True)
+    kind = db.Column(db.String(30), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    sort_order = db.Column(db.Integer, default=0)
+
+    __table_args__ = (
+        db.UniqueConstraint('kind', 'name', name='uq_user_option_kind_name'),
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'kind': self.kind,
+            'name': self.name,
+            'sort_order': self.sort_order,
+        }
+
+
+def user_options_by_kind():
+    """{'worker_type': [UserOption…], 'shift_group': […]} — do szablonow."""
+    wynik = {k: [] for k in USER_OPTION_KINDS}
+    for o in UserOption.query.order_by(UserOption.sort_order, UserOption.name).all():
+        wynik.setdefault(o.kind, []).append(o)
+    return wynik
+
+
+def resolve_user_option(value, kind):
+    """Id opcji danego rodzaju albo None (puste = brak). Zly id / rodzaj → 400."""
+    if value in (None, ''):
+        return None
+    opt = db.session.get(UserOption, require_int(value, kind))
+    if opt is None or opt.kind != kind:
+        abort(400, 'Nieprawidłowa wartość listy.')
+    return opt.id
 
 
 class Activity(db.Model):
@@ -712,7 +774,7 @@ SETTING_DEFAULTS = {
     # Progi dla filtra bledow na ekranie „Czasy pracownikow"
     'max_work_minutes': '660',      # 11 h
     'min_break_minutes': '15',
-    # Progi przegladu ogolnego na ekranie „Statystyki". Odniesieniem jest
+    # Progi przegladu ogolnego na ekranie „Normy" (/stats). Odniesieniem jest
     # SREDNIA zespolu z wybranego okresu (wszystkie sztuki / wszystkie godziny),
     # nie zadana z gory norma — takiej w systemie nie ma i nikt jej nie ustawia.
     # Procenty ponizej to odchylenie od tej sredniej; `min_packages_rank` chroni
@@ -976,13 +1038,20 @@ def admin_activities():
 @leader_required
 def admin_users():
     users = User.query.order_by(User.display_name).all()
-    return render_template('admin_users.html', users=users)
+    return render_template('admin_users.html', users=users,
+                           options=user_options_by_kind())
 
 
 @app.route('/admin/panel')
 @admin_required
 def admin_panel():
     return render_template('admin_panel.html')
+
+
+@app.route('/admin/user-options')
+@admin_required
+def admin_user_options():
+    return render_template('admin_user_options.html', options=user_options_by_kind())
 
 
 @app.route('/admin/country-mapping')
@@ -1068,6 +1137,13 @@ PACZKI_POLA_DAT = {
 }
 
 
+PACZKI_STATUSY = {
+    'niezrobione': 'Niezrobione',
+    'zrobione':    'Zrobione',
+    'wszystkie':   'Wszystkie',
+}
+
+
 class StroniceLista:
     """Minimalny odpowiednik `Pagination` Flask-SQLAlchemy dla listy w pamieci.
 
@@ -1130,7 +1206,13 @@ def paczki_view():
     land = request.args.get('land', '').strip()
     osoba_id = request.args.get('osoba', type=int)
     tylko_double = request.args.get('double_rate') == '1'
-    pokaz_zrobione = request.args.get('pokaz_zrobione') == '1'
+    # Status: niezrobione (domyslnie) / zrobione (tylko zakonczone) / wszystkie.
+    # Stary `pokaz_zrobione=1` DOKLADAL zrobione do niezrobionych, co przy
+    # 1-5% zrobionych w dniu importu wygladalo jak „filtr nie dziala" —
+    # zostaje jako alias „wszystkie" dla zapisanych zakladek.
+    status = request.args.get('status', '')
+    if status not in PACZKI_STATUSY:
+        status = 'wszystkie' if request.args.get('pokaz_zrobione') == '1' else 'niezrobione'
     tylko_bledy = request.args.get('bledy') == '1'
     page = request.args.get('page', 1, type=int)
 
@@ -1184,19 +1266,25 @@ def paczki_view():
     # lapie recznie sklejony URL i zakladke — zamiast bledu pokazujemy widok
     # domyslny z komunikatem (to strona Jinja, nie /api/, wiec abort() dalby
     # surowa strone bledu).
-    brak_daty_dla_zrobionych = pokaz_zrobione and not (date_from or date_to)
+    brak_daty_dla_zrobionych = status != 'niezrobione' and not (date_from or date_to)
     if brak_daty_dla_zrobionych:
-        pokaz_zrobione = False
+        status = 'niezrobione'
 
     # Filtr po dacie konca skanu sam z siebie wybiera wylacznie paczki
     # zakonczone, wiec domyslne „tylko niezrobione" dawaloby zawsze pusta liste.
     # Zdejmujemy je z tego samego powodu, dla ktorego ignoruje je filtr bledow.
-    filtr_po_koncu = date_typ == 'koniec' and (date_from or date_to)
+    filtr_po_koncu = bool(date_typ == 'koniec' and (date_from or date_to))
+    if filtr_po_koncu and status == 'niezrobione':
+        status = 'zrobione'
 
-    # Domyslnie widac tylko paczki niezrobione — „zrobiona" to ta z zarejestrowanym
-    # koncem skanu (ta sama definicja, co `finished` na /scan-package).
-    if not pokaz_zrobione and not tylko_bledy and not filtr_po_koncu:
-        query = query.filter(ImportedCarton.scan_end_at.is_(None))
+    # „Zrobiona" to paczka z zarejestrowanym koncem skanu (ta sama definicja,
+    # co `finished` na /scan-package). Filtr bledow ignoruje status: blad ilosci
+    # siedzi na zakonczonej paczce, a „bez konca" na niezakonczonej.
+    if not tylko_bledy:
+        if status == 'niezrobione':
+            query = query.filter(ImportedCarton.scan_end_at.is_(None))
+        elif status == 'zrobione':
+            query = query.filter(ImportedCarton.scan_end_at.isnot(None))
 
     query = query.order_by(ImportedCarton.imported_at.desc())
 
@@ -1221,7 +1309,8 @@ def paczki_view():
                            land=land,
                            osoba_id=osoba_id,
                            tylko_double=tylko_double,
-                           pokaz_zrobione=pokaz_zrobione,
+                           status=status,
+                           statusy=PACZKI_STATUSY,
                            brak_daty_dla_zrobionych=brak_daty_dla_zrobionych,
                            filtr_po_koncu=filtr_po_koncu,
                            tylko_bledy=tylko_bledy,
@@ -1960,7 +2049,19 @@ def api_stats_target_update():
 @app.route('/api/stats/overview', methods=['GET'])
 @leader_required
 def api_stats_overview():
+    date_from = parse_date(request.args.get('date_from'), 'date_from') \
+        if request.args.get('date_from') else None
+    date_to = parse_date(request.args.get('date_to'), 'date_to') \
+        if request.args.get('date_to') else None
+    return jsonify(przeglad_zespolu(date_from, date_to)), 200
+
+
+def przeglad_zespolu(date_from, date_to):
     """Przeglad calego zespolu: kto wyrabia najlepiej, kto odstaje.
+
+    Jedyna definicja oceny — korzysta z niej i zakladka „Przeglad ogolny",
+    i karta oceny w widoku per pracownik (`norma_pracownika()`), zeby ta sama
+    osoba w tym samym okresie nigdy nie dostala dwoch roznych wynikow.
 
     Odniesieniem jest **srednia zespolu** z wybranego okresu, liczona jako
     wszystkie sztuki / wszystkie godziny skanowania (decyzja z 2026-09-28,
@@ -1970,18 +2071,15 @@ def api_stats_overview():
     wyniku, jak zrobilaby to zwykla srednia z wynikow osob (2 570 zamiast 292).
     Prog paczek nadal decyduje tylko o tym, kto jest w rankingu i dostaje ocene.
     """
-    date_from = parse_date(request.args.get('date_from'), 'date_from') \
-        if request.args.get('date_from') else None
-    date_to = parse_date(request.args.get('date_to'), 'date_to') \
-        if request.args.get('date_to') else None
-
     prog_dobry = get_setting_int('norm_good_pct', 110)
     prog_slaby = get_setting_int('norm_weak_pct', 90)
     min_paczek = get_setting_int('min_packages_rank', 3)
     cel = get_setting_int('target_szt_h', 0) or None      # 0 = nie ustawiono
 
     dane = wydajnosc_pracownikow(date_from, date_to)
-    uzytkownicy = {u.id: u for u in User.query.filter(
+    # joinedload: rodzaj pracownika i nazwa zmiany ida do kazdego wiersza.
+    uzytkownicy = {u.id: u for u in User.query.options(
+        joinedload(User.worker_type), joinedload(User.shift_group)).filter(
         User.id.in_(dane.keys())).all()} if dane else {}
 
     wiersze = []
@@ -2002,6 +2100,8 @@ def api_stats_overview():
             'user_id': uid,
             'display_name': user.display_name,
             'is_active_user': user.is_active_user,
+            'worker_type': user.worker_type.name if user.worker_type else None,
+            'shift_group': user.shift_group.name if user.shift_group else None,
             'paczek': w['paczek'],
             'sztuk': w['sztuk'],
             'godzin': round(godziny, 2),
@@ -2050,7 +2150,7 @@ def api_stats_overview():
     ranking.sort(key=lambda r: r['szt_h'], reverse=True)
     za_malo.sort(key=lambda r: r['display_name'])
 
-    return jsonify({
+    return {
         'date_from': date_from.isoformat() if date_from else None,
         'date_to': date_to.isoformat() if date_to else None,
         'srednia_szt_h': round(srednia, 1) if srednia else None,
@@ -2070,7 +2170,59 @@ def api_stats_overview():
             'sztuk': sum(r['sztuk'] for r in wiersze),
             'godzin': round(sum(r['godzin'] for r in wiersze), 2),
         },
-    }), 200
+    }
+
+
+def norma_pracownika(user_id, date_from, date_to):
+    """Ocena jednej osoby na tle zespolu — wiersz wyjety z `przeglad_zespolu()`.
+
+    Nie liczymy niczego drugi raz: srednia, progi i cel sa te same co w
+    przegladzie, wiec % sredniej i ocena zgadzaja sie z rankingiem co do joty.
+    """
+    p = przeglad_zespolu(date_from, date_to)
+    wynik = {
+        'srednia_szt_h': p['srednia_szt_h'],
+        'cel_szt_h': p['cel_szt_h'],
+        'progi': p['progi'],
+        'w_rankingu': len(p['pracownicy']),
+        'miejsce': None,
+        'powod_braku_oceny': None,
+        'wiersz': None,
+    }
+    for i, r in enumerate(p['pracownicy']):
+        if r['user_id'] == user_id:
+            wynik['miejsce'] = i + 1
+            wynik['wiersz'] = r
+            return wynik
+    for r in p['za_malo_danych']:
+        if r['user_id'] == user_id:
+            wynik['wiersz'] = r
+            wynik['powod_braku_oceny'] = ('brak_czasu' if r['szt_h'] is None
+                                          else 'za_malo_paczek')
+            return wynik
+    wynik['powod_braku_oceny'] = 'brak_paczek'
+    return wynik
+
+
+def wykres_wydajnosci(okresy_per_klucz):
+    """`{klucz: {'cnt', 'pcs', 'okresy'}}` → lista punktow wykresu, rosnaco.
+
+    Godziny to suma ZLACZONYCH okresow skanowania w danym dniu/miesiacu —
+    ta sama miara co w przegladzie. Bez zmierzonego czasu `szt_h` = None, nie 0:
+    zero wygladaloby na fatalny dzien, a to po prostu brak skanu „Start".
+    """
+    punkty = []
+    for klucz in sorted(okresy_per_klucz):
+        a = okresy_per_klucz[klucz]
+        godziny = suma_zlaczonych_okresow(a['okresy']) / 3600.0
+        punkty.append({
+            'okres': klucz,
+            'paczek': a['cnt'],
+            'sztuk': a['pcs'],
+            'godzin': round(godziny, 2),
+            'szt_h': round(a['pcs'] / godziny, 1) if godziny > 0 else None,
+        })
+    return punkty
 
 
 def podsumuj_paczki_pracownika(per_day):
@@ -2156,6 +2308,7 @@ def api_stats_user(user_id):
     # Konwersja jest w Pythonie: `local_day_bounds()` jest jedyna definicja doby
     # w calej aplikacji, a zakres jest maly (paczki jednej osoby w okresie).
     pq = db.session.query(
+        ImportedCarton.scan_start_at,
         ImportedCarton.scan_end_at,
         ImportedCarton.stueckzahl,
     ).filter(
@@ -2168,11 +2321,15 @@ def api_stats_user(user_id):
         pq = pq.filter(ImportedCarton.scan_end_at < local_day_bounds(date_to)[1])
 
     per_day = {}
-    for scan_end_at, stueckzahl in pq.all():
+    per_month = {}
+    for scan_start_at, scan_end_at, stueckzahl in pq.all():
         d = utc_to_local(scan_end_at).date().isoformat()
-        agg = per_day.setdefault(d, {'cnt': 0, 'pcs': 0})
-        agg['cnt'] += 1
-        agg['pcs'] += stueckzahl or 0
+        for klucz, slownik in ((d, per_day), (d[:7], per_month)):
+            agg = slownik.setdefault(klucz, {'cnt': 0, 'pcs': 0, 'okresy': []})
+            agg['cnt'] += 1
+            agg['pcs'] += stueckzahl or 0
+            if scan_start_at:          # bez startu nie da sie zmierzyc czasu
+                agg['okresy'].append((scan_start_at, scan_end_at))
 
     paczki_podsumowanie = podsumuj_paczki_pracownika(per_day)
 
@@ -2223,6 +2380,11 @@ def api_stats_user(user_id):
         'daily': daily_stats,
         'monthly': monthly_stats,
         'paczki_podsumowanie': paczki_podsumowanie,
+        # Ocena i wykresy ida z paczek, wiec — jak podsumowanie — nie zaleza
+        # od filtra czynnosci.
+        'norma': norma_pracownika(user_id, date_from, date_to),
+        'wykres_dzienny': wykres_wydajnosci(per_day),
+        'wykres_miesieczny': wykres_wydajnosci(per_month),
     }), 200
 
 
@@ -2337,6 +2499,8 @@ def api_user_create():
         barcode_id=barcode_id or None,
         role=role
     )
+    for kind, kolumna in USER_OPTION_KINDS.items():
+        setattr(user, kolumna, resolve_user_option(data.get(kolumna), kind))
     if role in ('leader', 'admin') and password:
         user.set_password(password)
 
@@ -2389,6 +2553,9 @@ def api_user_update(user_id):
             user.barcode_id = new_barcode
         else:
             user.barcode_id = None
+    for kind, kolumna in USER_OPTION_KINDS.items():
+        if kolumna in data:
+            setattr(user, kolumna, resolve_user_option(data[kolumna], kind))
     if 'role' in data:
         user.role = data['role']
     if 'is_active_user' in data:
@@ -2418,6 +2585,77 @@ def api_user_delete(user_id):
     user.is_active_user = False  # soft delete — load_user odbiera tez trwajaca sesje
     db.session.commit()
     return jsonify({'message': 'Dezaktywowano.'}), 200
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  API: ADMIN — LISTY NA KONCIE UZYTKOWNIKA (rodzaj pracownika, nazwa zmiany)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _user_option_kind(value):
+    if value not in USER_OPTION_KINDS:
+        abort(400, 'Nieznany rodzaj listy.')
+    return value
+
+
+def _user_option_name(data):
+    name = str(data.get('name') or '').strip()
+    if not name:
+        abort(400, 'Nazwa jest wymagana.')
+    if len(name) > 100:
+        abort(400, 'Nazwa może mieć najwyżej 100 znaków.')
+    return name
+
+
+@app.route('/api/user-options', methods=['GET'])
+@leader_required  # lider zaklada operatorow i wybiera z tych list
+def api_user_options():
+    return jsonify({k: [o.to_dict() for o in v]
+                    for k, v in user_options_by_kind().items()}), 200
+
+
+@app.route('/api/user-options', methods=['POST'])
+@admin_required
+def api_user_option_create():
+    data = json_body()
+    kind = _user_option_kind(data.get('kind'))
+    name = _user_option_name(data)
+    if UserOption.query.filter_by(kind=kind, name=name).first():
+        abort(409, 'Taka pozycja już istnieje.')
+    ostatnia = db.session.query(func.max(UserOption.sort_order))\
+        .filter(UserOption.kind == kind).scalar()
+    opt = UserOption(kind=kind, name=name, sort_order=(ostatnia or 0) + 1)
+    db.session.add(opt)
+    db.session.commit()
+    return jsonify(opt.to_dict()), 201
+
+
+@app.route('/api/user-options/<int:option_id>', methods=['PUT'])
+@admin_required
+def api_user_option_update(option_id):
+    opt = db.get_or_404(UserOption, option_id)
+    name = _user_option_name(json_body())
+    if UserOption.query.filter(UserOption.kind == opt.kind, UserOption.name == name,
+                               UserOption.id != opt.id).first():
+        abort(409, 'Taka pozycja już istnieje.')
+    # Zmiana nazwy przenosi sie na wszystkich przypisanych — trzymaja id, nie tekst.
+    opt.name = name
+    db.session.commit()
+    return jsonify(opt.to_dict()), 200
+
+
+@app.route('/api/user-options/<int:option_id>', methods=['DELETE'])
+@admin_required
+def api_user_option_delete(option_id):
+    opt = db.get_or_404(UserOption, option_id)
+    kolumna = getattr(User, USER_OPTION_KINDS[opt.kind])
+    przypisani = User.query.filter(kolumna == opt.id).count()
+    # Twarde usuniecie osierocilo by klucz u pracownikow; lepiej powiedziec wprost.
+    if przypisani:
+        abort(409, f'Pozycja jest przypisana do {przypisani} użytkowników — '
+                   'najpierw zmień im wartość albo zmień nazwę pozycji.')
+    db.session.delete(opt)
+    db.session.commit()
+    return jsonify({'message': 'Usunięto.'}), 200
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2886,7 +3124,8 @@ def api_dashboard():
      .order_by(func.count(ImportedCarton.id).desc()).all()
 
     workers_today = [
-        {'name': r.display_name, 'packages': r.packages, 'pieces': int(r.pieces or 0)}
+        {'user_id': r.user_id, 'name': r.display_name,
+         'packages': r.packages, 'pieces': int(r.pieces or 0)}
         for r in worker_rows
     ]
 
@@ -3016,6 +3255,7 @@ def api_dashboard_shifts():
             unattributed['packages'] += pkgs
             unattributed['pieces'] += pcs
             unattributed['workers'].append({
+                'user_id': r.user_id,
                 'name': user_map.get(r.user_id, '?'),
                 'packages': pkgs, 'pieces': pcs,
                 'reason': 'brak obecności' if not attended else 'obie zmiany',
@@ -4200,6 +4440,17 @@ def seed_data():
         else:
             print("[SEED] Admin user created (login: admin / haslo z ADMIN_PASSWORD)")
 
+    # Tylko raz (znacznik w AppSetting): gdyby warunkiem byla pusta lista, admin,
+    # ktory skasowal wszystkie pozycje, dostalby domyslne z powrotem po restarcie.
+    if db.session.get(AppSetting, 'user_options_seeded') is None:
+        for kind, nazwy in USER_OPTION_DEFAULTS.items():
+            if UserOption.query.filter_by(kind=kind).count() == 0:
+                for i, name in enumerate(nazwy):
+                    db.session.add(UserOption(kind=kind, name=name, sort_order=i))
+        db.session.add(AppSetting(key='user_options_seeded', value='1'))
+        db.session.commit()
+        print("[SEED] Default user options created.")
+
     if CountryMapping.query.count() == 0:
         for country, innenauftrag in DEFAULT_COUNTRY_MAPPINGS:
             db.session.add(CountryMapping(country=country, innenauftrag=innenauftrag))
@@ -4230,6 +4481,10 @@ def migrate_columns():
         migrations = [
             ("imported_carton", "scan_category_data", "TEXT DEFAULT '{}'"),
             ("general_stat",    "category_source",    "VARCHAR(10) DEFAULT 'manual'"),
+            # "user" to slowo zastrzezone — bez cudzyslowu ALTER pada skladniowo,
+            # a try/except ponizej by to po cichu polknal.
+            ('"user"', "worker_type_id", "INTEGER REFERENCES user_option(id)"),
+            ('"user"', "shift_group_id", "INTEGER REFERENCES user_option(id)"),
         ]
 
         for table, column, col_def in migrations:

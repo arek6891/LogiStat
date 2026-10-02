@@ -86,6 +86,66 @@ def test_bez_wyboru_osoby_widac_paczki_wszystkich(leader_client):
     assert {'OD-A', 'OD-B'} <= widoczne
 
 
+# ── status: niezrobione / zrobione / wszystkie ───────────────────────────────
+
+def test_status_zrobione_pokazuje_tylko_zakonczone_z_daty_importu(leader_client):
+    """Zgloszony objaw: „pokaz zrobione" z data importu wygladal jak wszystkie
+    paczki — bo dokladal zrobione do niezrobionych, a zrobionych jest 1-5%.
+    „Zrobione" ma pokazac WYLACZNIE zakonczone z tego dnia importu."""
+    dzien = date(2026, 9, 28)
+    w_dniu = logistat.local_day_bounds(dzien)[0] + timedelta(hours=8)
+    karton('IMP-GOTOWA', imported_at=w_dniu, scan_end_at=datetime.utcnow())
+    karton('IMP-WTOKU', imported_at=w_dniu)
+    karton('INNY-DZIEN-GOTOWA', imported_at=w_dniu - timedelta(days=3),
+           scan_end_at=datetime.utcnow())
+
+    widoczne = kody(leader_client.get(
+        f'/paczki?date_typ=import&date_from={dzien}&date_to={dzien}&status=zrobione'))
+
+    assert widoczne == {'IMP-GOTOWA'}
+
+
+def test_status_wszystkie_pokazuje_obie_grupy(leader_client):
+    karton('WTOKU')
+    karton('GOTOWA', scan_end_at=datetime.utcnow())
+
+    widoczne = kody(leader_client.get(
+        f'/paczki?status=wszystkie&date_from={ZIEL}&date_to={ZIEL}'))
+
+    assert {'WTOKU', 'GOTOWA'} <= widoczne
+
+
+def test_status_zrobione_bez_daty_wraca_do_domyslnego(leader_client):
+    karton('WTOKU')
+    karton('GOTOWA', scan_end_at=datetime.utcnow())
+
+    odpowiedz = leader_client.get('/paczki?status=zrobione')
+
+    assert kody(odpowiedz) == {'WTOKU'}
+    assert 'i filtruj ponownie' in odpowiedz.get_data(as_text=True)
+
+
+def test_stary_link_pokaz_zrobione_dziala_jak_wszystkie(leader_client):
+    """Zapisane zakladki z `pokaz_zrobione=1` maja dzialac jak dotad."""
+    karton('WTOKU')
+    karton('GOTOWA', scan_end_at=datetime.utcnow())
+
+    html = leader_client.get(
+        f'/paczki?pokaz_zrobione=1&date_from={ZIEL}').get_data(as_text=True)
+
+    assert 'value="wszystkie" selected' in html
+
+
+def test_stronicowanie_zachowuje_status(leader_client):
+    for i in range(logistat.PACZKI_NA_STRONE + 5):
+        karton(f'S-{i}', scan_end_at=datetime.utcnow())
+
+    html = leader_client.get(
+        f'/paczki?status=zrobione&date_from={ZIEL}').get_data(as_text=True)
+
+    assert 'status=zrobione' in html
+
+
 # ── filtr po typie daty (Ziel-Datum / import / start / koniec) ───────────────
 
 def test_domyslny_typ_daty_to_ziel_datum(leader_client):

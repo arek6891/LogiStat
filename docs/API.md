@@ -135,7 +135,7 @@ Korekta pojedynczego wpisu.
 | GET | `/api/dashboard` | Dane dashboardu dziennego (dziś): karty zbiorcze, per pracownik, czynności. Karty w parach paczki / sztuki: `done_today` + `pieces_today` (zakończone dziś) oraz `remaining_cartons` + `remaining_pieces` (`SUM(stueckzahl)` paczek bez `scan_end_at`). „Pozostało” liczy **wszystkie** niezakończone paczki od początku, nie tylko dzisiejsze. |
 | GET | `/api/dashboard/shifts?date=YYYY-MM-DD` | **Podział per zmiana** dla wybranego dnia (domyślnie dziś). Zwraca `shifts[]` (zmiana 1 i 2: `present_count`, `packages`, `pieces`, `activities[]`) oraz `unattributed` (paczki pracowników bez jednoznacznej obecności). Paczki przypisywane do zmiany wg obecności pracownika (`ShiftAttendance`); DailyStat wg `shift_id`. |
 
-## Statystyki — przegląd zespołu
+## Normy (`/stats`) — przegląd zespołu
 
 ### GET `/api/stats/overview?date_from=&date_to=`
 Przegląd wydajności **wszystkich** pracowników (lider+) — zakładka „Przegląd ogólny" na `/stats`.
@@ -152,13 +152,16 @@ Odniesieniem jest **średnia zespołu** z okresu = **wszystkie sztuki / wszystki
   "srednia_szt_h": 300.0,
   "progi": { "dobry": 110, "slaby": 90, "min_paczek": 3 },
   "pracownicy": [
-    { "user_id": 12, "display_name": "...", "paczek": 8, "sztuk": 731,
+    { "user_id": 12, "display_name": "...", "is_active_user": true,
+      "worker_type": "Logwin", "shift_group": "Zmiana A", "paczek": 8, "sztuk": 731,
       "godzin": 1.86, "szt_h": 392.3, "proc_sredniej": 131, "ocena": "dobra" }
   ],
   "za_malo_danych": [ { "…": "…", "szt_h": null, "ocena": null } ],
   "podsumowanie": { "osob": 11, "w_rankingu": 9, "paczek": 91, "sztuk": 6961, "godzin": 22.8 }
 }
 ```
+
+`worker_type` / `shift_group` — nazwy pozycji z kont (Rodzaj pracownika, Nazwa zmiany), `null` gdy nieprzypisane; w obu listach (`pracownicy`, `za_malo_danych`).
 
 `ocena`: `dobra` (≥ `norm_good_pct`) · `ok` · `slaba` (≤ `norm_weak_pct`). Oba progi są **domknięte**.
 
@@ -179,7 +182,7 @@ Liczba całkowita ≥ 0; **0 wyłącza** kolumnę celu. Endpoint przyjmuje **wy�
 
 Zakres dat filtruje `scan_end_at` przez `local_day_bounds()`, górna granica półotwarta.
 
-## Statystyki użytkownika
+## Normy — statystyki użytkownika
 
 ### GET `/api/stats/user/<user_id>`
 Parametry query: `activity_id`, `date_from`, `date_to`
@@ -209,6 +212,29 @@ Parametry query: `activity_id`, `date_from`, `date_to`
 `paczki_podsumowanie` liczy się **zawsze**, także przy wybranym `activity_id`. Mianownikiem są
 dni i miesiące, w których osoba zakończyła choć jedną paczkę, a nie dni kalendarzowe
 zakresu — dzień wolny nie zaniża średniej. Bez paczek średnie mają wartość `null`, nie 0.
+
+**`norma`** — ocena na tle zespołu, **wiersz wyjęty z tego samego `przeglad_zespolu()`** co
+`/api/stats/overview` (te same średnia, progi, cel), więc `% średniej` i ocena zgadzają się
+z rankingiem dla tego samego zakresu:
+```json
+"norma": {
+  "srednia_szt_h": 292.0, "cel_szt_h": null,
+  "progi": { "dobry": 110, "slaby": 90, "min_paczek": 3 },
+  "miejsce": 2, "w_rankingu": 9,
+  "powod_braku_oceny": null,
+  "wiersz": { "szt_h": 330.1, "proc_sredniej": 113, "ocena": "dobra", "…": "jak w overview" }
+}
+```
+`powod_braku_oceny`: `null` (oceniony) · `za_malo_paczek` · `brak_czasu` (paczki bez skanu
+„Start") · `brak_paczek` (`wiersz` = `null`).
+
+**`wykres_dzienny` / `wykres_miesieczny`** — lista `{okres, paczek, sztuk, godzin, szt_h}`
+rosnąco po `okres` (`YYYY-MM-DD` / `YYYY-MM`), tylko dni/miesiące z zakończoną paczką.
+`godzin` = suma **złączonych** okresów skanowania; bez zmierzonego czasu `szt_h` = `null`.
+`norma`, wykresy i `paczki_podsumowanie` **nie zależą** od `activity_id`.
+
+Ekran `/stats?user=<id>[&date_from=&date_to=]` otwiera od razu zakładkę tej osoby — tak
+linkuje dashboard (`user_id` jest w `workers_today` i `unattributed.workers`).
 
 ---
 
@@ -240,11 +266,18 @@ zakresu — dzień wolny nie zaniża średniej. Bez paczek średnie mają warto�
   "display_name": "Jan Kowalski",
   "barcode_id": "EAN128CODE",
   "role": "operator",
-  "password": ""
+  "password": "",
+  "worker_type_id": 1,
+  "shift_group_id": 4
 }
 ```
 
 > Hasło wymagane tylko dla ról `leader` i `admin`.
+
+> `worker_type_id` (rodzaj pracownika) i `shift_group_id` (nazwa zmiany) to id pozycji z
+> `/api/user-options` danego rodzaju; `null` / `""` = brak. Pozycja nieistniejąca albo
+> z **drugiej** listy → **400**. Pominięte w PUT = bez zmian. Lider może je ustawiać
+> operatorom (to dane opisowe). Odpowiedź zawiera też nazwy: `worker_type`, `shift_group`.
 
 **Uprawnienia (od 2026-09-01).** Wszystkie cztery endpointy są `@leader_required`, bo
 lider zakłada operatorów na zmianie — ale ma własne guardy, żeby nie dało się przez nie
@@ -262,6 +295,21 @@ admina** → **400** (żeby nie dało się zablokować dostępu do panelu).
 
 Soft-delete (`DELETE`) ustawia `is_active_user=False`, co **odbiera też trwającą sesję** —
 `login()` i `load_user()` sprawdzają tę flagę.
+
+---
+
+## Admin — Listy na koncie użytkownika
+
+Pozycje list rozwijanych „Rodzaj pracownika" (`kind: worker_type`, seed: Logwin,
+Agencja 1, Agencja 2) i „Nazwa zmiany" (`kind: shift_group`, seed: Zmiana A/B/C).
+Ekran: `/admin/user-options` (Panel Admina → Listy użytkowników).
+
+| Method | URL | Opis |
+|--------|-----|------|
+| GET | `/api/user-options` | `{worker_type: [...], shift_group: [...]}` — **lider+** (wybiera z nich przy zakładaniu operatora) |
+| POST | `/api/user-options` | Body `{kind, name}` — admin. Pusta nazwa / nieznany `kind` → 400, duplikat w tej samej liście → 409 |
+| PUT | `/api/user-options/<id>` | Body `{name}` — admin. Zmiana nazwy obowiązuje u wszystkich przypisanych (konto trzyma id) |
+| DELETE | `/api/user-options/<id>` | Admin. Pozycja przypisana komukolwiek → **409** z liczbą osób |
 
 ---
 
@@ -368,8 +416,9 @@ Soft-delete (`DELETE`) ustawia `is_active_user=False`, co **odbiera też trwają
 
 **Filtry na `/paczki`** (query string): `date_from`, `date_to`, `date_typ`, `barcode`,
 `land`, `osoba` (id — kto przejął / rozpoczął / zakończył), `double_rate=1`,
-`pokaz_zrobione=1`, `bledy=1`, `page`. **Domyślnie widać tylko paczki bez
-`scan_end_at`.** `bledy=1` ignoruje ten domyślny filtr (błąd ilości występuje na
+`status`, `bledy=1`, `page`. **`status`**: `niezrobione` (domyślne — bez `scan_end_at`) ·
+`zrobione` (tylko z `scan_end_at`) · `wszystkie`. Stary `pokaz_zrobione=1` działa jako
+alias `status=wszystkie`. `bledy=1` ignoruje status (błąd ilości występuje na
 paczce już zakończonej) i liczy się w Pythonie — ilości ze skanu to JSON w kolumnie
 tekstowej, SQL ich nie przefiltruje.
 
@@ -380,13 +429,13 @@ tekstowej, SQL ich nie przefiltruje.
 | `ziel` (domyślne) | `ziel_datum` | `db.Date` — porównanie wprost |
 | `import` | `imported_at` | naive UTC → granice doby przez `local_day_bounds()` |
 | `start` | `scan_start_at` | j.w. |
-| `koniec` | `scan_end_at` | j.w.; **zdejmuje domyślny filtr „tylko niezrobione"**, bo inaczej wynik zawsze byłby pusty |
+| `koniec` | `scan_end_at` | j.w.; przy `status=niezrobione` serwer przestawia na **`zrobione`**, bo inaczej wynik zawsze byłby pusty |
 
 Górna granica jest półotwarta (`<` północ następnej doby lokalnej) — `<=` wciągałoby
 paczki z pierwszych godzin kolejnego dnia. Nieznana wartość `date_typ` → `ziel`.
 
-**`pokaz_zrobione=1` wymaga zakresu dat** (`date_from` lub `date_to`). Bez niego widok
-obejmowałby całą historię, więc parametr jest ignorowany, a strona pokazuje komunikat
+**`status=zrobione` i `status=wszystkie` wymagają zakresu dat** (`date_from` lub `date_to`). Bez niego widok
+obejmowałby całą historię, więc status wraca do `niezrobione`, a strona pokazuje komunikat
 i widok domyślny. W formularzu pilnuje tego JS; warunek po stronie serwera łapie ręcznie
 sklejony URL i zakładkę.
 

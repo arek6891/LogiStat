@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}LogiStat — Statystyki{% endblock %}
+{% block title %}LogiStat — Normy{% endblock %}
 
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -7,7 +7,7 @@
 
 {% block content %}
 <div class="page-header">
-    <h2>📊 Statystyki</h2>
+    <h2>📊 Normy</h2>
     <p class="subtitle">Przegląd całego zespołu albo wyniki pojedynczej osoby</p>
 </div>
 
@@ -68,6 +68,8 @@
                     <tr>
                         <th style="width:40px;">#</th>
                         <th>Pracownik</th>
+                        <th>Rodzaj pracownika</th>
+                        <th>Nazwa zmiany</th>
                         <th style="text-align:right;">Paczek</th>
                         <th style="text-align:right;">Sztuk</th>
                         <th style="text-align:right;">Godzin</th>
@@ -102,7 +104,7 @@
         <div class="table-container">
             <table>
                 <thead>
-                    <tr><th>Pracownik</th><th style="text-align:right;">Paczek</th><th style="text-align:right;">Sztuk</th><th style="text-align:right;">Godzin</th><th style="width:60px;"></th></tr>
+                    <tr><th>Pracownik</th><th>Rodzaj pracownika</th><th>Nazwa zmiany</th><th style="text-align:right;">Paczek</th><th style="text-align:right;">Sztuk</th><th style="text-align:right;">Godzin</th><th style="width:60px;"></th></tr>
                 </thead>
                 <tbody id="zaMaloBody"></tbody>
             </table>
@@ -120,8 +122,7 @@
         <input type="text" id="userSearch" class="form-control" placeholder="Szukaj..." style="margin-bottom:12px;">
         <div class="user-list" id="userList">
             {% for user in users %}
-            <div class="user-list-item" data-user-id="{{ user.id }}"
-                onclick="selectUser({{ user.id }}, '{{ user.display_name }}')">
+            <div class="user-list-item" data-user-id="{{ user.id }}" data-user-name="{{ user.display_name }}">
                 <div class="mini-avatar"
                     style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#a78bfa);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.7rem;color:white;flex-shrink:0;">
                     {{ user.display_name[0] }}
@@ -167,6 +168,19 @@
                 </div>
             </div>
 
+            <!-- Ocena na tle zespolu — ta sama co w przegladzie ogolnym -->
+            <div class="card" style="margin-bottom:16px;">
+                <div class="card-header">
+                    <h3>🎯 Norma — ocena na tle zespołu</h3>
+                </div>
+                <div id="normaPracownika"></div>
+                <p style="color:var(--text-muted);font-size:.8rem;margin:.75rem 0 0;">
+                    Te same liczby co w „Przeglądzie ogólnym" dla tego okresu: sztuki na godzinę
+                    skanowania paczek, porównane ze średnią całego zespołu (wszystkie sztuki /
+                    wszystkie godziny). Nie zależy od filtra czynności.
+                </p>
+            </div>
+
             <!-- Srednie paczek i sztuk w wybranym okresie -->
             <div class="card" style="margin-bottom:16px;">
                 <div class="card-header">
@@ -200,12 +214,20 @@
                 </div>
             </div>
 
-            <!-- Chart -->
+            <!-- Wykresy wydajnosci z paczek -->
             <div class="card" style="margin-bottom:16px;">
                 <div class="card-header">
                     <h3>Wykres dzienny</h3>
                 </div>
+                <div id="dailyChartPusty" style="display:none;color:var(--text-muted);padding:1rem 0;">Brak zakończonych paczek w tym okresie.</div>
                 <canvas id="dailyChart" height="100"></canvas>
+            </div>
+            <div class="card" style="margin-bottom:16px;">
+                <div class="card-header">
+                    <h3>Wykres miesięczny</h3>
+                </div>
+                <div id="monthlyChartPusty" style="display:none;color:var(--text-muted);padding:1rem 0;">Brak zakończonych paczek w tym okresie.</div>
+                <canvas id="monthlyChart" height="100"></canvas>
             </div>
 
             <!-- Daily details -->
@@ -240,6 +262,26 @@
 <script>
     let currentUserId = null;
     let dailyChart = null;
+    let monthlyChart = null;
+
+    // Jedno zrodlo kolorow oceny dla rankingu i karty pracownika.
+    const STYL_OCENY = {
+        dobra: { tlo: 'rgba(34,197,94,.12)', kolor: '#22c55e', tekst: '🟢 dobra' },
+        ok:    { tlo: '',                    kolor: 'var(--text-secondary)', tekst: '⚪ w normie' },
+        slaba: { tlo: 'rgba(239,68,68,.12)', kolor: 'var(--danger)', tekst: '🔴 do dopracowania' },
+    };
+    const STYL_CELU = {
+        spelnia: { kolor: '#22c55e', tekst: '🟢 spełnia' },
+        ponizej: { kolor: 'var(--danger)', tekst: '🔴 poniżej celu' },
+    };
+
+    // Data LOKALNA, nie toISOString() — ten zwraca UTC, wiec miedzy polnoca
+    // a 2:00 czasu polskiego dalby wczoraj. Druga zmiana pracuje przez polnoc.
+    function dataLokalna(d) {
+        return `${d.getFullYear()}-`
+            + String(d.getMonth() + 1).padStart(2, '0') + '-'
+            + String(d.getDate()).padStart(2, '0');
+    }
 
     // ── Zakładki ──────────────────────────────────────────────────────────
     function pokazZakladke(ktora) {
@@ -260,14 +302,7 @@
             const dzis = new Date();
             const start = new Date(dzis);
             start.setDate(start.getDate() - (ile - 1));
-            // Data LOKALNA, nie toISOString() — ten zwraca UTC, wiec miedzy
-            // polnoca a 2:00 czasu polskiego ustawialby zakres konczacy sie
-            // wczoraj. Druga zmiana pracuje przez polnoc, wiec ktos by na to
-            // trafil.
-            const fmt = d => `${d.getFullYear()}-`
-                + String(d.getMonth() + 1).padStart(2, '0') + '-'
-                + String(d.getDate()).padStart(2, '0');
-            od.value = fmt(start); doo.value = fmt(dzis);
+            od.value = dataLokalna(start); doo.value = dataLokalna(dzis);
         }
         ladujPrzeglad();
     }
@@ -280,7 +315,7 @@
         if (doo) p.set('date_to', doo);
 
         const body = document.getElementById('przegladBody');
-        body.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-secondary);">Ładowanie…</td></tr>';
+        body.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--text-secondary);">Ładowanie…</td></tr>';
 
         let dane;
         try {
@@ -288,7 +323,7 @@
             dane = await r.json();
             if (!r.ok) throw new Error(dane.error || 'Błąd pobierania danych');
         } catch (err) {
-            body.innerHTML = `<tr><td colspan="11" style="text-align:center;color:var(--danger);">${escapeHtml(err.message)}</td></tr>`;
+            body.innerHTML = `<tr><td colspan="13" style="text-align:center;color:var(--danger);">${escapeHtml(err.message)}</td></tr>`;
             return;
         }
 
@@ -326,26 +361,21 @@
     function renderujRanking(d) {
         const body = document.getElementById('przegladBody');
         if (!d.pracownicy.length) {
-            body.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-secondary);padding:2rem;">'
+            body.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--text-secondary);padding:2rem;">'
                 + 'Nikt nie ma jeszcze dość zakończonych paczek w tym okresie (próg: '
                 + d.progi.min_paczek + ').</td></tr>';
             return;
         }
-        const styl = {
-            dobra: { tlo: 'rgba(34,197,94,.12)', kolor: '#22c55e', tekst: '🟢 dobra' },
-            ok:    { tlo: '',                    kolor: 'var(--text-secondary)', tekst: '⚪ w normie' },
-            slaba: { tlo: 'rgba(239,68,68,.12)', kolor: 'var(--danger)', tekst: '🔴 do dopracowania' },
-        };
-        const stylCelu = {
-            spelnia: { kolor: '#22c55e', tekst: '🟢 spełnia' },
-            ponizej: { kolor: 'var(--danger)', tekst: '🔴 poniżej celu' },
-        };
+        const styl = STYL_OCENY;
+        const stylCelu = STYL_CELU;
         body.innerHTML = d.pracownicy.map((r, i) => {
             const s = styl[r.ocena] || styl.ok;
             const c = stylCelu[r.ocena_celu] || { kolor: 'var(--text-muted)', tekst: '—' };
             return `<tr style="${s.tlo ? 'background:' + s.tlo + ';' : ''}">
                 <td style="color:var(--text-secondary);">${i + 1}</td>
                 <td><a href="#" class="js-osoba" data-user-id="${r.user_id}" data-user-name="${escapeHtml(r.display_name)}">${escapeHtml(r.display_name)}</a>${plakietkaNieaktywna(r)}</td>
+                <td>${escapeHtml(r.worker_type || '—')}</td>
+                <td>${escapeHtml(r.shift_group || '—')}</td>
                 <td style="text-align:right;">${r.paczek}</td>
                 <td style="text-align:right;">${r.sztuk.toLocaleString('pl')}</td>
                 <td style="text-align:right;">${r.godzin.toLocaleString('pl')}</td>
@@ -368,6 +398,8 @@
         document.getElementById('zaMaloBody').innerHTML = d.za_malo_danych.map(r => `
             <tr>
                 <td><a href="#" class="js-osoba" data-user-id="${r.user_id}" data-user-name="${escapeHtml(r.display_name)}">${escapeHtml(r.display_name)}</a>${plakietkaNieaktywna(r)}</td>
+                <td>${escapeHtml(r.worker_type || '—')}</td>
+                <td>${escapeHtml(r.shift_group || '—')}</td>
                 <td style="text-align:right;">${r.paczek}</td>
                 <td style="text-align:right;">${r.sztuk.toLocaleString('pl')}</td>
                 <td style="text-align:right;">${r.godzin.toLocaleString('pl')}</td>
@@ -379,7 +411,7 @@
     // Skok na /paczki z filtrem po tej osobie i po DACIE KONCA, w tym samym
     // zakresie dat co przeglad — czyli dokladnie te paczki, ktore zlozyly sie na
     // jej wynik. `date_typ=koniec` sam zdejmuje domyslne „tylko niezrobione",
-    // wiec nie trzeba dokladac `pokaz_zrobione`.
+    // wiec nie trzeba dokladac `status`.
     function linkDoPaczek(r) {
         const p = new URLSearchParams({ osoba: r.user_id, date_typ: 'koniec' });
         const od = document.getElementById('przegladOd').value;
@@ -436,6 +468,10 @@
         korzen.querySelectorAll('.js-osoba').forEach(a => {
             a.addEventListener('click', (e) => {
                 e.preventDefault();
+                // Ten sam zakres co przeglad — inaczej % sredniej na karcie
+                // osoby nie zgadzalby sie z tym, w ktory wlasnie kliknieto.
+                document.getElementById('filterFrom').value = document.getElementById('przegladOd').value;
+                document.getElementById('filterTo').value = document.getElementById('przegladDo').value;
                 pokazZakladke('osoba');
                 selectUser(parseInt(a.dataset.userId), a.dataset.userName);
             });
@@ -450,12 +486,20 @@
         });
     });
 
-    // Set default date range (last 30 days)
-    const today = new Date();
-    const thirtyAgo = new Date(today);
-    thirtyAgo.setDate(thirtyAgo.getDate() - 30);
-    document.getElementById('filterTo').valueAsDate = today;
-    document.getElementById('filterFrom').valueAsDate = thirtyAgo;
+    // Lista osob: data-* + jedna delegacja, nazwa nie trafia do kodu JS.
+    document.getElementById('userList').addEventListener('click', (e) => {
+        const item = e.target.closest('.user-list-item');
+        if (item) selectUser(parseInt(item.dataset.userId), item.dataset.userName);
+    });
+
+    // Domyslny zakres: ostatnie 30 dni, liczone tak samo jak w przegladzie.
+    (() => {
+        const dzis = new Date();
+        const start = new Date(dzis);
+        start.setDate(start.getDate() - 29);
+        document.getElementById('filterTo').value = dataLokalna(dzis);
+        document.getElementById('filterFrom').value = dataLokalna(start);
+    })();
 
     function selectUser(userId, name) {
         currentUserId = userId;
@@ -482,10 +526,16 @@
         try {
             const res = await fetch(url);
             const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            // Nazwa z API — wejscie z dashboardu podaje samo id, a lista po
+            // lewej zawiera tylko aktywne konta.
+            document.getElementById('statsUserName').textContent = data.user.display_name;
+            renderNorma(data.norma);
             renderPaczkiPodsumowanie(data.paczki_podsumowanie);
             renderMonthly(data.monthly);
             renderDaily(data.daily);
-            renderChart(data.daily);
+            dailyChart = rysujWykres('dailyChart', dailyChart, data.wykres_dzienny, data.norma);
+            monthlyChart = rysujWykres('monthlyChart', monthlyChart, data.wykres_miesieczny, data.norma);
         } catch (err) {
             showToast('Błąd ładowania statystyk.', 'error');
         }
@@ -569,46 +619,107 @@
         }).join('');
     }
 
-    function renderChart(daily) {
-        const ctx = document.getElementById('dailyChart');
-        if (dailyChart) dailyChart.destroy();
+    function renderNorma(n) {
+        const el = document.getElementById('normaPracownika');
+        const liczba = v => v === null || v === undefined ? '—' : v.toLocaleString('pl');
+        const kafel = (etykieta, wartosc, kolor) => `
+            <div style="flex:1;min-width:120px;">
+                <div style="color:var(--text-secondary);font-size:.8rem;">${etykieta}</div>
+                <div style="font-size:1.4rem;font-weight:700;${kolor ? 'color:' + kolor + ';' : ''}">${wartosc}</div>
+            </div>`;
+        const r = n.wiersz;
+        const srednia = kafel('Średnia zespołu szt./h', liczba(n.srednia_szt_h), 'var(--accent)');
+        const cel = n.cel_szt_h !== null ? kafel('🎯 Cel szt./h', liczba(n.cel_szt_h), 'var(--accent)') : '';
 
-        // Group by date — pomijamy paczki (sztuki/liczba nieporównywalne z ilościami czynności)
-        const byDate = {};
-        daily.filter(d => !d.is_package).forEach(d => {
-            if (!byDate[d.date]) byDate[d.date] = 0;
-            byDate[d.date] += d.quantity;
+        if (!r || n.powod_braku_oceny) {
+            const powody = {
+                brak_paczek: 'Brak zakończonych paczek w tym okresie — nie ma czego oceniać.',
+                za_malo_paczek: `Za mało paczek do oceny (próg: ${n.progi.min_paczek}). Jedna-dwie paczki potrafią dać przypadkowy wynik.`,
+                brak_czasu: 'Paczki są, ale bez zmierzonego czasu (zamykane bez skanu „Start"). Nie da się policzyć szt./h — warto pokazać obsługę skanera.',
+            };
+            el.innerHTML = '<div style="display:flex;gap:1.5rem;flex-wrap:wrap;">'
+                + (r ? kafel('Szt./h', liczba(r.szt_h)) + kafel('Godzin skanowania', liczba(r.godzin)) : '')
+                + srednia + cel + '</div>'
+                + `<p style="margin:.75rem 0 0;color:var(--text-secondary);">⚪ ${powody[n.powod_braku_oceny]}</p>`;
+            return;
+        }
+        const s = STYL_OCENY[r.ocena] || STYL_OCENY.ok;
+        const c = STYL_CELU[r.ocena_celu];
+        el.innerHTML = '<div style="display:flex;gap:1.5rem;flex-wrap:wrap;">'
+            + kafel('Szt./h', liczba(r.szt_h), s.kolor)
+            + srednia
+            + kafel('% średniej', r.proc_sredniej !== null ? r.proc_sredniej + '%' : '—', s.kolor)
+            + kafel('Ocena', s.tekst, s.kolor)
+            + kafel('Miejsce', `${n.miejsce} / ${n.w_rankingu}`)
+            + kafel('Godzin skanowania', liczba(r.godzin))
+            + cel
+            + (c ? kafel('% celu', r.proc_celu + '%', c.kolor) + kafel('Wobec celu', c.tekst, c.kolor) : '')
+            + '</div>'
+            + `<p style="margin:.75rem 0 0;color:var(--text-muted);font-size:.8rem;">
+                 🟢 dobra ≥ ${n.progi.dobry}% średniej · 🔴 do dopracowania ≤ ${n.progi.slaby}% · pomiędzy: w normie</p>`;
+    }
+
+    // Slupki = sztuki (lewa os), linia = szt./h (prawa os) na tle sredniej
+    // zespolu i celu. Rzad wielkosci sztuk i szt./h jest inny, stad dwie osie.
+    // Dane z paczek, nie z „Wpisu ilosci" — ten jest wypelniany sporadycznie,
+    // wiec stary wykres byl pusty niemal u kazdego.
+    function rysujWykres(idCanvas, poprzedni, punkty, norma) {
+        if (poprzedni) poprzedni.destroy();
+        const canvas = document.getElementById(idCanvas);
+        const pusty = document.getElementById(idCanvas + 'Pusty');
+        const brak = !punkty.length;
+        canvas.style.display = brak ? 'none' : '';
+        pusty.style.display = brak ? '' : 'none';
+        if (brak) return null;
+
+        const labels = punkty.map(p => p.okres);
+        const linia = (wartosc, etykieta, kolor) => ({
+            type: 'line', label: etykieta, yAxisID: 'yWyd',
+            data: labels.map(() => wartosc),
+            borderColor: kolor, borderDash: [6, 4], borderWidth: 1.5,
+            pointRadius: 0, fill: false,
         });
-
-        const labels = Object.keys(byDate).reverse();
-        const values = labels.map(l => byDate[l]);
-
-        dailyChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Ilość',
-                    data: values,
-                    backgroundColor: 'rgba(108, 99, 255, 0.6)',
-                    borderColor: 'rgba(108, 99, 255, 1)',
-                    borderWidth: 1,
-                    borderRadius: 4
-                }]
+        const zbiory = [
+            {
+                type: 'bar', label: 'Sztuk', yAxisID: 'ySzt',
+                data: punkty.map(p => p.sztuk),
+                backgroundColor: 'rgba(108, 99, 255, 0.45)',
+                borderColor: 'rgba(108, 99, 255, 1)', borderWidth: 1, borderRadius: 4,
             },
+            {
+                type: 'line', label: 'Szt./h', yAxisID: 'yWyd',
+                data: punkty.map(p => p.szt_h),
+                borderColor: '#f59e0b', backgroundColor: '#f59e0b',
+                borderWidth: 2, pointRadius: 3, spanGaps: false, tension: 0.2,
+            },
+        ];
+        if (norma.srednia_szt_h !== null) zbiory.push(linia(norma.srednia_szt_h, 'Średnia zespołu szt./h', '#22c55e'));
+        if (norma.cel_szt_h !== null) zbiory.push(linia(norma.cel_szt_h, 'Cel szt./h', '#ef4444'));
+
+        const siatka = { color: 'rgba(46,51,64,0.5)' };
+        const tekst = { color: '#9aa0b0' };
+        return new Chart(canvas, {
+            data: { labels, datasets: zbiory },
             options: {
                 responsive: true,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: {
-                        ticks: { color: '#9aa0b0' },
-                        grid: { color: 'rgba(46,51,64,0.5)' }
-                    },
-                    y: {
-                        beginAtZero: true,
-                        ticks: { color: '#9aa0b0' },
-                        grid: { color: 'rgba(46,51,64,0.5)' }
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { labels: tekst },
+                    tooltip: {
+                        callbacks: {
+                            afterBody: (items) => {
+                                const p = punkty[items[0].dataIndex];
+                                return `Paczek: ${p.paczek} · godzin: ${p.godzin.toLocaleString('pl')}`;
+                            }
+                        }
                     }
+                },
+                scales: {
+                    x: { ticks: tekst, grid: siatka },
+                    ySzt: { position: 'left', beginAtZero: true, ticks: tekst, grid: siatka,
+                            title: { display: true, text: 'Sztuk', color: '#9aa0b0' } },
+                    yWyd: { position: 'right', beginAtZero: true, ticks: tekst, grid: { drawOnChartArea: false },
+                            title: { display: true, text: 'Szt./h', color: '#9aa0b0' } },
                 }
             }
         });
@@ -640,5 +751,17 @@
     // zespolowi", a widok per pracownik wymaga najpierw wybrania osoby.
     // Domyslny zakres 30 dni, zeby jeden slaby dzien nie przesadzal o ocenie.
     zakresDni(30);
+
+    // Wejscie z dashboardu: /stats?user=<id>[&date_from=&date_to=] otwiera od
+    // razu zakladke tej osoby.
+    (() => {
+        const q = new URLSearchParams(location.search);
+        const uid = parseInt(q.get('user'), 10);
+        if (!uid) return;
+        if (q.get('date_from')) document.getElementById('filterFrom').value = q.get('date_from');
+        if (q.get('date_to')) document.getElementById('filterTo').value = q.get('date_to');
+        pokazZakladke('osoba');
+        selectUser(uid, '');
+    })();
 </script>
 {% endblock %}

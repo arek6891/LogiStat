@@ -120,13 +120,14 @@ LogiStat/
 │   ├── scanner.html        # Skaner kodów kreskowych
 │   ├── assignment.html     # Drag & drop przydzielanie
 │   ├── data_entry.html     # Wpis ilości
-│   ├── stats.html          # Dashboard statystyk
+│   ├── stats.html          # Normy — przegląd zespołu + per pracownik
 │   ├── admin_activities.html # CRUD czynności
 │   ├── admin_users.html    # Zarządzanie użytkownikami
 │   ├── admin_panel.html    # Panel Admina (hub)
 │   ├── admin_country_mapping.html # Mapowanie krajów
 │   ├── admin_cost_mapping.html # Stawki kosztów per rok/miesiąc
 │   ├── admin_settings.html # Ustawienia (progi czasu pracy)
+│   ├── admin_user_options.html # Listy na koncie: rodzaj pracownika, nazwa zmiany
 │   ├── import_csv.html     # Importowanie pliku CSV
 │   ├── general_stats.html  # Statystyki ogólne z CSV (+ żółta linia double rate)
 │   ├── paczki.html         # Surowe paczki CSV (+ filtry dat, double rate, odblokowanie)
@@ -173,21 +174,24 @@ zalogowanego lidera, bo to ekran stanowiskowy).
 - 🔎 **Paczki inspektor** (`/scan-package`) — podgląd statusu paczki, **tylko do odczytu**
 
 ### 🧑‍💼 Lider
-- 🏠 **Dashboard** (`/dashboard`) — podsumowanie dnia, per pracownik, per zmiana
+- 🏠 **Dashboard** (`/dashboard`) — podsumowanie dnia, per pracownik, per zmiana; kliknięcie nazwiska otwiera Normy tej osoby
 - 📈 **Forecast** (`/forecast`) — prognoza ilości per dzień
 - 📋 **Przydzielanie** (`/assignment`) — drag & drop operatorów do czynności
 - ✏️ **Wpis ilości** (`/data-entry`) — ilości zrobione per osoba
-- 📊 **Statystyki** (`/stats`) — przegląd całego zespołu (ranking szt./h względem średniej zespołu, cel lidera) + per pracownik średnie dzienne/miesięczne paczek i sztuk oraz wykresy
+- 📊 **Normy** (`/stats`) — przegląd całego zespołu (ranking szt./h względem średniej zespołu, cel lidera, rodzaj pracownika i nazwa zmiany) + per pracownik: ocena na tle zespołu, średnie dzienne/miesięczne paczek i sztuk, wykres dzienny i miesięczny
 - 📦 **Paczki (dane)** (`/paczki`) — surowe dane paczek z filtrami (patrz niżej)
 - 👥 **Czasy pracowników** (`/worker-times`) — przegląd i korekta czasów + filtry
 - 📥 **Import danych** (`/import-csv`) — CSV (`;`) lub Excel (`.xlsx`), dedup po barcode
-- 👤 **Użytkownicy** (`/admin/users`) — zakładanie i edycja kont
+- 👤 **Użytkownicy** (`/admin/users`) — zakładanie i edycja kont, w tym **rodzaj pracownika** i **nazwa zmiany** (listy rozwijane)
 
 ### 🛡️ Admin
 - 💶 **Statystyki ogólne** (`/general-stats`) — rozliczenie wg list i dat + eksport Excel
 - ⚙️ **Czynności** (`/admin/activities`) — zarządzanie czynnościami
 - 🛡️ **Panel Admina** (`/admin/panel`) — hub: mapowanie krajów (`/admin/country-mapping`),
-  stawki kosztów (`/admin/cost-mapping`), ustawienia (`/admin/settings`)
+  stawki kosztów (`/admin/cost-mapping`), ustawienia (`/admin/settings`),
+  **listy użytkowników** (`/admin/user-options`) — pozycje „Rodzaj pracownika" (Logwin,
+  agencje) i „Nazwa zmiany" (Zmiana A/B/C); zmiana nazwy obowiązuje u wszystkich
+  przypisanych, pozycji w użyciu nie da się usunąć
 
 ### Stopka sidebara
 - 🔑 **Zmiana hasła** (`/profile`) · **Wyloguj**
@@ -223,7 +227,13 @@ sumę ich długości.
 ### Paczki (dane) — filtry i odblokowanie
 **Domyślnie widać tylko paczki niezrobione** (bez zarejestrowanego „Końca paczki").
 Filtry: **typ daty + zakres dat**, barcode, land, **pracownik** (kto przejął / rozpoczął
-/ zakończył), **tylko double rate**, **pokaż zrobione**, **⚠️ pokaż błędy**.
+/ zakończył), **Status**, a w rzędzie pod nimi znaczniki **tylko double rate** i
+**⚠️ pokaż błędy**.
+
+**Status:** **Niezrobione** (domyślnie) · **Zrobione** (wyłącznie zakończone) ·
+**Wszystkie** (jedne i drugie). Do 2026-10 był tu znacznik „pokaż zrobione", który
+*dokładał* zrobione do niezrobionych — przy 1–5% zrobionych w dniu importu wyglądało
+to, jakby filtr daty nie działał.
 
 Pusty filtr pracownika znaczy **wszyscy** — nigdy nie zawęża wyników.
 
@@ -246,11 +256,11 @@ wciąga paczek z 16.06 nad ranem.
 
 **„Koniec paczki" automatycznie pokazuje zakończone** — z definicji tylko takie mają tę
 datę, więc trzymanie domyślnego „tylko niezrobione" dawałoby zawsze pustą listę.
-**„Start paczki"** tego nie robi: bez „pokaż zrobione" znaczy „rozpoczęte w zakresie
-i wciąż otwarte".
+**„Start paczki"** tego nie robi: przy statusie „Niezrobione" znaczy „rozpoczęte
+w zakresie i wciąż otwarte".
 
-⚠️ **„Pokaż zrobione" wymaga zakresu dat** — bez niego widok objąłby całą historię
-(tysiące paczek). Zaznaczenie bez daty blokuje filtrowanie i podświetla pola dat.
+⚠️ **Status „Zrobione" i „Wszystkie" wymaga zakresu dat** — bez niego widok objąłby
+całą historię (tysiące paczek). Wybór bez daty blokuje filtrowanie i podświetla pola dat.
 
 Filtr błędów łapie dwie rzeczy:
 1. paczkę **rozpoczętą i nigdy nie zakończoną**,
@@ -261,6 +271,24 @@ starcie i `403` przy końcu. Jeśli ten pracownik już do niej nie wróci, lider
 blokadę przyciskiem **🔓 Odblokuj**: start skanu znika, paczka wraca do stanu
 „nierozpoczęta" i każdy może ją zeskanować od nowa. Paczki **zakończonej** odblokować
 się nie da.
+
+### Normy — jak oceniany jest pracownik
+Miarą jest **liczba sztuk na godzinę skanowania paczek** (czas = złączone okresy
+Start→Koniec, przerwy go nie pomniejszają). Odniesieniem jest **średnia zespołu** z
+wybranego okresu (wszystkie sztuki / wszystkie godziny), a nie zadana z góry norma.
+
+- **Przegląd ogólny** — ranking z kolumnami % średniej, ocena 🟢 / ⚪ / 🔴, opcjonalny
+  cel lidera, **rodzaj pracownika** i **nazwa zmiany**. Osoby z mniej niż 3 paczkami
+  albo bez zmierzonego czasu trafiają do „za mało danych".
+- **Per pracownik** — karta **🎯 Norma** z tymi samymi liczbami co w rankingu (szt./h,
+  średnia zespołu, % średniej, ocena, miejsce, cel), średnie paczek i sztuk, **wykres
+  dzienny i miesięczny** (słupki = sztuki, linia = szt./h, przerywane = średnia i cel).
+  Wykresy liczą się z paczek, nie z „Wpisu ilości", więc nie zależą od filtra czynności.
+- Kliknięcie osoby w przeglądzie albo **nazwiska na dashboardzie** otwiera jej kartę
+  (`/stats?user=<id>`); z przeglądu z tym samym zakresem dat, z dashboardu z ostatnich
+  30 dni.
+
+Progi oceny (110% / 90% / min. 3 paczki) ustawia admin w `/admin/settings`.
 
 ### Statystyki ogólne — Amounts vs Total Amount
 Dwie kolumny, które łatwo pomylić (na ekranie mają dymek ⓘ z tym samym wyjaśnieniem):

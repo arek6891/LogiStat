@@ -304,6 +304,42 @@ def test_szablon_oznacza_nieaktywnych(leader_client):
     assert 'is_active_user' in html
 
 
+def test_wiersz_ma_rodzaj_pracownika_i_nazwe_zmiany(leader_client):
+    a = make_user('operator', username='agencyjna', display_name='Agencyjna')
+    a.worker_type_id = logistat.UserOption.query.filter_by(
+        kind='worker_type', name='Agencja 1').first().id
+    a.shift_group_id = logistat.UserOption.query.filter_by(
+        kind='shift_group', name='Zmiana B').first().id
+    logistat.db.session.commit()
+    godziny_pracy(a, 4, 40, 30)
+    b = make_user('operator', username='bez-list', display_name='BezList')
+    godziny_pracy(b, 1, 40, 30)                       # trafia do „za malo danych"
+
+    d = przeglad(leader_client)
+
+    assert wiersz(d, 'Agencyjna')['worker_type'] == 'Agencja 1'
+    assert wiersz(d, 'Agencyjna')['shift_group'] == 'Zmiana B'
+    assert wiersz(d, 'BezList')['worker_type'] is None
+    assert wiersz(d, 'BezList')['shift_group'] is None
+
+
+def test_przeglad_nie_odpytuje_list_per_osoba(leader_client, queries):
+    """Rodzaj i zmiana dochodza joinem do zapytania o uzytkownikow, nie osobnym
+    SELECT-em na kazdy wiersz."""
+    opcja = logistat.UserOption.query.filter_by(kind='worker_type').first()
+    for i in range(5):
+        u = make_user('operator', username=f'n1-{i}', display_name=f'N{i}')
+        u.worker_type_id = opcja.id
+        logistat.db.session.commit()
+        godziny_pracy(u, 3, 10, 10)
+    logistat.db.session.expire_all()
+    queries.statements.clear()
+
+    przeglad(leader_client)
+
+    assert queries.matching('FROM user_option') == []
+
+
 # ── cel wpisany przez lidera ─────────────────────────────────────────────────
 
 def ustaw_cel(client, wartosc):
