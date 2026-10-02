@@ -240,11 +240,18 @@ zakresu — dzień wolny nie zaniża średniej. Bez paczek średnie mają warto�
   "display_name": "Jan Kowalski",
   "barcode_id": "EAN128CODE",
   "role": "operator",
-  "password": ""
+  "password": "",
+  "worker_type_id": 1,
+  "shift_group_id": 4
 }
 ```
 
 > Hasło wymagane tylko dla ról `leader` i `admin`.
+
+> `worker_type_id` (rodzaj pracownika) i `shift_group_id` (nazwa zmiany) to id pozycji z
+> `/api/user-options` danego rodzaju; `null` / `""` = brak. Pozycja nieistniejąca albo
+> z **drugiej** listy → **400**. Pominięte w PUT = bez zmian. Lider może je ustawiać
+> operatorom (to dane opisowe). Odpowiedź zawiera też nazwy: `worker_type`, `shift_group`.
 
 **Uprawnienia (od 2026-09-01).** Wszystkie cztery endpointy są `@leader_required`, bo
 lider zakłada operatorów na zmianie — ale ma własne guardy, żeby nie dało się przez nie
@@ -262,6 +269,21 @@ admina** → **400** (żeby nie dało się zablokować dostępu do panelu).
 
 Soft-delete (`DELETE`) ustawia `is_active_user=False`, co **odbiera też trwającą sesję** —
 `login()` i `load_user()` sprawdzają tę flagę.
+
+---
+
+## Admin — Listy na koncie użytkownika
+
+Pozycje list rozwijanych „Rodzaj pracownika" (`kind: worker_type`, seed: Logwin,
+Agencja 1, Agencja 2) i „Nazwa zmiany" (`kind: shift_group`, seed: Zmiana A/B/C).
+Ekran: `/admin/user-options` (Panel Admina → Listy użytkowników).
+
+| Method | URL | Opis |
+|--------|-----|------|
+| GET | `/api/user-options` | `{worker_type: [...], shift_group: [...]}` — **lider+** (wybiera z nich przy zakładaniu operatora) |
+| POST | `/api/user-options` | Body `{kind, name}` — admin. Pusta nazwa / nieznany `kind` → 400, duplikat w tej samej liście → 409 |
+| PUT | `/api/user-options/<id>` | Body `{name}` — admin. Zmiana nazwy obowiązuje u wszystkich przypisanych (konto trzyma id) |
+| DELETE | `/api/user-options/<id>` | Admin. Pozycja przypisana komukolwiek → **409** z liczbą osób |
 
 ---
 

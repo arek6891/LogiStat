@@ -55,7 +55,7 @@
                     </a></li>
                 <li><a href="{{ url_for('stats') }}"
                         class="{% if request.endpoint == 'stats' %}active{% endif %}">
-                        <span class="icon">📊</span> Statystyki
+                        <span class="icon">📊</span> Normy
                     </a></li>
                 <li><a href="{{ url_for('paczki_view') }}"
                         class="{% if request.endpoint == 'paczki_view' %}active{% endif %}">
@@ -85,7 +85,7 @@
                         <span class="icon">⚙️</span> Czynności
                     </a></li>
                 <li><a href="{{ url_for('admin_panel') }}"
-                        class="{% if request.endpoint in ('admin_panel', 'admin_country_mapping') %}active{% endif %}">
+                        class="{% if request.endpoint in ('admin_panel', 'admin_country_mapping', 'admin_user_options') %}active{% endif %}">
                         <span class="icon">🛡️</span> Panel Admina
                     </a></li>
                 {% endif %}

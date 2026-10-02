@@ -215,6 +215,13 @@ class User(UserMixin, db.Model):
     role = db.Column(db.String(20), default='operator')  # operator | leader | admin
     is_active_user = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # Pola opisowe z list slownikowych, ktore admin definiuje sam (UserOption).
+    # `shift_group`, nie `shift` — `Shift` / `shift_id` to juz zmiana 1/2 danego
+    # dnia, a „Zmiana A/B/C" to stala brygada pracownika.
+    worker_type_id = db.Column(db.Integer, db.ForeignKey('user_option.id'), nullable=True)
+    shift_group_id = db.Column(db.Integer, db.ForeignKey('user_option.id'), nullable=True)
+    worker_type = db.relationship('UserOption', foreign_keys=[worker_type_id])
+    shift_group = db.relationship('UserOption', foreign_keys=[shift_group_id])
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -231,8 +238,63 @@ class User(UserMixin, db.Model):
             'display_name': self.display_name,
             'barcode_id': self.barcode_id,
             'role': self.role,
-            'is_active_user': self.is_active_user
+            'is_active_user': self.is_active_user,
+            'worker_type_id': self.worker_type_id,
+            'worker_type': self.worker_type.name if self.worker_type else None,
+            'shift_group_id': self.shift_group_id,
+            'shift_group': self.shift_group.name if self.shift_group else None,
         }
+
+
+# Rodzaje list slownikowych przypisywanych uzytkownikom. Klucz = `kind` w
+# UserOption, wartosc = kolumna na User, ktora na nia wskazuje.
+USER_OPTION_KINDS = {
+    'worker_type': 'worker_type_id',   # Rodzaj pracownika: Logwin / agencje
+    'shift_group': 'shift_group_id',   # Nazwa zmiany: Zmiana A / B / C
+}
+
+USER_OPTION_DEFAULTS = {
+    'worker_type': ['Logwin', 'Agencja 1', 'Agencja 2'],
+    'shift_group': ['Zmiana A', 'Zmiana B', 'Zmiana C'],
+}
+
+
+class UserOption(db.Model):
+    """Pozycja listy rozwijanej na koncie uzytkownika — tresc ustala admin."""
+    id = db.Column(db.Integer, primary_key=True)
+    kind = db.Column(db.String(30), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    sort_order = db.Column(db.Integer, default=0)
+
+    __table_args__ = (
+        db.UniqueConstraint('kind', 'name', name='uq_user_option_kind_name'),
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'kind': self.kind,
+            'name': self.name,
+            'sort_order': self.sort_order,
+        }
+
+
+def user_options_by_kind():
+    """{'worker_type': [UserOption…], 'shift_group': […]} — do szablonow."""
+    wynik = {k: [] for k in USER_OPTION_KINDS}
+    for o in UserOption.query.order_by(UserOption.sort_order, UserOption.name).all():
+        wynik.setdefault(o.kind, []).append(o)
+    return wynik
+
+
+def resolve_user_option(value, kind):
+    """Id opcji danego rodzaju albo None (puste = brak). Zly id / rodzaj → 400."""
+    if value in (None, ''):
+        return None
+    opt = db.session.get(UserOption, require_int(value, kind))
+    if opt is None or opt.kind != kind:
+        abort(400, 'Nieprawidłowa wartość listy.')
+    return opt.id
 
 
 class Activity(db.Model):
@@ -712,7 +774,7 @@ SETTING_DEFAULTS = {
     # Progi dla filtra bledow na ekranie „Czasy pracownikow"
     'max_work_minutes': '660',      # 11 h
     'min_break_minutes': '15',
-    # Progi przegladu ogolnego na ekranie „Statystyki". Odniesieniem jest
+    # Progi przegladu ogolnego na ekranie „Normy" (/stats). Odniesieniem jest
     # SREDNIA zespolu z wybranego okresu (wszystkie sztuki / wszystkie godziny),
     # nie zadana z gory norma — takiej w systemie nie ma i nikt jej nie ustawia.
     # Procenty ponizej to odchylenie od tej sredniej; `min_packages_rank` chroni
@@ -976,13 +1038,20 @@ def admin_activities():
 @leader_required
 def admin_users():
     users = User.query.order_by(User.display_name).all()
-    return render_template('admin_users.html', users=users)
+    return render_template('admin_users.html', users=users,
+                           options=user_options_by_kind())
 
 
 @app.route('/admin/panel')
 @admin_required
 def admin_panel():
     return render_template('admin_panel.html')
+
+
+@app.route('/admin/user-options')
+@admin_required
+def admin_user_options():
+    return render_template('admin_user_options.html', options=user_options_by_kind())
 
 
 @app.route('/admin/country-mapping')
@@ -2337,6 +2406,8 @@ def api_user_create():
         barcode_id=barcode_id or None,
         role=role
     )
+    for kind, kolumna in USER_OPTION_KINDS.items():
+        setattr(user, kolumna, resolve_user_option(data.get(kolumna), kind))
     if role in ('leader', 'admin') and password:
         user.set_password(password)
 
@@ -2389,6 +2460,9 @@ def api_user_update(user_id):
             user.barcode_id = new_barcode
         else:
             user.barcode_id = None
+    for kind, kolumna in USER_OPTION_KINDS.items():
+        if kolumna in data:
+            setattr(user, kolumna, resolve_user_option(data[kolumna], kind))
     if 'role' in data:
         user.role = data['role']
     if 'is_active_user' in data:
@@ -2418,6 +2492,77 @@ def api_user_delete(user_id):
     user.is_active_user = False  # soft delete — load_user odbiera tez trwajaca sesje
     db.session.commit()
     return jsonify({'message': 'Dezaktywowano.'}), 200
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  API: ADMIN — LISTY NA KONCIE UZYTKOWNIKA (rodzaj pracownika, nazwa zmiany)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _user_option_kind(value):
+    if value not in USER_OPTION_KINDS:
+        abort(400, 'Nieznany rodzaj listy.')
+    return value
+
+
+def _user_option_name(data):
+    name = str(data.get('name') or '').strip()
+    if not name:
+        abort(400, 'Nazwa jest wymagana.')
+    if len(name) > 100:
+        abort(400, 'Nazwa może mieć najwyżej 100 znaków.')
+    return name
+
+
+@app.route('/api/user-options', methods=['GET'])
+@leader_required  # lider zaklada operatorow i wybiera z tych list
+def api_user_options():
+    return jsonify({k: [o.to_dict() for o in v]
+                    for k, v in user_options_by_kind().items()}), 200
+
+
+@app.route('/api/user-options', methods=['POST'])
+@admin_required
+def api_user_option_create():
+    data = json_body()
+    kind = _user_option_kind(data.get('kind'))
+    name = _user_option_name(data)
+    if UserOption.query.filter_by(kind=kind, name=name).first():
+        abort(409, 'Taka pozycja już istnieje.')
+    ostatnia = db.session.query(func.max(UserOption.sort_order))\
+        .filter(UserOption.kind == kind).scalar()
+    opt = UserOption(kind=kind, name=name, sort_order=(ostatnia or 0) + 1)
+    db.session.add(opt)
+    db.session.commit()
+    return jsonify(opt.to_dict()), 201
+
+
+@app.route('/api/user-options/<int:option_id>', methods=['PUT'])
+@admin_required
+def api_user_option_update(option_id):
+    opt = db.get_or_404(UserOption, option_id)
+    name = _user_option_name(json_body())
+    if UserOption.query.filter(UserOption.kind == opt.kind, UserOption.name == name,
+                               UserOption.id != opt.id).first():
+        abort(409, 'Taka pozycja już istnieje.')
+    # Zmiana nazwy przenosi sie na wszystkich przypisanych — trzymaja id, nie tekst.
+    opt.name = name
+    db.session.commit()
+    return jsonify(opt.to_dict()), 200
+
+
+@app.route('/api/user-options/<int:option_id>', methods=['DELETE'])
+@admin_required
+def api_user_option_delete(option_id):
+    opt = db.get_or_404(UserOption, option_id)
+    kolumna = getattr(User, USER_OPTION_KINDS[opt.kind])
+    przypisani = User.query.filter(kolumna == opt.id).count()
+    # Twarde usuniecie osierocilo by klucz u pracownikow; lepiej powiedziec wprost.
+    if przypisani:
+        abort(409, f'Pozycja jest przypisana do {przypisani} użytkowników — '
+                   'najpierw zmień im wartość albo zmień nazwę pozycji.')
+    db.session.delete(opt)
+    db.session.commit()
+    return jsonify({'message': 'Usunięto.'}), 200
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -4200,6 +4345,13 @@ def seed_data():
         else:
             print("[SEED] Admin user created (login: admin / haslo z ADMIN_PASSWORD)")
 
+    for kind, nazwy in USER_OPTION_DEFAULTS.items():
+        if UserOption.query.filter_by(kind=kind).count() == 0:
+            for i, name in enumerate(nazwy):
+                db.session.add(UserOption(kind=kind, name=name, sort_order=i))
+            db.session.commit()
+            print(f"[SEED] Default user options ({kind}) created.")
+
     if CountryMapping.query.count() == 0:
         for country, innenauftrag in DEFAULT_COUNTRY_MAPPINGS:
             db.session.add(CountryMapping(country=country, innenauftrag=innenauftrag))
@@ -4230,6 +4382,10 @@ def migrate_columns():
         migrations = [
             ("imported_carton", "scan_category_data", "TEXT DEFAULT '{}'"),
             ("general_stat",    "category_source",    "VARCHAR(10) DEFAULT 'manual'"),
+            # "user" to slowo zastrzezone — bez cudzyslowu ALTER pada skladniowo,
+            # a try/except ponizej by to po cichu polknal.
+            ('"user"', "worker_type_id", "INTEGER REFERENCES user_option(id)"),
+            ('"user"', "shift_group_id", "INTEGER REFERENCES user_option(id)"),
         ]
 
         for table, column, col_def in migrations:

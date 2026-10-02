@@ -15,6 +15,8 @@ import app as logistat
 KOLUMNY = [
     ('general_stat', 'category_source'),
     ('imported_carton', 'scan_category_data'),
+    ('user', 'worker_type_id'),
+    ('user', 'shift_group_id'),
 ]
 
 
@@ -27,7 +29,8 @@ def _kolumny(tabela):
 
 @pytest.mark.parametrize('tabela,kolumna', KOLUMNY)
 def test_migracja_przywraca_skasowana_kolumne(flask_app, tabela, kolumna):
-    logistat.db.session.execute(text(f'ALTER TABLE {tabela} DROP COLUMN {kolumna}'))
+    # "user" to slowo zastrzezone w Postgresie — bez cudzyslowu ALTER pada.
+    logistat.db.session.execute(text(f'ALTER TABLE "{tabela}" DROP COLUMN {kolumna}'))
     logistat.db.session.commit()
     assert kolumna not in _kolumny(tabela), 'przygotowanie testu zawiodlo'
 

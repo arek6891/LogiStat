@@ -1,5 +1,26 @@
 # LogiStat — Changelog
 
+## 2026-10-02 — „Normy", rodzaj pracownika i nazwa zmiany na koncie
+
+### Zmienione
+- Ekran `/stats` nazywa sie teraz **„Normy"** (menu, tytul, naglowek, sekcja w ustawieniach).
+  Trasa i API bez zmian. „Statystyki ogolne" (rozliczenie) zostaja pod stara nazwa.
+
+### Dodane
+- **Dwie listy rozwijane na koncie uzytkownika:** „Rodzaj pracownika" i „Nazwa zmiany"
+  (`User.worker_type_id`, `User.shift_group_id`), widoczne jako znaczki na liscie
+  uzytkownikow. Pozycje ustala admin w **Panel Admina → Listy uzytkownikow**
+  (`/admin/user-options`, tabela `UserOption`). Seed: Logwin / Agencja 1 / Agencja 2
+  oraz Zmiana A / B / C. Pozycji przypisanej komukolwiek nie da sie usunac (409),
+  mozna ja przemianowac.
+- Kolumny dochodza przez `migrate_columns()`. Tabela nazywa sie `"user"`, slowo
+  zastrzezone w Postgresie, wiec ALTER musi byc w cudzyslowie.
+
+### Poprawione
+- Dwa testy `/general-stats` w `test_scan_categories.py` padaly od 1 pazdziernika:
+  strona domyslnie pokazuje biezacy miesiac, a dane testowe sa z wrzesnia. Teraz
+  podaja zakres jawnie.
+
 ## 2026-09-28 — Statystyki: srednia zamiast mediany, srednie pracownika
 
 ### Zmienione — Przeglad ogolny
