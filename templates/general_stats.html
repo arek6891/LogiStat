@@ -7,7 +7,7 @@
         <p style="color:var(--text-muted);">Dane zagregowane z importów CSV. Puste filtry pokazują wszystkie daty.</p>
     </div>
     <div style="display:flex;gap:1rem;align-items:center;">
-        <form method="GET" style="display:flex;gap:.5rem;align-items:center;">
+        <form method="GET" id="filtrForm" style="display:flex;gap:.5rem;align-items:center;">
             <input type="date" name="date_from" value="{{ date_from }}" class="form-control" style="width:140px;"
                 placeholder="Od">
             <span style="color:var(--text-muted);">—</span>
@@ -20,7 +20,8 @@
         <div style="width:1px;height:30px;background:var(--border);margin:0 .5rem;"></div>
         <a id="exportBtn" href="{{ url_for('general_stats_export', date_from=date_from, date_to=date_to) }}"
            class="btn btn-secondary">⬇ Excel</a>
-        <button class="btn btn-primary" onclick="saveAll()">💾 Zapisz zmiany</button>
+        <span class="autozapis-status" id="autoZapisStatus"
+              title="Ilości zapisują się same chwilę po wpisaniu"></span>
     </div>
 </div>
 
@@ -285,6 +286,25 @@
             updateGlobalSums();
         });
     });
+    // Tylko pola ilosci — pole kosztu (readonly) tez ma klase inline-input.
+    // Po DOMContentLoaded: ten skrypt stoi w bloku `content`, czyli PRZED
+    // skryptem base.html z `autoZapis` — wywolany od razu dostalby ReferenceError.
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.inline-input[data-field="amount"]').forEach(input => {
+            autoZapis.poWpisaniu(input, () => saveRow(input.closest('tr')));
+        });
+    });
+
+    // Filtr, eksport i przeladowanie czytaja baze — najpierw dokoncz zapisy,
+    // inaczej plik rozliczeniowy wyszedlby ze starymi ilosciami.
+    document.getElementById('filtrForm').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        if (await autoZapis.przedOpuszczeniem()) this.submit();
+    });
+    document.getElementById('exportBtn').addEventListener('click', async function (e) {
+        e.preventDefault();
+        if (await autoZapis.przedOpuszczeniem()) window.location.href = this.href;
+    });
 
     const ratesByYm = JSON.parse('{{ rates_by_ym|tojson|safe }}');
     const TOTAL_AMOUNT_CATEGORY = '{{ total_amount_category }}';
@@ -392,6 +412,7 @@
     async function przelaczNaSkany(btn) {
         if (!confirm('Zastąpić ręcznie wpisane ilości sumą ze skanów paczek?\n\n' +
                      'Tej operacji nie cofniesz — ręczne wartości tej linii zostaną nadpisane.')) return;
+        if (!await autoZapis.przedOpuszczeniem()) return;
         btn.disabled = true;
         try {
             const res = await fetch(`/api/general-stats/${btn.dataset.id}/use-scan`,
@@ -409,61 +430,35 @@
         }
     }
 
-    async function saveAll() {
-        const rows = document.querySelectorAll('#statsTable tbody tr[data-id]');
-        let saved = 0;
-        let errors = 0;
+    // Wiersz (linia albo jej zolty wiersz double rate) = jeden PUT ze
+    // wszystkimi kategoriami tego wiersza. Zolty wiersz pisze do osobnego pola
+    // tego samego rekordu, wiec ma osobny klucz — oba moga isc rownolegle.
+    function saveRow(row) {
+        const id = row.dataset.id;
+        const isDr = row.dataset.drRow === 'true';
+        // Tylko pola ilosci: pole kosztu tez ma klase inline-input (readonly) i
+        // nadpisaloby ilosc kategorii swoja wartoscia.
+        const inputs = [...row.querySelectorAll('.inline-input[data-field="amount"]')];
+        // Bez pol ilosci (linia ze skanow / zmieniony szablon) nie wysylaj nic —
+        // pusty slownik wyczyscilby kategorie, czyli rozliczenie tej linii.
+        if (inputs.length === 0) return;
+        const categoryData = {};
+        inputs.forEach(inp => {
+            // Backend no longer needs cost, but we preserve the schema structure
+            categoryData[inp.dataset.cat] = { amount: parseInt(inp.value) || 0, cost: 0 };
+        });
+        const payload = isDr
+            ? { double_rate_category_data: categoryData }
+            : { category_data: categoryData };
+        const values = inputs.map(inp => inp.value);
 
-        for (const row of rows) {
-            const modified = row.querySelectorAll('.inline-input.modified');
-            if (modified.length === 0) continue;
-
-            const id = row.dataset.id;
-            const categoryData = {};
-
-            // Collect all category data for this row
-            const cats = new Set();
-            row.querySelectorAll('.inline-input').forEach(inp => {
-                cats.add(inp.dataset.cat);
+        autoZapis.zaplanuj(`gs:${id}:${isDr ? 'dr' : 'main'}`, async () => {
+            await zapiszJson(`/api/general-stats/${id}`, 'PUT', payload);
+            inputs.forEach((inp, k) => {
+                inp.dataset.original = values[k];
+                inp.classList.toggle('modified', inp.value !== values[k]);
             });
-
-            cats.forEach(cat => {
-                const amountInput = row.querySelector(`[data-cat="${cat}"][data-field="amount"]`);
-                // Backend no longer needs cost, but we preserve the schema structure
-                categoryData[cat] = {
-                    amount: parseInt(amountInput.value) || 0,
-                    cost: 0
-                };
-            });
-
-            // Yellow double-rate row saves into a separate field on the same record
-            const payload = row.dataset.drRow === 'true'
-                ? { double_rate_category_data: categoryData }
-                : { category_data: categoryData };
-
-            try {
-                const resp = await fetch(`/api/general-stats/${id}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                if (resp.ok) {
-                    saved++;
-                    modified.forEach(inp => {
-                        inp.dataset.original = inp.value;
-                        inp.classList.remove('modified');
-                    });
-                } else {
-                    errors++;
-                }
-            } catch (e) {
-                errors++;
-            }
-        }
-
-        if (saved > 0) showToast(`Zapisano ${saved} wierszy.`, 'success');
-        if (errors > 0) showToast(`Błąd zapisu ${errors} wierszy.`, 'error');
-        if (saved === 0 && errors === 0) showToast('Brak zmian do zapisania.', 'info');
+        }, inputs);
     }
 </script>
 {% endblock %}

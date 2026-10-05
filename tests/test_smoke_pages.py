@@ -11,7 +11,7 @@ STRONY_ADMINA = [
     '/time-tracking', '/worker-times', '/profile',
     '/admin/users', '/admin/activities', '/admin/panel',
     '/admin/country-mapping', '/admin/cost-mapping', '/admin/settings',
-    '/admin/user-options', '/import-csv', '/general-stats',
+    '/admin/user-options', '/admin/category-labels', '/import-csv', '/general-stats',
 ]
 
 # Strony dostepne liderowi (bez sekcji admin-only)
@@ -23,7 +23,7 @@ STRONY_LIDERA = [
 
 TYLKO_ADMIN = [
     '/admin/activities', '/admin/panel', '/admin/country-mapping', '/admin/user-options',
-    '/admin/cost-mapping', '/admin/settings', '/general-stats',
+    '/admin/cost-mapping', '/admin/settings', '/admin/category-labels', '/general-stats',
 ]
 
 

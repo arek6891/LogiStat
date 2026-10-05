@@ -65,7 +65,7 @@
 </div>
 
 <!-- Modal dodawania paczki -->
-<div id="addPackageModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;">
+<div id="addPackageModal" data-modal-guard style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;">
     <div style="background:var(--surface);border-radius:12px;padding:2rem;min-width:360px;max-width:520px;width:90%;max-height:90vh;overflow-y:auto;">
         <h3 style="margin-top:0;" id="apModalTitle">➕ Dodaj paczkę ręcznie</h3>
         <p style="color:var(--text-muted);font-size:.85rem;">Dla paczek, których nie ma w plikach CSV. Paczka trafi do rozliczenia tak samo jak paczki z importu. Pola z <span style="color:var(--danger);">*</span> są wymagane.</p>
@@ -107,7 +107,7 @@
 
 
 <!-- Modal korekty ilosci per kategoria -->
-<div id="qtyModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;">
+<div id="qtyModal" data-modal-guard style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;">
     <div style="background:var(--surface);border-radius:12px;padding:2rem;min-width:360px;max-width:520px;width:90%;max-height:90vh;overflow-y:auto;">
         <h3 style="margin-top:0;">✎ Ilości per kategoria</h3>
         <p style="color:var(--text-muted);font-size:.85rem;">
@@ -274,7 +274,7 @@
 {% endif %}
 
 <!-- Modal przepisania -->
-<div id="reassignModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;">
+<div id="reassignModal" data-modal-guard style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;">
     <div style="background:var(--surface);border-radius:12px;padding:2rem;min-width:340px;max-width:480px;width:90%;">
         <h3 style="margin-top:0;">✎ Przepisz pracownika</h3>
         <p style="color:var(--text-muted);font-size:.9rem;">Paczka: <code id="reassignBarcode"></code></p>

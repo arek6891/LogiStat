@@ -15,7 +15,7 @@ docker compose down
 # Tests — need a Postgres; the compose file below provides one (port 55432, tmpfs)
 docker compose -f docker-compose.test.yml up -d
 pip install -r requirements-dev.txt
-pytest                               # 422 tests
+pytest                               # 463 tests
 docker compose -f docker-compose.test.yml down
 LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://u:p@host:5432/db pytest   # another DB
 # On .32 there is no pytest/venv — use the prebuilt runner image instead:
@@ -62,7 +62,7 @@ Default admin after seed: `admin` / `admin123` — override with `ADMIN_PASSWORD
 ## Core data flows
 
 - **Shift attendance:** leader scans badges → `ShiftAttendance` per `Shift`.
-- **Activity assignment:** drag operators to activities → `ActivityAssignment`.
+- **Activity assignment:** drag operators to activities → `ActivityAssignment`. `POST /api/assignment/save` **replaces the whole shift** (delete + insert), so: it locks the `Shift` row (`with_for_update()`), and `GET /api/assignment/data` returns `wersja` (`wersja_przydzialu()` — hash of the sorted `(user_id, activity_id)` pairs, no column) which the client sends back; a stale one → **409 + `konflikt: true`**, nothing overwritten (two leaders on one shift). No `wersja` in the body = old behaviour (`tests/test_przydzielanie_wersja.py`). AI suggestions save immediately too, so applying them over a non-empty board asks first.
 - **Daily stats:** leader enters quantities → `DailyStat` (audit trail).
 - **AI suggestions** (`/api/assignment/suggestions`): greedy, 30-day average `DailyStat.quantity` per user × activity.
 
@@ -104,7 +104,7 @@ Default admin after seed: `admin` / `admin123` — override with `ADMIN_PASSWORD
 - Yellow double-rate row stays **manual**.
 - `GeneralStat.to_dict()` iterates `STAT_CATEGORIES`, not stored keys (`carton_labeling` was removed).
 - **`Total Amount` = `TOTAL_AMOUNT_CATEGORY` (`labelling_on`) only**, never the sum. Three places must agree: Jinja row in `general_stats.html`, JS recompute after inline edit, `write_data_row()` in Excel export. The **yellow row still sums everything** (`is_double_rate=True`) — pending, `docs/TODO.md`.
-- `STAT_CATEGORY_LABELS` (English — Excel export headers, external artifact, keep English) vs `STAT_CATEGORY_LABELS_PL`; screens use `etykieta_kategorii()` / `etykiety_kategorii()`.
+- `STAT_CATEGORY_LABELS` (English — General Stats + Excel export headers, external artifact, keep English, **never admin-editable**) vs `STAT_CATEGORY_LABELS_PL` (**defaults only**). Screens use `etykiety_kategorii()` (one query) / `etykieta_kategorii(kat, nazwy_pl=None)` → **„Polish (English)"**, e.g. „Niesprocesowane (Sorting)" — worker-facing: end-of-package step, „✎ Ilości" on `/paczki`, cost mapping, scan-quantity validation errors. Polish names are admin-edited at `/admin/category-labels` (`PUT /api/category-labels {nazwy: {kat: str}}`, autosave) and stored in `AppSetting` as `kategoria_pl:<kat>` (no column); empty or equal to the default → the row is **deleted**, so a changed default in code still applies. `bledy_paczki()` keeps the English name (called per carton — a label lookup there would be N+1). General Stats shows English + the current Polish name.
 
 **Normy (`/stats`) — overview `GET /api/stats/overview?date_from=&date_to=` (leader+)** — built on **finished packages, not `DailyStat`**.
 - Metric = `sum(stueckzahl)` / **union** of the worker's scan intervals (`suma_zlaczonych_okresow()`), i.e. pieces per hour of *scanning* (breaks don't reduce it — label it so).
@@ -137,6 +137,9 @@ Default admin after seed: `admin` / `admin123` — override with `ADMIN_PASSWORD
 - **`/api/` errors are JSON** (one `@app.errorhandler(HTTPException)`): `abort(400, 'komunikat')`, front reads `data.error`. Helpers: `json_body()`, `parse_date()` (empty → today; for range filters call conditionally), `parse_shift_number()`, `require_int()`.
 - **Static:** `{{ static_v('style.css') }}` appends mtime.
 - **`escapeHtml()` (`base.html`)** on everything from the DB going into `innerHTML` — barcodes come from imports, risk is *stored* XSS.
+- **Autosave, no „Zapisz" button** on the bulk screens — Przydzielanie, Wpis ilości, Forecast, Statystyki ogólne (people forgot the button and lost work). One helper in `base.html`: `autoZapis.zaplanuj(klucz, wyslij, pola)` + `zapiszJson()`. Rules: wire fields with **`autoZapis.poWpisaniu(pole, zapisz)`** — saves **1.2 s after typing stops** *or* on `change` (blur), same value never twice; a field waiting for its pause counts as unsaved (`beforeunload`, „✎ Zapis za chwilę…"), and `przedOpuszczeniem()` pushes it out first — closing a tab with the cursor in a field fires no `change`, so blur-only lost the last number silently. Build the payload (incl. date/shift) **at change time** — pages keep `loadedDate`, not the date field's live value; **one request in flight per key**, then only the newest pending one (key = row / shift); status in `#autoZapisStatus` (Zapisywanie / ✓ Zapisano / ⚠ + Ponów or the error's `akcja`); `beforeunload` armed only while pending/failed; **`await autoZapis.przedOpuszczeniem()` before** shift/date switch, reload, filter submit and export links. `zapiszJson()` treats a non-JSON or redirected response as failure — an expired session redirects to `/login` with **200**. Per-row saves only: forecast saves one day (`saved === 1`), daily stats one `(user, activity)`, general stats one line (`gs:<id>:main|dr`, amount fields only — the readonly cost field also has `inline-input`; no amount fields → send nothing, an empty dict would wipe the line's categories). Other endpoints unchanged (assignment: see Core data flows). **Gotcha:** some pages (e.g. `general_stats.html`) put their `<script>` in `{% block content %}`, which runs **before** base.html's script — call `autoZapis`/`zapiszJson` there only from events or `DOMContentLoaded`, or the page gets a `ReferenceError` and silently stops saving.
+- **Explicit-save forms stay explicit** (modals, `/admin/settings`, stats target, **cost mapping** — billing, and „copy previous month" is deliberate). Cost mapping shows „● Niezapisane zmiany stawek", arms `beforeunload` and asks before loading another month while rates differ from the loaded ones. **Save and „copy previous month" use the *loaded* month (`loadedYear`/`loadedMonth`), never the live selects** — switching the month list without „Pokaż stawki" used to save the old month's rates under the new one; the button shows which month it writes. Modals with fields carry **`data-modal-guard`**: a backdrop click with changed fields asks first (it used to discard silently); „Anuluj" does not ask. New modal with a form → add the attribute.
+- **Shift colours:** `--shift-1` (blue) / `--shift-2` (orange) in `:root`, applied by `data-shift="1|2"` on `.shift-tab.active`, `.shift-badge`, `.shift-frame` (working area of the edited shift), `.shift-card` (dashboard), `.scanner-shift-badge` / `.scanner-page`. Never yellow (double rate / warnings), green/red (statuses) or purple (accent); always next to the „Zmiana N" text, never colour alone. New place showing a shift → reuse these classes.
 
 ## Pending work (from TODO.md)
 

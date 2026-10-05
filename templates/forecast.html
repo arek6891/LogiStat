@@ -158,9 +158,10 @@
         <label>Do</label>
         <input type="date" id="dateTo" class="form-control" value="{{ date_to }}">
     </div>
-    <button class="btn btn-primary" onclick="loadData()">Odśwież</button>
-    <button class="btn btn-success" onclick="saveAll()">Zapisz wszystkie</button>
+    <button class="btn btn-primary" onclick="odswiez()">Odśwież</button>
     <button class="btn btn-ghost" onclick="exportExcel()">&#8595; Eksport Excel</button>
+    <span class="autozapis-status" id="autoZapisStatus"
+          title="Plan i notatka zapisują się same chwilę po wpisaniu"></span>
 </div>
 
 <div class="summary-bar" id="summaryBar" style="display:none;">
@@ -255,7 +256,7 @@ function renderTable(data) {
                 <input type="number" min="0" step="1"
                     data-date="${row.date}"
                     class="fc-input"
-                    value="${row.forecast}"
+                    value="${parseInt(row.forecast) || 0}"
                     oninput="updateDiff(this)">
             </td>
             <td><span class="badge-actual">${row.actual.toLocaleString('pl')}</span></td>
@@ -270,6 +271,10 @@ function renderTable(data) {
     }).join('');
 
     document.getElementById('rowCount').textContent = `${data.length} dni`;
+    tbody.querySelectorAll('tr').forEach(tr => {
+        tr.querySelectorAll('.fc-input, .note-input').forEach(pole =>
+            autoZapis.poWpisaniu(pole, () => saveRow(tr)));
+    });
 }
 
 function updateDiff(input) {
@@ -352,36 +357,35 @@ function renderCharts(data) {
     });
 }
 
-async function saveAll() {
-    const rows = document.querySelectorAll('#forecastBody tr');
-    const payload = [];
-    rows.forEach(tr => {
-        const fcInput   = tr.querySelector('.fc-input');
-        const noteInput = tr.querySelector('.note-input');
-        if (!fcInput) return;
-        payload.push({
-            date: fcInput.dataset.date,
-            quantity: parseInt(fcInput.value) || 0,
-            notes: noteInput ? noteInput.value : ''
-        });
-    });
-    if (!payload.length) return;
-
-    const resp = await fetch('/api/forecast/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
-    const result = await resp.json();
-    if (resp.ok) {
-        showToast(result.message, 'success');
-        loadData();
-    } else {
-        showToast(result.error || 'Błąd zapisu', 'error');
-    }
+// Wiersz = jeden dzien = jeden zapis (endpoint robi upsert po dacie). Dawny
+// „Zapisz wszystkie" wysylal kazdy dzien zakresu i zakladal wiersz z zerem
+// dla dni, ktorych nikt nie planowal. Bez loadData() po zapisie — przerysowanie
+// tabeli zabieraloby fokus z pola, do ktorego wlasnie przechodzi Tab.
+function saveRow(tr) {
+    const fcInput = tr.querySelector('.fc-input');
+    const noteInput = tr.querySelector('.note-input');
+    const entry = {
+        date: fcInput.dataset.date,
+        quantity: parseInt(fcInput.value) || 0,
+        notes: noteInput.value
+    };
+    const row = currentData.find(r => r.date === entry.date);
+    if (row) row.notes = entry.notes;
+    renderCharts(currentData);
+    autoZapis.zaplanuj(`forecast:${entry.date}`, async () => {
+        const dane = await zapiszJson('/api/forecast/save', 'POST', [entry]);
+        if (dane.saved !== 1) throw new Error(`Nie zapisano dnia ${formatDate(entry.date)}.`);
+    }, [fcInput, noteInput]);
 }
 
-function exportExcel() {
+async function odswiez() {
+    if (!await autoZapis.przedOpuszczeniem()) return;
+    loadData();
+}
+
+async function exportExcel() {
+    // Eksport czyta baze — najpierw niech wyjda zapisy, inaczej plik ma stare liczby.
+    if (!await autoZapis.przedOpuszczeniem()) return;
     const from = document.getElementById('dateFrom').value;
     const to   = document.getElementById('dateTo').value;
     window.location.href = `/api/forecast/export?date_from=${from}&date_to=${to}`;

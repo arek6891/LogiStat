@@ -605,7 +605,7 @@
             return `
         <tr>
             <td>${d.date}</td>
-            <td>Zmiana ${d.shift_number}</td>
+            <td><span class="shift-badge" data-shift="${parseInt(d.shift_number) || ''}">Zmiana ${parseInt(d.shift_number) || ''}</span></td>
             <td>${escapeHtml(d.activity)}</td>
             <td>
                 <input type="number" class="edit-qty" data-stat-id="${d.stat_id}" value="${d.quantity}"

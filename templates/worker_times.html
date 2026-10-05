@@ -27,7 +27,7 @@
 </div>
 
 <!-- Modal dodawania/edycji zdarzenia -->
-<div id="eventModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);
+<div id="eventModal" data-modal-guard style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);
      z-index:1000;align-items:center;justify-content:center;">
     <div style="background:var(--bg-card-solid);border:1px solid var(--border);border-radius:var(--radius-lg);
                 padding:2rem;width:90%;max-width:440px;box-shadow:var(--shadow-lg);">
@@ -224,7 +224,7 @@
                     </div>
                     ${bledyHtml}
                 </td>
-                <td>Zmiana ${w.shift_number}</td>
+                <td><span class="shift-badge" data-shift="${parseInt(w.shift_number) || ''}">Zmiana ${parseInt(w.shift_number) || ''}</span></td>
                 <td style="font-family:monospace;">${fmt(w.shift_in)}</td>
                 <td style="font-size:.82rem;line-height:1.6;">${breaksSummary}</td>
                 <td style="font-weight:700;color:${overBreak ? 'var(--danger)' : 'var(--warning)'};">

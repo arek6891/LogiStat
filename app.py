@@ -3,6 +3,7 @@ import csv
 import io
 import json
 import calendar
+import hashlib
 import math
 from datetime import datetime, date, time, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -456,6 +457,9 @@ STAT_CATEGORY_LABELS = {
 
 # Polskie odpowiedniki — TYLKO dla ekranów. Naglowki eksportu Excel zostaja
 # angielskie, bo to artefakt rozliczeniowy wychodzacy na zewnatrz.
+# To sa DOMYSLNE nazwy: admin nadpisuje je w /admin/category-labels (AppSetting
+# `kategoria_pl:<kat>`), bo pracownik na stanowisku musi widziec nazwe, ktora
+# rozumie (np. „Niesprocesowane" zamiast „Sortowanie").
 STAT_CATEGORY_LABELS_PL = {
     'labelling_on': 'Etykietowanie pojedyncze',
     'labelling_tvl': 'Etykietowanie podwójne',
@@ -469,16 +473,37 @@ STAT_CATEGORY_LABELS_PL = {
 }
 
 
-def etykieta_kategorii(kat):
-    """Dwuczlonowa etykieta na ekrany: „Labelling one — Etykietowanie pojedyncze"."""
+KLUCZ_NAZWY_PL = 'kategoria_pl:'
+NAZWA_PL_MAX = 60
+
+
+def nazwy_kategorii_pl():
+    """Polska nazwa kazdej kategorii: nadpisana przez admina albo domyslna.
+
+    Jedno zapytanie na wszystkie kategorie — wolajacy w petli dostaja mape.
+    """
+    nadpisane = {
+        row.key[len(KLUCZ_NAZWY_PL):]: row.value
+        for row in AppSetting.query.filter(AppSetting.key.like(KLUCZ_NAZWY_PL + '%'))
+        if (row.value or '').strip()
+    }
+    return {k: nadpisane.get(k) or STAT_CATEGORY_LABELS_PL.get(k, '') for k in STAT_CATEGORIES}
+
+
+def etykieta_kategorii(kat, nazwy_pl=None):
+    """Etykieta na ekrany: najpierw polska nazwa, w nawiasie angielska ze
+    Statystyk ogolnych — „Niesprocesowane (Sorting)". Angielska czesc jest
+    stala (rozliczenie i eksport Excel jej uzywaja), wiec pracownik i
+    rozliczajacy zawsze mowia o tej samej kategorii."""
     ang = STAT_CATEGORY_LABELS.get(kat, kat)
-    pl = STAT_CATEGORY_LABELS_PL.get(kat)
-    return f'{ang} — {pl}' if pl else ang
+    pl = (nazwy_pl if nazwy_pl is not None else nazwy_kategorii_pl()).get(kat)
+    return f'{pl} ({ang})' if pl else ang
 
 
 def etykiety_kategorii():
-    """Mapa kategoria → dwuczlonowa etykieta (do szablonow)."""
-    return {k: etykieta_kategorii(k) for k in STAT_CATEGORIES}
+    """Mapa kategoria → etykieta (do szablonow), jednym zapytaniem."""
+    nazwy = nazwy_kategorii_pl()
+    return {k: etykieta_kategorii(k, nazwy) for k in STAT_CATEGORIES}
 
 
 # Total Amount w Statystykach ogolnych liczy WYLACZNIE te kategorie. Suma
@@ -1114,6 +1139,47 @@ def api_settings_update():
     }), 200
 
 
+@app.route('/admin/category-labels')
+@admin_required
+def admin_category_labels():
+    nazwy = nazwy_kategorii_pl()
+    return render_template('admin_category_labels.html', kategorie=[
+        {'klucz': k, 'ang': STAT_CATEGORY_LABELS.get(k, k), 'pl': nazwy.get(k, ''),
+         'domyslna': STAT_CATEGORY_LABELS_PL.get(k, '')}
+        for k in STAT_CATEGORIES])
+
+
+@app.route('/api/category-labels', methods=['PUT'])
+@admin_required
+def api_category_labels_update():
+    """Polskie nazwy kategorii widziane przez pracownika (koniec paczki,
+    ✎ Ilości, cennik). Pusta nazwa = powrot do domyslnej. Angielskiej czesci
+    nie da sie zmienic — to klucz rozliczenia i naglowki eksportu."""
+    nazwy = json_body().get('nazwy')
+    if not isinstance(nazwy, dict):
+        abort(400, 'Pole "nazwy" musi być obiektem {kategoria: nazwa}.')
+    for kat, nazwa in nazwy.items():
+        if kat not in STAT_CATEGORIES:
+            abort(400, f'Nieznana kategoria: {kat}.')
+        if nazwa is not None and not isinstance(nazwa, str):
+            abort(400, f'Nazwa dla „{STAT_CATEGORY_LABELS[kat]}" musi być tekstem.')
+        nazwa = ' '.join((nazwa or '').split())
+        if len(nazwa) > NAZWA_PL_MAX:
+            abort(400, f'Nazwa dla „{STAT_CATEGORY_LABELS[kat]}" może mieć najwyżej {NAZWA_PL_MAX} znaków.')
+        klucz = KLUCZ_NAZWY_PL + kat
+        if not nazwa or nazwa == STAT_CATEGORY_LABELS_PL.get(kat):
+            # Domyslna nie jest zapisywana — zmiana domyslnej w kodzie ma
+            # dzialac dla kategorii, ktorych nikt nie nadpisal.
+            row = db.session.get(AppSetting, klucz)
+            if row is not None:
+                db.session.delete(row)
+        else:
+            set_setting(klucz, nazwa)
+    db.session.commit()
+    return jsonify({'message': 'Zapisano nazwy kategorii.',
+                    'etykiety': etykiety_kategorii()}), 200
+
+
 @app.route('/import-csv')
 @leader_required
 def import_csv_page():
@@ -1317,7 +1383,7 @@ def paczki_view():
                            bledy_map={c.id: bledy_paczki(c) for c in pagination.items},
                            users=users,
                            country_mappings=country_mappings,
-                           kategorie=[(k, etykieta_kategorii(k)) for k in STAT_CATEGORIES])
+                           kategorie=list(etykiety_kategorii().items()))
 
 
 @app.route('/general-stats/export')
@@ -1616,7 +1682,7 @@ def general_stats_page():
     return render_template('general_stats.html',
                            stats=stats,
                            category_labels=STAT_CATEGORY_LABELS,
-                           category_labels_pl=STAT_CATEGORY_LABELS_PL,
+                           category_labels_pl=nazwy_kategorii_pl(),
                            total_amount_category=TOTAL_AMOUNT_CATEGORY,
                            categories=STAT_CATEGORIES,
                            date_from=date_from_str,
@@ -1725,7 +1791,8 @@ def api_assignment_data():
             'shift': None,
             'attendees': [],
             'assignments': [],
-            'activities': [a.to_dict() for a in activities]
+            'activities': [a.to_dict() for a in activities],
+            'wersja': wersja_przydzialu([])
         }), 200
 
     # joinedload: to_dict() kazdego wiersza siega po user/activity — bez tego
@@ -1745,7 +1812,8 @@ def api_assignment_data():
         'assignments': [a.to_dict() for a in assignments],
         'activities': [a.to_dict() for a in activities],
         'unassigned': [a.user.to_dict() for a in attendances
-                       if a.user_id not in assigned_user_ids]
+                       if a.user_id not in assigned_user_ids],
+        'wersja': wersja_przydzialu(assignments)
     }), 200
 
 
@@ -1838,6 +1906,19 @@ def api_assignment_suggestions():
     return jsonify({'suggestions': suggestions}), 200
 
 
+def wersja_przydzialu(przydzialy):
+    """Odcisk przydzialu zmiany — do wykrycia, ze ktos inny zmienil go w miedzyczasie.
+
+    Ekran zapisuje sie sam po kazdym przeciagnieciu, a zapis podmienia CALY
+    przydzial zmiany. Dwoch liderow (albo dwa tablety) na tej samej zmianie
+    nadpisywaloby sobie prace po cichu, wiec klient odsyla wersje, ktora
+    wczytal, a zapis na nieaktualnej dostaje 409. Liczone z tresci, nie z
+    czasu: bez nowej kolumny, a ten sam stan zawsze daje te sama wersje.
+    """
+    pary = sorted((a.user_id, a.activity_id) for a in przydzialy)
+    return hashlib.sha1(json.dumps(pary).encode()).hexdigest()[:16]
+
+
 @app.route('/api/assignment/save', methods=['POST'])
 @leader_required
 def api_assignment_save():
@@ -1849,6 +1930,10 @@ def api_assignment_save():
         return jsonify({'error': 'Pole "assignments" musi być listą.'}), 400
 
     shift = get_or_create_shift(parse_date(data.get('date')), shift_number)
+    # Blokada wiersza zmiany serializuje zapisy tej zmiany: bez niej dwa
+    # rownolegle delete+insert (autozapis z dwoch stanowisk) wstawialy oba
+    # komplety, a sprawdzenie wersji ponizej nie byloby atomowe.
+    shift = Shift.query.filter_by(id=shift.id).with_for_update().one()
 
     # Sprawdz FK przed czyszczeniem, zeby bledne cialo nie wyczyscilo przydzialu
     # i nie zostawilo zmiany pustej.
@@ -1866,6 +1951,20 @@ def api_assignment_save():
             return jsonify({'error': f'Nieznana czynność (id {activity_id}).'}), 400
         nowe.append((user_id, activity_id, bool(a.get('is_suggestion', False))))
 
+    # Brak `wersja` w ciele = stary klient / API — zapis bez sprawdzania.
+    oczekiwana = data.get('wersja')
+    if oczekiwana is not None:
+        teraz = wersja_przydzialu(
+            ActivityAssignment.query.filter_by(shift_id=shift.id).all())
+        if oczekiwana != teraz:
+            db.session.rollback()
+            return jsonify({
+                'error': 'Ktoś inny zmienił przydział tej zmiany w międzyczasie. '
+                         'Wczytaj aktualny stan i przeciągnij jeszcze raz.',
+                'konflikt': True,
+                'wersja': teraz,
+            }), 409
+
     # Clear existing assignments for this shift
     ActivityAssignment.query.filter_by(shift_id=shift.id).delete()
 
@@ -1879,7 +1978,11 @@ def api_assignment_save():
         ))
 
     db.session.commit()
-    return jsonify({'message': 'Przydzielenie zapisane.'}), 200
+    return jsonify({
+        'message': 'Przydzielenie zapisane.',
+        'wersja': wersja_przydzialu(
+            ActivityAssignment.query.filter_by(shift_id=shift.id).all()),
+    }), 200
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -3639,7 +3742,7 @@ def api_cost_mapping_save(year, month):
 def scan_paczki():
     return render_template(
         'scan_paczki.html',
-        kategorie=[(kat, etykieta_kategorii(kat)) for kat in STAT_CATEGORIES])
+        kategorie=list(etykiety_kategorii().items()))
 
 
 def parse_scan_categories(surowe):
@@ -3659,9 +3762,9 @@ def parse_scan_categories(surowe):
         try:
             ile = int(wartosc)
         except (TypeError, ValueError):
-            return None, f'Ilość dla „{STAT_CATEGORY_LABELS.get(kat, kat)}" musi być liczbą.'
+            return None, f'Ilość dla „{etykieta_kategorii(kat)}" musi być liczbą.'
         if ile < 0:
-            return None, f'Ilość dla „{STAT_CATEGORY_LABELS.get(kat, kat)}" nie może być ujemna.'
+            return None, f'Ilość dla „{etykieta_kategorii(kat)}" nie może być ujemna.'
         if ile:
             wynik[kat] = ile
     return wynik, None
