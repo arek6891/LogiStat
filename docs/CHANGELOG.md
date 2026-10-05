@@ -1,5 +1,62 @@
 # LogiStat — Changelog
 
+## 2026-10-05 — Data pliku, autozapis, kolory zmian, nazwy kategorii (PR #19, #20)
+
+Wdrożone na `.31` 2026-10-05 (`main` `34eb44e`), backup przed:
+`backups/logistat-2026-10-05_1742.sql.gz`.
+
+### Dodane
+- **Data pliku — główna data pracy.** Po wybraniu pliku w Imporcie danych pojawia się
+  okno „Data pliku" z podpowiedzianą dzisiejszą datą (ostrzeżenie przy innej); bez daty
+  import nie ruszy (`data_pliku` w multipart, 400). Nowa kolumna
+  `imported_carton.data_pliku`, jeden `imported_at` na cały plik.
+- **📅 Popraw datę pliku** (Import danych, lider/admin): lista importów z filtrami
+  (data pliku, dzień i godziny wrzucenia, kto wrzucił), zaznaczenie → **podgląd skutków**
+  → zmiana. `GET /api/imports`, `POST /api/imports/zmien-date` (`podglad: true`).
+- **Dashboard:** zakładki **Dziś** (plan dzisiejszego pliku: wrzucone / zrobione /
+  pozostało / w toku, w paczkach i sztukach) i **Wybrany dzień**
+  (`GET /api/dashboard/plik?date=`); `plik_dzis` i `zalegle` w `GET /api/dashboard`.
+- **Autozapis** na Przydzielaniu, Wpisie ilości, Forecaście i w Statystykach ogólnych —
+  bez przycisku „Zapisz": zapis 1,2 s po wpisaniu albo przy wyjściu z pola, wskaźnik
+  stanu z „Ponów", ostrzeżenie przy zamykaniu karty z niezapisanymi danymi.
+- **Przydzielanie: ostrzeżenie o drugim liderze.** Zapis niesie wersję przydziału;
+  jeśli ktoś inny zmienił zmianę w międzyczasie → 409 „Ktoś inny zmienił przydział tej
+  zmiany" + „Wczytaj aktualny" zamiast cichego nadpisania. Zapis blokuje wiersz zmiany.
+- **Kolory zmian:** Zmiana 1 niebieska, Zmiana 2 pomarańczowa — zakładki, obszar roboczy,
+  skaner, Dashboard, Normy, Czasy pracowników.
+- **Nazwy kategorii ustawiane przez admina** (Panel Admina → ✏️ Nazwy kategorii,
+  `PUT /api/category-labels`): pracownik widzi „Polska nazwa (English)", np.
+  „Niesprocesowane (Sorting)". Eksport Excel bez zmian.
+- **Okna formularzy nie gubią danych:** kliknięcie obok okna z wpisanymi danymi najpierw
+  pyta (dodawanie użytkownika, czynności, paczki, zdarzenia czasu, mapowania krajów).
+
+### Zmienione
+- **Rozliczenie (Statystyki ogólne) liczy się po dacie pliku**, nie po Ziel-Datum:
+  linia = Übergabe Nr + kraj + data pliku, „Loading date" = data pliku (miesiąc stawek
+  i tydzień od niej). Decyzje operacji:
+  - ten sam Übergabe Nr + kraj z dwiema Ziel-Datum w jednym pliku → **jedna linia**,
+  - paczki **bez Ziel-Datum są rozliczane**,
+  - stare paczki dostały datę pliku = lokalny dzień importu.
+  Jednorazowa migracja przy starcie (`migruj_date_pliku`). Na `.31`: 373 → 206 linii,
+  Σ amounts 1 290 526 → 1 324 730 (+34 204 szt. z paczek bez Ziel-Datum), 30 paczek
+  przeszło z sierpnia na wrzesień, 428 zmieniło tydzień; żadna paczka nie zginęła ani
+  nie liczy się podwójnie.
+- **Ziel-Datum** tylko informacyjnie; przy ręcznym dodaniu paczki opcjonalna, wymagana
+  jest data pliku.
+- **Dashboard → Podsumowanie** pokazuje tylko niezrobione paczki, w podziale na daty pliku.
+- **Paczki (dane):** domyślny filtr dat = data pliku (nowa kolumna w tabeli); Ziel-Datum
+  została jako opcja.
+- **Forecast „Actual"** liczy po dacie pliku.
+- Nazwy kategorii na ekranach: „Polska (English)" zamiast „English — Polska".
+
+### Poprawione
+- **Stawki zapisywały się pod zły miesiąc**, gdy ktoś przestawił listę miesiąca bez
+  „Pokaż stawki". Zapis i kopiowanie idą teraz pod wczytany miesiąc (widoczny na
+  przycisku); niezapisane stawki są oznaczone i chronione przed wyjściem ze strony.
+- **Forecast** „Zapisz wszystkie" zakładał wiersz z zerem dla każdego dnia zakresu.
+- **Wpis ilości:** nazwy pracowników i czynności nie były escapowane (XSS).
+- Pominięte barcode'y w wyniku importu nie były escapowane.
+
 ## 2026-10-02 — „Normy", rodzaj pracownika i nazwa zmiany na koncie
 
 ### Zmienione

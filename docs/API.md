@@ -77,8 +77,10 @@ Sugestie AI na podstawie średnich ilości z ostatnich 30 dni.
 3. Przydziel najlepszego dostępnego pracownika
 4. Resztę rozdziel równomiernie
 
+Odpowiedź zawiera też `wersja` — odcisk aktualnego przydziału zmiany (do wykrywania konfliktów, patrz niżej).
+
 ### POST `/api/assignment/save`
-Zapisuje przydzielenia.
+Zapisuje przydzielenia — **podmienia cały przydział zmiany** (ekran wysyła go po każdym przeciągnięciu).
 
 **Body (JSON):**
 ```json
@@ -87,9 +89,14 @@ Zapisuje przydzielenia.
   "shift_number": 1,
   "assignments": [
     { "user_id": 5, "activity_id": 2, "is_suggestion": false }
-  ]
+  ],
+  "wersja": "3f2a9c0d1e4b5a67"
 }
 ```
+
+- `wersja` (opcjonalna) — wersja wczytana z `/api/assignment/data` albo z odpowiedzi poprzedniego zapisu. Jeśli ktoś inny zmienił przydział tej zmiany w międzyczasie → **409** `{error, konflikt: true, wersja}` i **nic nie jest zapisane**. Bez `wersja` zapis działa jak dawniej (bez sprawdzania).
+- Zapis blokuje wiersz zmiany (`SELECT … FOR UPDATE`), więc równoległe zapisy tej samej zmiany idą po kolei.
+- Odpowiedź: `{message, wersja}` — nowa wersja do kolejnego zapisu.
 
 ---
 
@@ -126,13 +133,15 @@ Korekta pojedynczego wpisu.
 
 | Method | URL | Opis |
 |--------|-----|------|
+| PUT | `/api/category-labels` | **Nazwy kategorii dla pracownika** (admin). Body: `{nazwy: {kategoria: "polska nazwa"}}` — dowolny podzbiór kategorii. Pusta nazwa (albo równa domyślnej) = powrót do domyślnej. Maks. 60 znaków, spacje ściskane. Nieznana kategoria / zły typ / za długo → 400. Zwraca `{message, etykiety}` — etykiety w formacie „Polska (English)”. Angielskiej części nie da się zmienić. |
 | PUT | `/api/settings` | Zapis ustawień systemowych (admin). Klucze czasu pracy: `break_threshold_minutes` (30), `max_work_minutes` (660), `min_break_minutes` (15). Klucze przeglądu wydajności: `norm_good_pct` (110), `norm_weak_pct` (90), `min_packages_rank` (3). Każdy liczbą ≥ 1, wszystkie opcjonalne. Przechowywane w tabeli `AppSetting`. Zła wartość → 400 i **nic się nie zapisuje**. |
 
 ## Dashboard
 
 | Method | URL | Opis |
 |--------|-----|------|
-| GET | `/api/dashboard` | Dane dashboardu dziennego (dziś): karty zbiorcze, per pracownik, czynności. Karty w parach paczki / sztuki: `done_today` + `pieces_today` (zakończone dziś) oraz `remaining_cartons` + `remaining_pieces` (`SUM(stueckzahl)` paczek bez `scan_end_at`). „Pozostało” liczy **wszystkie** niezakończone paczki od początku, nie tylko dzisiejsze. |
+| GET | `/api/dashboard` | Dane dashboardu dziennego (dziś): `done_today` + `pieces_today` (zakończone dziś wg czasu skanu), `present_count`, `workers_today[]`, `activities_today[]`, `per_worker[]`, **`plik_dzis`** (plan dzisiejszego pliku — kształt jak `/api/dashboard/plik`) i **`zalegle`** `{paczek, sztuk, dni: [{data_pliku, paczek, sztuk, w_toku}]}` — wszystkie niezakończone paczki wg daty pliku, od najstarszej. Pola `remaining_*`, `total_cartons`, `done_cartons`, `progress_pct` zostają w odpowiedzi dla zgodności, ekran ich już nie pokazuje. |
+| GET | `/api/dashboard/plik?date=YYYY-MM-DD` | **Plan dnia pliku** (domyślnie dziś): `{data_pliku, paczek, sztuk, zrobione, zrobione_sztuk, pozostalo, pozostalo_sztuk, w_toku, procent}`. „Zrobione” = paczka tego pliku ma `scan_end_at`, niezależnie od dnia zakończenia. |
 | GET | `/api/dashboard/shifts?date=YYYY-MM-DD` | **Podział per zmiana** dla wybranego dnia (domyślnie dziś). Zwraca `shifts[]` (zmiana 1 i 2: `present_count`, `packages`, `pieces`, `activities[]`) oraz `unattributed` (paczki pracowników bez jednoznacznej obecności). Paczki przypisywane do zmiany wg obecności pracownika (`ShiftAttendance`); DailyStat wg `shift_id`. |
 
 ## Normy (`/stats`) — przegląd zespołu
@@ -331,7 +340,7 @@ Ekran: `/admin/user-options` (Panel Admina → Listy użytkowników).
 
 | Method | URL | Opis |
 |--------|-----|------|
-| GET | `/api/forecast/chart-data?date_from=&date_to=` | Prognoza vs wykonanie, dzień po dniu. Zwraca listę `{date, forecast, actual, diff, notes}`. `actual` = suma `stueckzahl` paczek z danym `ziel_datum`. Domyślny zakres: −7 / +14 dni. Zła data → cichy powrót do domyślnej. |
+| GET | `/api/forecast/chart-data?date_from=&date_to=` | Prognoza vs wykonanie, dzień po dniu. Zwraca listę `{date, forecast, actual, diff, notes}`. `actual` = suma `stueckzahl` paczek z daną **datą pliku** (do 2026-10: `ziel_datum`). Domyślny zakres: −7 / +14 dni. Zła data → cichy powrót do domyślnej. |
 | POST | `/api/forecast/save` | Zapis prognozy. Body: obiekt **albo lista** obiektów `{date, quantity, notes}`. Upsert po dacie. Wiersz z niesparsowalną datą jest **pomijany po cichu**; nieliczbowe `quantity` → 400. Zwraca `{message, saved}`. |
 | GET | `/api/forecast/export?date_from=&date_to=` | Eksport XLSX z wykresem słupkowym (forecast vs actual) |
 
@@ -374,10 +383,12 @@ Ekran: `/admin/user-options` (Panel Admina → Listy użytkowników).
 
 | Method | URL | Opis |
 |--------|-----|------|
-| POST | `/api/import-csv` | Wrzucenie pliku CSV (`;`-separowany, multipart/form-data z kluczem `file`). Zwraca statystyki importowanych, pominiętych i zaktualizowanych kartonów. |
-| POST | `/api/import/excel` | Wrzucenie pliku Excel `.xlsx` (multipart/form-data z kluczem `file`). Te same kolumny i ta sama odpowiedź co import CSV. ⚠️ numeryczną kolumnę barcode formatować jako tekst (Excel float64 traci precyzję dla długich kodów). |
-| POST | `/api/packages` | **Ręczne dodanie paczki** (leader+). JSON: `barcode`, `stueckzahl`, `land`, `ziel_datum` (`YYYY-MM-DD`), `uebergabe_nr` **(wymagane)** + `kategorie`, `double_rate` (opcjonalne). Przechodzi przez ten sam pipeline co import (agregacja do GeneralStat). Ustawia `added_manually=True` i `imported_by`. Duplikat barcode → 409, brak pól / zła ilość / zła data → 400. |
-| PUT | `/api/packages/<id>` | **Edycja paczki** (leader+). Te same pola i walidacja co POST. Dozwolona **tylko** dla paczek `added_manually` (paczka z importu → 403). Zmiana `uebergabe_nr`/`land`/`ziel_datum` przelicza dotknięte linie GeneralStat od zera z sumy paczek. Zmiana barcode na istniejący → 409. Ustawia `modified_by`/`modified_at`. |
+| POST | `/api/import-csv` | Wrzucenie pliku CSV (`;`-separowany, multipart/form-data: `file` + **`data_pliku`** `YYYY-MM-DD`, wymagane). Brak / zła data pliku → 400 i nic nie jest importowane. Każda paczka dostaje tę datę i **jeden wspólny `imported_at`**. Linie Statystyk ogólnych: Übergabe Nr + kraj + **data pliku** (Ziel-Datum nie grupuje i nie jest wymagana). Zwraca statystyki importowanych, pominiętych i zaktualizowanych kartonów. |
+| POST | `/api/import/excel` | Wrzucenie pliku Excel `.xlsx` (multipart/form-data: `file` + **`data_pliku`**, wymagane). Te same kolumny, reguły i odpowiedź co import CSV. ⚠️ numeryczną kolumnę barcode formatować jako tekst (Excel float64 traci precyzję dla długich kodów). |
+| GET | `/api/imports` | **Lista importów** do poprawy daty (leader+). Import = paczki jednej osoby z jednej minuty i jednej daty pliku. Filtry (opcjonalne): `data_pliku`, `dzien_importu` (dzień lokalny), `godz_od` / `godz_do` (`HH:MM` czasu polskiego), `osoba` (id). Zwraca `{importy: [{klucz, osoba_id, osoba, login, imported_at, data_pliku, paczek, sztuk, zrobionych, recznych}], osoby: [{id, nazwa, login}], ucieto}` — najwyżej 300 importów, od najnowszego. Zła godzina → 400. |
+| POST | `/api/imports/zmien-date` | **Grupowa zmiana daty pliku** (leader+). Body: `{importy: [klucz, …], nowa_data: "YYYY-MM-DD", podglad: bool}`. Z `podglad: true` zwraca skutki i **nic nie zapisuje**: `{paczek, juz_z_ta_data, sztuk, zrobionych, linii_przenoszonych, linii_dzielonych, linii_docelowych_istniejacych, konflikty}`. Bez podglądu zmienia datę, ustawia `modified_by/at` paczek i przelicza linie. Linia przenoszona w całości zabiera ręczne ilości (łączy się z istniejącą linią nowej daty, ręczne ilości sumowane). **409** + `konflikty` gdy trzeba by podzielić ręczne ilości linii albo połączyć ręczne ilości z ilościami ze skanów. Brak zaznaczenia / brak daty / zły klucz → 400; importy bez paczek → 404. |
+| POST | `/api/packages` | **Ręczne dodanie paczki** (leader+). JSON: `barcode`, `stueckzahl`, `land`, **`data_pliku`** (`YYYY-MM-DD`), `uebergabe_nr` **(wymagane)** + `ziel_datum`, `kategorie`, `double_rate` (opcjonalne). Przechodzi przez ten sam pipeline co import (agregacja do GeneralStat). Ustawia `added_manually=True` i `imported_by`. Duplikat barcode → 409, brak pól / zła ilość / zła data → 400. |
+| PUT | `/api/packages/<id>` | **Edycja paczki** (leader+). Te same pola i walidacja co POST. Dozwolona **tylko** dla paczek `added_manually` (paczka z importu → 403). Zmiana `uebergabe_nr`/`land`/`data_pliku` przelicza dotknięte linie GeneralStat od zera z sumy paczek. Zmiana barcode na istniejący → 409. Ustawia `modified_by`/`modified_at`. |
 | GET | `/api/general-stats` | Lista statystyk z importu CSV do tabeli rozliczeniowej. Opcjonalne `?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD`; bez nich zwraca wszystko. Zła data → 400. |
 | PUT | `/api/general-stats/<id>` | Edytuj statystykę: `category_data` (normalna linia) lub `double_rate_category_data` (żółta linia double rate); słownik 10 kategorii |
 
