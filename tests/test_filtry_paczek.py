@@ -14,6 +14,7 @@ ZIEL = date(2026, 9, 10)
 
 def karton(barcode, stueckzahl=10, **kw):
     kw.setdefault('ziel_datum', ZIEL)
+    kw.setdefault('data_pliku', kw['ziel_datum'])
     kw.setdefault('uebergabe_nr', 'UB-1')
     c = logistat.ImportedCarton(barcode=barcode, land='PL', stueckzahl=stueckzahl, **kw)
     logistat.db.session.add(c)
@@ -148,9 +149,10 @@ def test_stronicowanie_zachowuje_status(leader_client):
 
 # ── filtr po typie daty (Ziel-Datum / import / start / koniec) ───────────────
 
-def test_domyslny_typ_daty_to_ziel_datum(leader_client):
-    karton('W-ZAKRESIE')
-    karton('POZA-ZAKRESEM', ziel_datum=date(2026, 1, 1))
+def test_domyslny_typ_daty_to_data_pliku(leader_client):
+    """Od 2026-10 domyslny filtr dat to data pliku, nie Ziel-Datum."""
+    karton('W-ZAKRESIE', ziel_datum=date(2026, 1, 1), data_pliku=ZIEL)
+    karton('POZA-ZAKRESEM', ziel_datum=ZIEL, data_pliku=date(2026, 1, 1))
 
     widoczne = kody(leader_client.get(f'/paczki?date_from={ZIEL}&date_to={ZIEL}'))
 
@@ -234,9 +236,9 @@ def test_gorna_granica_daty_nie_lapie_nastepnej_doby(leader_client):
     assert 'NASTEPNY-DZIEN' not in widoczne
 
 
-def test_nieznany_typ_daty_wraca_do_ziel_datum(leader_client):
+def test_nieznany_typ_daty_wraca_do_daty_pliku(leader_client):
     karton('W-ZAKRESIE')
-    karton('POZA-ZAKRESEM', ziel_datum=date(2026, 1, 1))
+    karton('POZA-ZAKRESEM', ziel_datum=ZIEL, data_pliku=date(2026, 1, 1))
 
     widoczne = kody(leader_client.get(
         f'/paczki?date_typ=bzdura&date_from={ZIEL}&date_to={ZIEL}'))

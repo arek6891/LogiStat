@@ -70,7 +70,7 @@ def test_zolty_wiersz_double_rate_zostaje_na_sumie(admin_client, acting_admin):
     logistat.process_import_rows([{
         'barcode': 'B-DR', 'land': 'PL', 'stueckzahl': 10, 'kategorie': 'textile',
         'ziel_datum': LADOWANIE, 'uebergabe_nr': 'UB-1', 'double_rate': True,
-    }])
+    }], LADOWANIE)
     s = logistat.GeneralStat.query.filter_by(list_id='UB-1').first()
     s.set_category_data({k: {'amount': v, 'cost': 0.0} for k, v in ILOSCI.items()})
     s.set_double_rate_category_data({k: {'amount': v, 'cost': 0.0} for k, v in ILOSCI.items()})

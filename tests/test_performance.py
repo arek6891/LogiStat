@@ -15,7 +15,7 @@ def test_import_nie_robi_zapytania_na_wiersz(acting_admin, queries):
     Przy 10k wierszy to 20k round-tripow do bazy."""
     wiersze = [row(f'B{i}', 1) for i in range(200)]
 
-    logistat.process_import_rows(wiersze)
+    logistat.process_import_rows(wiersze, ZIEL)
 
     assert logistat.ImportedCarton.query.count() == 200
     odczyty = len(queries.selects)
@@ -25,7 +25,7 @@ def test_import_nie_robi_zapytania_na_wiersz(acting_admin, queries):
 
 
 def test_mapowania_krajow_czytane_raz(acting_admin, queries):
-    logistat.process_import_rows([row(f'B{i}', 1, land='PL') for i in range(50)])
+    logistat.process_import_rows([row(f'B{i}', 1, land='PL') for i in range(50)], ZIEL)
 
     selecty = queries.matching('FROM country_mapping')
 
@@ -33,7 +33,7 @@ def test_mapowania_krajow_czytane_raz(acting_admin, queries):
 
 
 def test_dedup_idzie_partiami(acting_admin, queries):
-    logistat.process_import_rows([row(f'B{i}', 1) for i in range(50)])
+    logistat.process_import_rows([row(f'B{i}', 1) for i in range(50)], ZIEL)
 
     dedup = [q for q in queries.matching('FROM imported_carton') if ' IN ' in q]
 

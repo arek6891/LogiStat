@@ -119,6 +119,35 @@ Quantities entered at package end are the **source of truth for `category_data`*
 - **Static assets:** `{{ static_v('style.css') }}` appends the file's mtime — no manual `?v=` bump.
 - **`escapeHtml()` in `base.html`** — everything interpolated into `innerHTML` from the DB (display names, activity names, barcodes, countries) goes through it. Barcodes arrive from CSV imports, so the risk is *stored* XSS.
 
+## Data pliku jako glowna data pracy (2026-10-05)
+
+**Zgloszenie.** Przy wrzucaniu pliku ma byc okno z data, ktorej plik dotyczy (zwykle dzis — aplikacja podpowiada), a ta data ma byc glowna data pracy: w statystykach, filtrach, na Dashboardzie. Plik moze dostac zla date, wiec potrzebna jest grupowa poprawa po dacie, godzinie i osobie wrzucajacej.
+
+**Decyzje operacji (2026-10-05):**
+- Ziel-Datum zostaje w bazie, ale **data pliku ja zastepuje wszedzie, gdzie byla data pracy — takze w rozliczeniu** (Loading date w Statystykach ogolnych i eksporcie). To swiadoma zmiana rozliczenia.
+- Ten sam Übergabe Nr + kraj z dwiema Ziel-Datum w jednym pliku → **jedna linia** (na .31 bylo 143 takich par; 373 linie → 206).
+- Paczki bez Ziel-Datum **wchodza do rozliczenia** (wczesniej linia wymagala Ziel-Datum; na .31: 228 paczek, 34 204 szt.).
+- Stare paczki dostaja date pliku = dzien importu. Grupowa poprawa: lider i admin.
+- Dashboard: zakladka „Dzis" (plan dnia dzisiejszego pliku), „Wybrany dzien", a Podsumowanie zawezone do niezrobionych paczek.
+
+**Dlaczego klucz w jednej funkcji (`klucz_linii`).** Klucz linii byl rozsiany po ~10 miejscach (import, recompute, mapy pokrycia i double rate, edycja paczki, koniec skanu, ✎ Ilosci). Jedno przeoczone miejsce wysyla ilosci ze skanu na zla linie albo na linie, ktora nie istnieje — bez zadnego bledu. Po zmianie `ziel_datum` zostaje tylko w zapisie, parsowaniu importu, wyswietlaniu i opcji filtra `ziel`.
+
+**Dlaczego `wymagana_data_pliku`, a nie `parse_date`.** `parse_date('')` zwraca dzis. Brakujace pole w imporcie po cichu zostaloby dzisiejsza data — dokladnie ten blad, przed ktorym chroni okno.
+
+**Dlaczego jeden `imported_at` na import.** Wczesniej kazdy wiersz dostawal swoj `utcnow()`; duzy plik przechodzacy przez granice minuty wygladalby na liscie importow jak dwa importy. Import w grupowej poprawie = (osoba, minuta, data pliku). Na .31 stare dane i tak daja 15 czystych importow.
+
+**Reguly laczenia linii (`przenies_linie`, wspolne dla migracji i poprawy daty).** `amounts` i ilosci ze skanow sa w pelni odtwarzalne z kartonow — przelicza je `recompute_general_stat`. Jedyne, czego odtworzyc sie nie da, to recznie wpisane `category_data` (linie 'manual') i `double_rate_category_data`: przy laczeniu sa **sumowane**. Linia przenoszona w calosci zabiera je ze soba. Czesciowe przeniesienie linii z recznymi liczbami → 409, bo nie wiadomo, jak je podzielic. Przy grupowej poprawie daty 409 dostaje tez polaczenie linii z recznymi ilosciami z linia 'scan': polaczona linia zostalaby 'manual' i skany po cichu przestalyby sie rozliczac (migracji to nie dotyczy — na .31 nie bylo recznych ilosci). Unikalny indeks `(list_id, country_ledger, loading_date)` wymaga dwoch faz: najpierw linie przenoszone ida na tymczasowe daty (1900-01-01 + id), dopiero potem na docelowe — inaczej linia A wchodzaca na dzien linii B, ktora sama sie przesuwa, wybucha na indeksie (przypadek w testach).
+
+**Migracja — weryfikacja na kopii .31 (pg_dump z 2026-10-05, odtworzony lokalnie, potem skasowany):**
+- kartonow 11 663 przed i po; zadna paczka bez linii; 206 kluczy = 206 linii; zadna linia na dacie tymczasowej;
+- Σ amounts 1 290 526 → 1 324 730 = suma wszystkich paczek z Übergabe Nr (+34 204 z paczek bez Ziel-Datum);
+- Σ ilosci ze skanow 20 594 → 20 882: +288 to dokladnie skany na paczkach bez Ziel-Datum (nowo rozliczane); ze starych linii nic nie przybylo ani nie ubylo;
+- recznych ilosci na .31 nie bylo (0 linii), double rate recznie: 0;
+- zmiana miesiaca rozliczenia (Ziel → data pliku): 30 paczek / 8 260 szt. (sierpien → wrzesien); zmiana tygodnia: 428 paczek / 31 606 szt. Stawki na .31 sa tylko za 03/2026, wiec koszt Sep/Oct wynosi 0 przed i po — przy wpisywaniu stawek trzeba pamietac, ze Loading date to teraz dzien pliku (zwykle dzien wczesniej niz dawna Ziel-Datum);
+- drugi start: znacznik `migracja_data_pliku` — nic sie nie zmienia (sprawdzone).
+
+**Forecast.** „Actual" liczy teraz sztuki po dacie pliku. Historyczne forecasty wpisywano z mysla o Ziel-Datum (zwykle dzien pozniej) — porownanie wstecz moze byc przesuniete o dzien.
+
 ## Nazwy kategorii dla pracownika (2026-10-05)
 
 Operacja chciala sterowac tym, co pracownik widzi przy konczeniu paczki — „Sortowanie" nic mu nie mowilo, w praktyce to „Niesprocesowane". Format odwrocono na **polska nazwa, w nawiasie angielska** („Niesprocesowane (Sorting)"): pracownik czyta pierwsze slowo, a nawias trzyma powiazanie z linia w Statystykach ogolnych, wiec lider i rozliczajacy mowia o tej samej kategorii.

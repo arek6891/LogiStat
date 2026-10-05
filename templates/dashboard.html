@@ -1,6 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Dashboard dzienny — LogiStat{% endblock %}
 
+{% block head %}
+<style>
+    .dash-label { font-size:.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem; }
+    .dash-val { font-size:2.8rem;font-weight:800; }
+    .dash-sub { font-size:.8rem;color:var(--text-muted); }
+    #pane-dzis a, #pane-dzien a, #pane-summary a { color: var(--info); }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;">
     <div>
@@ -12,67 +21,36 @@
 
 <!-- Zakładki -->
 <div style="display:flex;gap:4px;background:var(--bg-secondary);border-radius:var(--radius-sm);
-            padding:4px;margin-bottom:1.5rem;display:inline-flex;">
-    <button class="shift-tab active" id="tab-summary" onclick="switchTab('summary')">Podsumowanie</button>
+            padding:4px;margin-bottom:1.5rem;display:inline-flex;flex-wrap:wrap;">
+    <button class="shift-tab active" id="tab-dzis" onclick="switchTab('dzis')">Dziś</button>
+    <button class="shift-tab" id="tab-dzien" onclick="switchTab('dzien')">Wybrany dzień</button>
+    <button class="shift-tab" id="tab-summary" onclick="switchTab('summary')">Podsumowanie</button>
     <button class="shift-tab" id="tab-workers" onclick="switchTab('workers')">Per pracownik</button>
     <button class="shift-tab" id="tab-shifts" onclick="switchTab('shifts')">Per zmiana</button>
 </div>
 
-<!-- ═══ ZAKŁADKA: PODSUMOWANIE ═══ -->
-<div id="pane-summary">
+<!-- ═══ ZAKŁADKA: DZIŚ ═══ -->
+<div id="pane-dzis">
+    <div id="planDzis" style="margin-bottom:2rem;"></div>
 
-    <!-- Karty zbiorcze -->
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:2rem;">
         <div class="card" style="text-align:center;">
-            <div style="font-size:.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem;">Zrobione dziś</div>
-            <div id="doneTodayVal" style="font-size:2.8rem;font-weight:800;color:var(--accent);">—</div>
-            <div style="font-size:.8rem;color:var(--text-muted);">paczek</div>
+            <div class="dash-label">Zakończone dziś</div>
+            <div id="doneTodayVal" class="dash-val" style="color:var(--accent);">—</div>
+            <div class="dash-sub">paczek · wg czasu skanu, z plików z każdego dnia</div>
         </div>
         <div class="card" style="text-align:center;">
-            <div style="font-size:.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem;">Zrobione dziś</div>
-            <div id="piecesTodayVal" style="font-size:2.8rem;font-weight:800;color:var(--success);">—</div>
-            <div style="font-size:.8rem;color:var(--text-muted);">szt.</div>
+            <div class="dash-label">Zakończone dziś</div>
+            <div id="piecesTodayVal" class="dash-val" style="color:var(--success);">—</div>
+            <div class="dash-sub">szt.</div>
         </div>
         <div class="card" style="text-align:center;">
-            <div style="font-size:.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem;">Pozostało</div>
-            <div id="remainingVal" style="font-size:2.8rem;font-weight:800;color:var(--warning);">—</div>
-            <div style="font-size:.8rem;color:var(--text-muted);">paczek</div>
-        </div>
-        <div class="card" style="text-align:center;">
-            <div style="font-size:.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem;">Pozostało</div>
-            <div id="remainingPiecesVal" style="font-size:2.8rem;font-weight:800;color:var(--warning);">—</div>
-            <div style="font-size:.8rem;color:var(--text-muted);">szt.</div>
-        </div>
-        <div class="card" style="text-align:center;">
-            <div style="font-size:.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem;">Wszystkich zrobiono</div>
-            <div id="doneAllVal" style="font-size:2.8rem;font-weight:800;color:var(--info);">—</div>
-            <div id="doneAllSub" style="font-size:.8rem;color:var(--text-muted);">z — paczek</div>
-        </div>
-        <div class="card" style="text-align:center;">
-            <div style="font-size:.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem;">Obecni dziś</div>
-            <div id="presentVal" style="font-size:2.8rem;font-weight:800;color:#a78bfa;">—</div>
-            <div style="font-size:.8rem;color:var(--text-muted);">pracowników</div>
+            <div class="dash-label">Obecni dziś</div>
+            <div id="presentVal" class="dash-val" style="color:#a78bfa;">—</div>
+            <div class="dash-sub">pracowników</div>
         </div>
     </div>
 
-    <!-- Pasek postępu -->
-    <div class="card" style="margin-bottom:2rem;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
-            <span style="font-weight:600;">Postęp całkowity</span>
-            <span id="progressPct" style="font-weight:700;color:var(--accent);">0%</span>
-        </div>
-        <div style="background:var(--bg-hover);border-radius:8px;height:14px;overflow:hidden;">
-            <div id="progressBar"
-                 style="height:100%;border-radius:8px;background:linear-gradient(90deg,var(--accent),#a78bfa);
-                        width:0%;transition:width .6s ease;"></div>
-        </div>
-        <div style="display:flex;justify-content:space-between;font-size:.75rem;color:var(--text-muted);margin-top:.5rem;">
-            <span>0</span>
-            <span id="progressTotal">—</span>
-        </div>
-    </div>
-
-    <!-- Dolna siatka -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
         <div class="card" style="padding:0;overflow:hidden;">
             <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-weight:600;">👤 Pracownicy dziś</div>
@@ -82,6 +60,44 @@
             <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-weight:600;">📋 Czynności dziś</div>
             <div id="activitiesTable"><div style="padding:2rem;text-align:center;color:var(--text-muted);">Ładowanie…</div></div>
         </div>
+    </div>
+</div>
+
+<!-- ═══ ZAKŁADKA: WYBRANY DZIEŃ ═══ -->
+<div id="pane-dzien" style="display:none;">
+    <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1.5rem;flex-wrap:wrap;">
+        <label style="color:var(--text-muted);font-size:.9rem;" for="planDate">Data pliku:</label>
+        <input type="date" id="planDate" class="form-control" style="width:170px;" onchange="loadPlanDnia()">
+        <button class="btn btn-ghost btn-sm" onclick="loadPlanDnia()">↻ Odśwież</button>
+    </div>
+    <div id="planDzien"></div>
+</div>
+
+<!-- ═══ ZAKŁADKA: PODSUMOWANIE (wszystkie niezrobione) ═══ -->
+<div id="pane-summary" style="display:none;">
+    <p style="color:var(--text-muted);font-size:.88rem;margin-top:0;">
+        Wszystkie niezrobione paczki (bez zakończenia), z plików z każdego dnia.
+    </p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:2rem;">
+        <div class="card" style="text-align:center;">
+            <div class="dash-label">Niezrobione</div>
+            <div id="remainingVal" class="dash-val" style="color:var(--warning);">—</div>
+            <div class="dash-sub">paczek</div>
+        </div>
+        <div class="card" style="text-align:center;">
+            <div class="dash-label">Niezrobione</div>
+            <div id="remainingPiecesVal" class="dash-val" style="color:var(--warning);">—</div>
+            <div class="dash-sub">szt.</div>
+        </div>
+        <div class="card" style="text-align:center;">
+            <div class="dash-label">W toku</div>
+            <div id="inProgressVal" class="dash-val" style="color:var(--info);">—</div>
+            <div class="dash-sub">rozpoczęte, niezakończone</div>
+        </div>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden;">
+        <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-weight:600;">📅 Niezrobione wg daty pliku</div>
+        <div id="zalegleTable"><div style="padding:2rem;text-align:center;color:var(--text-muted);">Ładowanie…</div></div>
     </div>
 </div>
 
@@ -109,12 +125,103 @@
 
 {% block scripts %}
 <script>
+    const ZAKLADKI = ['dzis', 'dzien', 'summary', 'workers', 'shifts'];
     function switchTab(name) {
-        ['summary','workers','shifts'].forEach(t => {
+        ZAKLADKI.forEach(t => {
             document.getElementById('pane-' + t).style.display = t === name ? '' : 'none';
             document.getElementById('tab-' + t).classList.toggle('active', t === name);
         });
         if (name === 'shifts') loadShifts();
+        if (name === 'dzien') loadPlanDnia();
+    }
+
+    function fmtData(iso) {
+        if (!iso) return 'bez daty';
+        const [y, m, d] = iso.split('-');
+        return `${d}.${m}.${y}`;
+    }
+    const num = n => (n || 0).toLocaleString('pl');
+
+    // Plan dnia pliku: paczki z plików z danej daty pliku. „Zrobione" = mają
+    // zakończenie, niezależnie od dnia, w którym je skończono.
+    function renderPlan(p) {
+        const link = `/paczki?date_typ=plik&date_from=${p.data_pliku}&date_to=${p.data_pliku}`;
+        if (!p.paczek) {
+            return `<div class="card" style="text-align:center;color:var(--text-muted);padding:2rem;">
+                Brak paczek z datą pliku ${fmtData(p.data_pliku)}.</div>`;
+        }
+        const kafel = (etykieta, paczek, sztuk, kolor) => `
+            <div class="card" style="text-align:center;">
+                <div class="dash-label">${etykieta}</div>
+                <div class="dash-val" style="color:${kolor};">${num(paczek)}</div>
+                <div class="dash-sub">paczek · <strong>${num(sztuk)}</strong> szt.</div>
+            </div>`;
+        return `
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem;">
+            <h3 style="margin:0;">📦 Plik z ${fmtData(p.data_pliku)}</h3>
+            <a href="${link}" style="font-size:.85rem;">Pokaż niezrobione paczki →</a>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:1rem;">
+            ${kafel('Wrzucone', p.paczek, p.sztuk, 'var(--text-primary)')}
+            ${kafel('Zrobione', p.zrobione, p.zrobione_sztuk, 'var(--success)')}
+            ${kafel('Pozostało', p.pozostalo, p.pozostalo_sztuk, 'var(--warning)')}
+            <div class="card" style="text-align:center;">
+                <div class="dash-label">W toku</div>
+                <div class="dash-val" style="color:var(--info);">${num(p.w_toku)}</div>
+                <div class="dash-sub">rozpoczęte, niezakończone</div>
+            </div>
+        </div>
+        <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
+                <span style="font-weight:600;">Postęp pliku</span>
+                <span style="font-weight:700;color:var(--accent);">${p.procent}%</span>
+            </div>
+            <div style="background:var(--bg-hover);border-radius:8px;height:14px;overflow:hidden;">
+                <div style="height:100%;border-radius:8px;background:linear-gradient(90deg,var(--accent),#a78bfa);width:${p.procent}%;transition:width .6s ease;"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:.75rem;color:var(--text-muted);margin-top:.5rem;">
+                <span>${num(p.zrobione)} zrobionych</span><span>${num(p.paczek)} paczek</span>
+            </div>
+        </div>`;
+    }
+
+    async function loadPlanDnia() {
+        const inp = document.getElementById('planDate');
+        if (!inp.value) inp.value = localDateStr();
+        const box = document.getElementById('planDzien');
+        try {
+            const res = await fetch('/api/dashboard/plik?date=' + encodeURIComponent(inp.value));
+            box.innerHTML = renderPlan(await res.json());
+        } catch {
+            box.innerHTML = '<div class="card" style="color:var(--danger);">Błąd ładowania.</div>';
+        }
+    }
+
+    function renderZalegle(z) {
+        document.getElementById('remainingVal').textContent = num(z.paczek);
+        document.getElementById('remainingPiecesVal').textContent = num(z.sztuk);
+        document.getElementById('inProgressVal').textContent = num(z.dni.reduce((s, d) => s + d.w_toku, 0));
+        const box = document.getElementById('zalegleTable');
+        if (!z.dni.length) {
+            box.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted);">Wszystko zrobione 🎉</div>';
+            return;
+        }
+        const th = 'padding:10px 16px;font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;';
+        box.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+            <thead style="background:var(--bg-secondary);"><tr>
+                <th style="${th}text-align:left;">Data pliku</th>
+                <th style="${th}text-align:right;">Paczek</th>
+                <th style="${th}text-align:right;">Sztuk</th>
+                <th style="${th}text-align:right;">W toku</th>
+            </tr></thead>
+            <tbody>${z.dni.map(d => `<tr style="border-top:1px solid var(--border);">
+                <td style="padding:10px 16px;">${d.data_pliku
+                    ? `<a href="/paczki?date_typ=plik&date_from=${d.data_pliku}&date_to=${d.data_pliku}">${fmtData(d.data_pliku)}</a>`
+                    : 'bez daty'}</td>
+                <td style="padding:10px 16px;text-align:right;font-weight:700;color:var(--warning);">${num(d.paczek)}</td>
+                <td style="padding:10px 16px;text-align:right;">${num(d.sztuk)}</td>
+                <td style="padding:10px 16px;text-align:right;color:var(--info);">${num(d.w_toku)}</td>
+            </tr>`).join('')}</tbody></table>`;
     }
 
     // ── Per zmiana ──────────────────────────────────────────────────────────
@@ -190,19 +297,17 @@
 
             document.getElementById('asOf').textContent = d.as_of;
 
-            // — Karty —
-            document.getElementById('doneTodayVal').textContent = d.done_today;
-            document.getElementById('piecesTodayVal').textContent = d.pieces_today.toLocaleString('pl');
-            document.getElementById('remainingVal').textContent = d.remaining_cartons.toLocaleString('pl');
-            document.getElementById('remainingPiecesVal').textContent = d.remaining_pieces.toLocaleString('pl');
-            document.getElementById('doneAllVal').textContent = d.done_cartons.toLocaleString('pl');
-            document.getElementById('doneAllSub').textContent = `z ${d.total_cartons.toLocaleString('pl')} paczek`;
+            // — Dziś: plan dnia dzisiejszego pliku + zakończone dziś —
+            document.getElementById('planDzis').innerHTML = renderPlan(d.plik_dzis);
+            document.getElementById('doneTodayVal').textContent = num(d.done_today);
+            document.getElementById('piecesTodayVal').textContent = num(d.pieces_today);
             document.getElementById('presentVal').textContent = d.present_count;
 
-            // — Pasek —
-            document.getElementById('progressPct').textContent = d.progress_pct + '%';
-            document.getElementById('progressBar').style.width = d.progress_pct + '%';
-            document.getElementById('progressTotal').textContent = d.total_cartons.toLocaleString('pl');
+            // — Podsumowanie: wszystkie niezrobione —
+            renderZalegle(d.zalegle);
+
+            // — Wybrany dzień: odświeżany razem z resztą, data zostaje —
+            if (document.getElementById('pane-dzien').style.display !== 'none') loadPlanDnia();
 
             // — Pracownicy (summary) —
             const wt = document.getElementById('workersTable');
@@ -225,7 +330,7 @@
                                     <div style="width:28px;height:28px;border-radius:50%;
                                         background:linear-gradient(135deg,var(--accent),#a78bfa);
                                         display:flex;align-items:center;justify-content:center;
-                                        font-size:.75rem;font-weight:700;color:#fff;flex-shrink:0;">${w.name[0]}</div>
+                                        font-size:.75rem;font-weight:700;color:#fff;flex-shrink:0;">${escapeHtml(w.name[0])}</div>
                                     <div>
                                         <div style="font-weight:600;font-size:.9rem;"><a href="/stats?user=${w.user_id}" title="Otwórz normy pracownika">${escapeHtml(w.name)}</a></div>
                                         <div style="height:4px;background:var(--bg-hover);border-radius:2px;width:100px;margin-top:4px;overflow:hidden;">
@@ -288,7 +393,7 @@
                             <div style="width:40px;height:40px;border-radius:50%;flex-shrink:0;
                                 background:linear-gradient(135deg,var(--accent),#a78bfa);
                                 display:flex;align-items:center;justify-content:center;
-                                font-weight:700;font-size:1rem;color:#fff;">${w.name[0]}</div>
+                                font-weight:700;font-size:1rem;color:#fff;">${escapeHtml(w.name[0])}</div>
                             <div style="flex:1;min-width:0;">
                                 <div style="font-weight:700;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><a href="/stats?user=${w.id}" title="Otwórz normy pracownika">${escapeHtml(w.name)}</a></div>
                                 <div style="font-size:.75rem;color:var(--text-muted);">na zmianie dziś</div>

@@ -12,7 +12,7 @@ ZIEL = date(2026, 9, 10)
 
 def carton(barcode, stueckzahl, scan_end_at=None):
     c = logistat.ImportedCarton(barcode=barcode, land='PL', stueckzahl=stueckzahl,
-                                ziel_datum=ZIEL, uebergabe_nr='UB-1',
+                                ziel_datum=ZIEL, data_pliku=ZIEL, uebergabe_nr='UB-1',
                                 scan_end_at=scan_end_at)
     logistat.db.session.add(c)
     return c

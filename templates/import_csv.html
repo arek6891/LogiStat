@@ -4,7 +4,9 @@
 <div class="page-header">
     <h1>📥 Import danych</h1>
     <p style="color:var(--text-muted);">Wrzuć plik <strong>CSV</strong> lub <strong>Excel (.xlsx)</strong> z danymi
-        kartonów. Dane zostaną zparsowane i zagregowane do Statystyk ogólnych.<br>
+        kartonów. Dane zostaną zparsowane i zagregowane do Statystyk ogólnych.
+        Przed importem podajesz <strong>datę pliku</strong> — dzień pracy, którego plik dotyczy
+        (po niej liczą się Statystyki ogólne, Dashboard i Forecast).<br>
         Oczekiwane kolumny: <code>Barcode</code>, <code>Land</code>, <code>Stückzahl</code>, <code>Kategorie</code>,
         <code>Ziel-Datum</code>, <code>Übergabe Nr.</code><br>
         <span style="font-size:.85rem;">Excel: obsługiwany jest tylko format <strong>.xlsx</strong> (stary <code>.xls</code> → „Zapisz jako .xlsx").
@@ -34,10 +36,93 @@
     <div id="resultContent"></div>
 </div>
 
+<!-- Okno: data pliku przed importem -->
+<div id="dataPlikuModal" class="modal-overlay" data-modal-guard style="display:none;">
+    <div class="modal" style="max-width:440px;">
+        <h3>📅 Data pliku</h3>
+        <p style="color:var(--text-muted);font-size:.9rem;margin-top:0;">
+            Którego dnia pracy dotyczy plik <strong id="dpNazwa"></strong>?
+            Zwykle to dzisiaj. Ta data trafia do Statystyk ogólnych (Loading date),
+            na Dashboard i do Forecastu.
+        </p>
+        <div class="form-group">
+            <label for="dpData">Data pliku</label>
+            <input type="date" id="dpData" class="form-control" required>
+            <div id="dpOstrzezenie" style="display:none;color:var(--warning);font-size:.85rem;margin-top:.4rem;"></div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="anulujImport()">Anuluj</button>
+            <button class="btn btn-primary" id="dpImportuj" onclick="potwierdzImport()">Importuj</button>
+        </div>
+    </div>
+</div>
+
 <!-- Loading -->
 <div id="loading" style="display:none;text-align:center;margin-top:2rem;">
     <div style="font-size:2rem;">⏳</div>
     <p>Przetwarzanie pliku...</p>
+</div>
+
+<!-- Grupowa poprawa daty pliku -->
+<div class="card" style="margin-top:2rem;">
+    <h3 style="margin-top:0;">📅 Popraw datę pliku</h3>
+    <p style="color:var(--text-muted);font-size:.88rem;margin-top:0;">
+        Plik wrzucony z błędną datą? Odfiltruj importy po dacie pliku, dniu i godzinie wrzucenia
+        oraz osobie, zaznacz błędne i przypisz im prawidłową datę. Zmiana przesuwa paczki
+        w Statystykach ogólnych na linię z nową datą.
+    </p>
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:1rem;">
+        <div class="form-group" style="margin:0;">
+            <label for="fDataPliku">Data pliku</label>
+            <input type="date" id="fDataPliku" class="form-control" style="width:160px;">
+        </div>
+        <div class="form-group" style="margin:0;">
+            <label for="fDzien">Dzień wrzucenia</label>
+            <input type="date" id="fDzien" class="form-control" style="width:160px;">
+        </div>
+        <div class="form-group" style="margin:0;">
+            <label for="fOd">Godz. od</label>
+            <input type="time" id="fOd" class="form-control" style="width:110px;">
+        </div>
+        <div class="form-group" style="margin:0;">
+            <label for="fDo">Godz. do</label>
+            <input type="time" id="fDo" class="form-control" style="width:110px;">
+        </div>
+        <div class="form-group" style="margin:0;">
+            <label for="fOsoba">Kto wrzucił</label>
+            <select id="fOsoba" class="form-control" style="min-width:180px;"><option value="">— wszyscy —</option></select>
+        </div>
+        <button class="btn btn-secondary" onclick="szukajImportow()">🔍 Szukaj</button>
+    </div>
+
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width:36px;"><input type="checkbox" id="zaznaczWszystkie" title="Zaznacz wszystkie"></th>
+                    <th>Wrzucono</th>
+                    <th>Kto</th>
+                    <th>Data pliku</th>
+                    <th style="text-align:right;">Paczek</th>
+                    <th style="text-align:right;">Sztuk</th>
+                    <th style="text-align:right;">Zrobionych</th>
+                </tr>
+            </thead>
+            <tbody id="importyBody">
+                <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:1.5rem;">Ładowanie…</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end;margin-top:1rem;">
+        <div class="form-group" style="margin:0;">
+            <label for="nowaData">Nowa data pliku</label>
+            <input type="date" id="nowaData" class="form-control" style="width:160px;">
+        </div>
+        <button class="btn btn-primary" id="podgladBtn" onclick="podgladZmiany()" disabled>Pokaż skutki zmiany</button>
+        <span id="zaznaczenieInfo" style="color:var(--text-muted);font-size:.85rem;"></span>
+    </div>
+    <div id="skutki" style="display:none;margin-top:1rem;"></div>
 </div>
 
 <script>
@@ -49,6 +134,9 @@
         if (file) handleFile(file);
     }
 
+    const DZIS = '{{ dzis }}';
+    let plikDoImportu = null;
+
     function handleFile(file) {
         const name = file ? file.name.toLowerCase() : '';
         if (!file || !(name.endsWith('.csv') || name.endsWith('.xlsx'))) {
@@ -56,10 +144,50 @@
             return;
         }
         document.getElementById('fileName').textContent = '📎 ' + file.name;
-        uploadFile(file);
+        // Najpierw data pliku — import bez niej nie rusza.
+        plikDoImportu = file;
+        document.getElementById('dpNazwa').textContent = file.name;
+        const pole = document.getElementById('dpData');
+        pole.value = DZIS;
+        sprawdzDate();
+        document.getElementById('dataPlikuModal').style.display = 'flex';
+        setTimeout(() => pole.focus(), 0);
     }
 
-    async function uploadFile(file) {
+    // Data inna niz dzis jest dozwolona (plik za wczoraj), ale ma byc swiadoma.
+    function sprawdzDate() {
+        const v = document.getElementById('dpData').value;
+        const box = document.getElementById('dpOstrzezenie');
+        if (v && v !== DZIS) {
+            const [y, m, d] = v.split('-');
+            box.textContent = `⚠ To nie jest dzisiejsza data — plik zostanie zapisany pod ${d}.${m}.${y}.`;
+            box.style.display = '';
+        } else {
+            box.style.display = 'none';
+        }
+    }
+    document.getElementById('dpData').addEventListener('input', sprawdzDate);
+    document.getElementById('dpData').addEventListener('keydown', e => { if (e.key === 'Enter') potwierdzImport(); });
+
+    function anulujImport() {
+        plikDoImportu = null;
+        document.getElementById('dataPlikuModal').style.display = 'none';
+        document.getElementById('fileInput').value = '';
+        document.getElementById('fileName').textContent = '';
+    }
+
+    function potwierdzImport() {
+        const data = document.getElementById('dpData').value;
+        if (!data) { showToast('Podaj datę pliku.', 'error'); return; }
+        if (!plikDoImportu) return;
+        const plik = plikDoImportu;
+        plikDoImportu = null;
+        document.getElementById('dataPlikuModal').style.display = 'none';
+        document.getElementById('fileInput').value = '';
+        uploadFile(plik, data);
+    }
+
+    async function uploadFile(file, dataPliku) {
         const loading = document.getElementById('loading');
         const results = document.getElementById('results');
         loading.style.display = 'block';
@@ -71,6 +199,7 @@
 
         const formData = new FormData();
         formData.append('file', file);
+        formData.append('data_pliku', dataPliku);
 
         try {
             const resp = await fetch(endpoint, {
@@ -109,17 +238,133 @@
             if (data.skipped_barcodes && data.skipped_barcodes.length > 0) {
                 html += `<details style="margin-top:1rem;"><summary style="cursor:pointer;color:var(--text-muted);">Pominięte barcodes (${data.skipped_barcodes.length})</summary>`;
                 html += `<div style="margin-top:.5rem;max-height:200px;overflow-y:auto;font-size:.8rem;color:var(--text-muted);">`;
-                data.skipped_barcodes.forEach(b => { html += `<code>${b}</code> `; });
+                data.skipped_barcodes.forEach(b => { html += `<code>${escapeHtml(b)}</code> `; });
                 html += `</div></details>`;
             }
 
             document.getElementById('resultContent').innerHTML = html;
             showToast(data.message, 'success');
+            if (typeof szukajImportow === 'function') szukajImportow();
 
         } catch (err) {
             loading.style.display = 'none';
             showToast('Błąd połączenia: ' + err.message, 'error');
         }
     }
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Import = pliki jednej osoby z jednej minuty i jednej daty pliku.
+    const fmtData = iso => { if (!iso) return '—'; const [y, m, d] = iso.split('-'); return `${d}.${m}.${y}`; };
+    const num = n => (n || 0).toLocaleString('pl');
+    let importy = [];
+    let osobyWczytane = false;
+
+    function zaznaczone() {
+        return [...document.querySelectorAll('.imp-check:checked')].map(c => c.value);
+    }
+
+    function odswiezZaznaczenie() {
+        const wybrane = new Set(zaznaczone());
+        const lista = importy.filter(i => wybrane.has(i.klucz));
+        const paczek = lista.reduce((s, i) => s + i.paczek, 0);
+        document.getElementById('zaznaczenieInfo').textContent = lista.length
+            ? `Zaznaczono ${lista.length} import(ów), ${num(paczek)} paczek.` : '';
+        document.getElementById('podgladBtn').disabled = !lista.length;
+        document.getElementById('skutki').style.display = 'none';
+    }
+
+    async function szukajImportow() {
+        const p = new URLSearchParams();
+        const pole = (id, nazwa) => { const v = document.getElementById(id).value; if (v) p.set(nazwa, v); };
+        pole('fDataPliku', 'data_pliku'); pole('fDzien', 'dzien_importu');
+        pole('fOd', 'godz_od'); pole('fDo', 'godz_do'); pole('fOsoba', 'osoba');
+        const body = document.getElementById('importyBody');
+        try {
+            const res = await fetch('/api/imports?' + p.toString());
+            const d = await res.json();
+            if (!res.ok) { showToast(d.error || 'Błąd ładowania importów.', 'error'); return; }
+            importy = d.importy;
+            if (!osobyWczytane) {
+                const sel = document.getElementById('fOsoba');
+                d.osoby.forEach(o => sel.insertAdjacentHTML('beforeend',
+                    `<option value="${o.id}">${escapeHtml(o.nazwa)} (${escapeHtml(o.login)})</option>`));
+                osobyWczytane = true;
+            }
+            body.innerHTML = importy.length ? importy.map(i => `
+                <tr>
+                    <td><input type="checkbox" class="imp-check" value="${escapeHtml(i.klucz)}"></td>
+                    <td>${new Date(i.imported_at).toLocaleString('pl', {dateStyle: 'short', timeStyle: 'short'})}</td>
+                    <td>${escapeHtml(i.osoba)}${i.recznych ? ` <span class="badge" title="Paczki dodane ręcznie">ręczne: ${i.recznych}</span>` : ''}</td>
+                    <td><strong>${fmtData(i.data_pliku)}</strong></td>
+                    <td style="text-align:right;">${num(i.paczek)}</td>
+                    <td style="text-align:right;">${num(i.sztuk)}</td>
+                    <td style="text-align:right;">${num(i.zrobionych)}</td>
+                </tr>`).join('')
+                : '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:1.5rem;">Brak importów dla tych filtrów.</td></tr>';
+            if (d.ucieto) showToast('Pokazano pierwsze 300 importów — zawęź filtry.', 'warning');
+            document.getElementById('zaznaczWszystkie').checked = false;
+            body.querySelectorAll('.imp-check').forEach(c => c.addEventListener('change', odswiezZaznaczenie));
+            odswiezZaznaczenie();
+        } catch {
+            body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--danger);padding:1.5rem;">Błąd połączenia.</td></tr>';
+        }
+    }
+
+    document.getElementById('zaznaczWszystkie').addEventListener('change', e => {
+        document.querySelectorAll('.imp-check').forEach(c => { c.checked = e.target.checked; });
+        odswiezZaznaczenie();
+    });
+    document.getElementById('nowaData').addEventListener('change', () => {
+        document.getElementById('skutki').style.display = 'none';
+    });
+
+    async function wyslijZmiane(podglad) {
+        const nowa = document.getElementById('nowaData').value;
+        if (!nowa) { showToast('Podaj nową datę pliku.', 'error'); return null; }
+        const res = await fetch('/api/imports/zmien-date', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({importy: zaznaczone(), nowa_data: nowa, podglad})
+        });
+        const d = await res.json().catch(() => ({}));
+        return {ok: res.ok, status: res.status, d, nowa};
+    }
+
+    // Najpierw skutki (nic nie zapisuje), potem swiadome potwierdzenie.
+    async function podgladZmiany() {
+        const w = await wyslijZmiane(true);
+        if (!w) return;
+        const box = document.getElementById('skutki');
+        const d = w.d;
+        if (!w.ok) {
+            box.innerHTML = `<div class="alert alert-error" style="border:1px solid var(--danger);background:var(--danger-bg);padding:1rem;border-radius:8px;">⚠ ${escapeHtml(d.error || 'Nie można zmienić daty.')}</div>`;
+            box.style.display = '';
+            return;
+        }
+        box.innerHTML = `
+            <div style="border:1px solid var(--warning);background:var(--warning-bg);padding:1rem;border-radius:8px;">
+                <div style="font-weight:600;margin-bottom:.5rem;">Zmiana daty pliku na ${fmtData(w.nowa)}:</div>
+                <ul style="margin:.25rem 0 .75rem 1.2rem;line-height:1.6;">
+                    <li><strong>${num(d.paczek)}</strong> paczek (${num(d.sztuk)} szt., w tym ${num(d.zrobionych)} zrobionych)${d.juz_z_ta_data ? ` · ${num(d.juz_z_ta_data)} już ma tę datę` : ''}</li>
+                    <li>Statystyki ogólne: ${num(d.linii_przenoszonych)} linii przechodzi w całości${d.linii_dzielonych ? `, ${num(d.linii_dzielonych)} linii traci część paczek` : ''}${d.linii_docelowych_istniejacych ? `, ${num(d.linii_docelowych_istniejacych)} łączy się z istniejącymi liniami z ${fmtData(w.nowa)}` : ''}</li>
+                </ul>
+                ${d.paczek ? `<button class="btn btn-primary" onclick="potwierdzZmiane()">Zmień datę ${num(d.paczek)} paczek</button>` : '<em>Nic do zmiany.</em>'}
+                <button class="btn btn-ghost" onclick="document.getElementById('skutki').style.display='none'">Anuluj</button>
+            </div>`;
+        box.style.display = '';
+    }
+
+    async function potwierdzZmiane() {
+        const w = await wyslijZmiane(false);
+        if (!w) return;
+        if (!w.ok) { showToast(w.d.error || 'Błąd zmiany daty.', 'error'); return; }
+        showToast(w.d.message, 'success');
+        document.getElementById('skutki').style.display = 'none';
+        szukajImportow();
+    }
+
+    szukajImportow();
 </script>
 {% endblock %}

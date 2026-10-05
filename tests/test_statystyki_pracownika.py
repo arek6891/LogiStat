@@ -15,7 +15,7 @@ def paczka(barcode, kto, sztuk, dzien, godzina=10):
     """Paczka zakonczona o `godzina` czasu lokalnego danego dnia."""
     koniec = logistat.local_day_bounds(dzien)[0] + timedelta(hours=godzina)
     logistat.db.session.add(logistat.ImportedCarton(
-        barcode=barcode, land='PL', stueckzahl=sztuk, ziel_datum=ZIEL,
+        barcode=barcode, land='PL', stueckzahl=sztuk, ziel_datum=ZIEL, data_pliku=ZIEL,
         uebergabe_nr='UB-1', scan_start_at=koniec - timedelta(minutes=10),
         scan_start_by=kto.id, scan_end_at=koniec, scan_end_by=kto.id))
     logistat.db.session.commit()

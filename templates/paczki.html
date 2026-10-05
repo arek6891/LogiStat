@@ -84,7 +84,11 @@
             {% endfor %}
         </select>
 
-        <label style="display:block;margin:.75rem 0 .25rem;font-weight:600;">Ziel-Datum <span style="color:var(--danger);">*</span></label>
+        <label style="display:block;margin:.75rem 0 .25rem;font-weight:600;">Data pliku <span style="color:var(--danger);">*</span></label>
+        <input type="date" id="apDataPliku" class="form-control" style="width:100%;">
+        <div style="color:var(--text-muted);font-size:.78rem;margin-top:.2rem;">Dzień pracy — po nim liczy się linia w Statystykach ogólnych.</div>
+
+        <label style="display:block;margin:.75rem 0 .25rem;font-weight:600;">Ziel-Datum</label>
         <input type="date" id="apZielDatum" class="form-control" style="width:100%;">
 
         <label style="display:block;margin:.75rem 0 .25rem;font-weight:600;">Übergabe Nr. <span style="color:var(--danger);">*</span></label>
@@ -145,6 +149,7 @@
                 <th>Land</th>
                 <th style="text-align:right;">Stückzahl</th>
                 <th>Kategorie</th>
+                <th>Data pliku</th>
                 <th>Ziel-Datum</th>
                 <th>Übergabe Nr.</th>
                 <th style="text-align:center;background:rgba(251,146,60,.10);color:#fb923c;">Double rate</th>
@@ -169,6 +174,7 @@
                 <td>{{ item.land or '—' }}</td>
                 <td style="text-align:right; font-weight:bold;">{{ item.stueckzahl }}</td>
                 <td>{{ item.kategorie or '—' }}</td>
+                <td style="font-weight:600;">{{ item.data_pliku.strftime('%d.%m.%Y') if item.data_pliku else '—' }}</td>
                 <td>{{ item.ziel_datum.strftime('%d.%m.%Y') if item.ziel_datum else '—' }}</td>
                 <td style="font-family:monospace;font-size:.85rem;">{{ item.uebergabe_nr or '—' }}</td>
                 <td style="text-align:center;">
@@ -229,6 +235,7 @@
                             data-stueckzahl="{{ item.stueckzahl }}"
                             data-land="{{ item.land or '' }}"
                             data-ziel="{{ item.ziel_datum.isoformat() if item.ziel_datum else '' }}"
+                            data-plik="{{ item.data_pliku.isoformat() if item.data_pliku else '' }}"
                             data-uebergabe="{{ item.uebergabe_nr or '' }}"
                             data-kategorie="{{ item.kategorie or '' }}"
                             data-double="{{ '1' if item.double_rate else '0' }}"
@@ -252,7 +259,7 @@
             {% endfor %}
             {% if not items %}
             <tr>
-                <td colspan="12" style="text-align:center;padding:3rem;color:var(--text-muted);">
+                <td colspan="13" style="text-align:center;padding:3rem;color:var(--text-muted);">
                     Brak paczek spełniających kryteria.
                 </td>
             </tr>
@@ -342,6 +349,7 @@ function openAddPackage() {
     document.getElementById('apStueckzahl').value = '';
     document.getElementById('apLand').value = '';
     document.getElementById('apZielDatum').value = '';
+    document.getElementById('apDataPliku').value = '{{ dzis }}';
     document.getElementById('apUebergabe').value = '';
     document.getElementById('apKategorie').value = '';
     document.getElementById('apDoubleRate').checked = false;
@@ -358,6 +366,7 @@ function openEditPackage(btn) {
     document.getElementById('apStueckzahl').value = d.stueckzahl || '';
     document.getElementById('apLand').value = d.land || '';
     document.getElementById('apZielDatum').value = d.ziel || '';
+    document.getElementById('apDataPliku').value = d.plik || '';
     document.getElementById('apUebergabe').value = d.uebergabe || '';
     document.getElementById('apKategorie').value = d.kategorie || '';
     document.getElementById('apDoubleRate').checked = d.double === '1';
@@ -376,7 +385,7 @@ document.getElementById('addPackageModal').addEventListener('click', function(e)
 document.getElementById('addPackageModal').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') {
         e.preventDefault();
-        const order = ['apBarcode', 'apStueckzahl', 'apLand', 'apZielDatum', 'apUebergabe', 'apKategorie'];
+        const order = ['apBarcode', 'apStueckzahl', 'apLand', 'apDataPliku', 'apZielDatum', 'apUebergabe', 'apKategorie'];
         const idx = order.indexOf(e.target.id);
         if (idx >= 0 && idx < order.length - 1) {
             document.getElementById(order[idx + 1]).focus();
@@ -390,6 +399,7 @@ async function submitAddPackage() {
         stueckzahl: parseInt(document.getElementById('apStueckzahl').value, 10),
         land: document.getElementById('apLand').value,
         ziel_datum: document.getElementById('apZielDatum').value,
+        data_pliku: document.getElementById('apDataPliku').value,
         uebergabe_nr: document.getElementById('apUebergabe').value.trim(),
         kategorie: document.getElementById('apKategorie').value.trim(),
         double_rate: document.getElementById('apDoubleRate').checked,
@@ -399,7 +409,7 @@ async function submitAddPackage() {
     if (!payload.barcode) { showToast('Podaj barcode.', 'error'); return; }
     if (!payload.stueckzahl || payload.stueckzahl <= 0) { showToast('Podaj ilość (Stückzahl) > 0.', 'error'); return; }
     if (!payload.land) { showToast('Wybierz kraj (Land).', 'error'); return; }
-    if (!payload.ziel_datum) { showToast('Podaj Ziel-Datum.', 'error'); return; }
+    if (!payload.data_pliku) { showToast('Podaj datę pliku.', 'error'); return; }
     if (!payload.uebergabe_nr) { showToast('Podaj Übergabe Nr.', 'error'); return; }
 
     // Ostrzeżenie przy edycji paczki z zarejestrowanymi czasami skanowania
