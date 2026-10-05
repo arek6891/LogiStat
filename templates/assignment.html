@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-header">
     <h2>📋 Przydzielanie do czynności</h2>
-    <p class="subtitle">Przeciągnij pracowników do odpowiednich czynności</p>
+    <p class="subtitle">Przeciągnij pracowników do odpowiednich czynności — każde przeciągnięcie zapisuje się od razu</p>
 </div>
 
 <div class="assignment-controls">
@@ -19,13 +19,13 @@
             <button class="shift-tab" data-shift="2" onclick="switchShift(2)">Zmiana 2</button>
         </div>
     </div>
-    <div style="margin-left:auto;display:flex;gap:10px;align-self:flex-end;">
+    <div style="margin-left:auto;display:flex;gap:10px;align-self:flex-end;align-items:center;">
         <button class="btn btn-ghost" onclick="loadSuggestions()">🤖 Sugestie AI</button>
-        <button class="btn btn-primary" onclick="saveAssignments()">💾 Zapisz</button>
+        <span class="autozapis-status" id="autoZapisStatus"></span>
     </div>
 </div>
 
-<div class="assignment-board">
+<div class="assignment-board shift-frame" id="assignmentBoard" data-shift="1">
     <div class="assignment-column-unassigned">
         <div class="assignment-column">
             <div class="assignment-column-header">
@@ -56,15 +56,22 @@
 <script>
     let currentShift = 1;
     let selectedCards = new Set();
+    // Data i wersja przydzialu wczytanej tablicy. Wersja wraca z kazdym
+    // zapisem; zapis ze stara wersja (ktos inny zmienil zmiane) dostaje 409.
+    let loadedDate = null;
+    let wersja = null;
 
     // Init date to today
     document.getElementById('assignDate').valueAsDate = new Date();
+    loadedDate = document.getElementById('assignDate').value;
 
-    function switchShift(num) {
+    async function switchShift(num) {
+        if (!await autoZapis.przedOpuszczeniem()) return;
         currentShift = num;
         document.querySelectorAll('.shift-tab').forEach(t => {
             t.classList.toggle('active', parseInt(t.dataset.shift) === num);
         });
+        document.getElementById('assignmentBoard').dataset.shift = num;
         loadData();
     }
 
@@ -74,6 +81,8 @@
         try {
             const res = await fetch(`/api/assignment/data?date=${dateVal}&shift_number=${currentShift}`);
             const data = await res.json();
+            loadedDate = dateVal;
+            wersja = data.wersja;
             renderBoard(data);
         } catch (err) {
             showToast('Błąd ładowania danych.', 'error');
@@ -110,7 +119,7 @@
         card.draggable = true;
         card.innerHTML = `
         <div class="checkbox"></div>
-        <div class="mini-avatar">${user.display_name[0]}</div>
+        <div class="mini-avatar">${escapeHtml(user.display_name[0])}</div>
         <span>${escapeHtml(user.display_name)}</span>
     `;
 
@@ -153,7 +162,13 @@
         setupDropZones();
     });
 
-    document.getElementById('assignDate').addEventListener('change', loadData);
+    document.getElementById('assignDate').addEventListener('change', async (e) => {
+        if (!await autoZapis.przedOpuszczeniem()) {
+            e.target.value = loadedDate;
+            return;
+        }
+        loadData();
+    });
 
     function setupDropZones() {
         document.querySelectorAll('.assignment-drop-zone').forEach(zone => {
@@ -170,16 +185,24 @@
                 e.preventDefault();
                 zone.classList.remove('drag-over');
 
-                const userIds = JSON.parse(e.dataTransfer.getData('text/plain'));
+                let userIds;
+                try {
+                    userIds = JSON.parse(e.dataTransfer.getData('text/plain'));
+                } catch {
+                    return;   // przeciagnieto cos spoza tablicy (np. zaznaczony tekst)
+                }
+                let przeniesiono = false;
                 userIds.forEach(uid => {
                     const card = document.querySelector(`.assignment-user-card[data-user-id="${uid}"]`);
                     if (card) {
+                        if (card.parentElement !== zone) przeniesiono = true;
                         zone.appendChild(card);
                         card.classList.remove('selected', 'dragging');
                     }
                 });
                 selectedCards.clear();
                 updateCounts();
+                if (przeniesiono) saveAssignments();
             });
         });
     }
@@ -209,6 +232,15 @@
                 return;
             }
 
+            // Sugestie zapisuja sie od razu (jak kazde przeciagniecie), wiec
+            // nadpisanie recznie ulozonej tablicy musi byc swiadome.
+            const juzPrzydzieleni = document.querySelectorAll(
+                '.assignment-drop-zone:not(#unassignedZone) .assignment-user-card').length;
+            if (juzPrzydzieleni > 0 && !confirm(
+                `Na tej zmianie przydzielono już ${juzPrzydzieleni} os. Sugestie AI zastąpią ten przydział i od razu go zapiszą.\n\nKontynuować?`)) {
+                return;
+            }
+
             // Move all cards back to unassigned first
             const allCards = document.querySelectorAll('.assignment-user-card');
             const unassignedZone = document.getElementById('unassignedZone');
@@ -224,17 +256,19 @@
             });
 
             updateCounts();
-            showToast('Sugestie AI załadowane. Możesz je zmienić.', 'success');
+            saveAssignments();
+            showToast('Sugestie AI zastosowane i zapisane. Możesz je zmienić przeciągając.', 'success');
         } catch (err) {
             showToast('Błąd ładowania sugestii.', 'error');
         }
     }
 
     // ── Save ──
-    async function saveAssignments() {
-        const dateVal = document.getElementById('assignDate').value;
+    // Wywolywane po kazdej zmianie tablicy. Stan (data, zmiana, karty) jest
+    // zbierany TERAZ, a wersja w chwili wysylki — kolejne zapisy tej zmiany
+    // ida jeden po drugim (klucz), wiec kazdy dostaje wersje z poprzedniego.
+    function saveAssignments() {
         const assignments = [];
-
         document.querySelectorAll('.assignment-drop-zone').forEach(zone => {
             const activityId = parseInt(zone.dataset.activity);
             if (activityId === 0) return; // skip unassigned
@@ -248,24 +282,21 @@
             });
         });
 
-        try {
-            const res = await fetch('/api/assignment/save', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    date: dateVal,
-                    shift_number: currentShift,
-                    assignments: assignments
-                })
-            });
-            if (res.ok) {
-                showToast('Przydzielenie zapisane!', 'success');
-            } else {
-                showToast('Błąd zapisu.', 'error');
+        const date = loadedDate;
+        const shiftNumber = currentShift;
+        autoZapis.zaplanuj(`przydzial:${date}:${shiftNumber}`, async () => {
+            try {
+                const dane = await zapiszJson('/api/assignment/save', 'POST', {
+                    date, shift_number: shiftNumber, assignments, wersja
+                });
+                if (date === loadedDate && shiftNumber === currentShift) wersja = dane.wersja;
+            } catch (e) {
+                if (e.status === 409 && e.dane && e.dane.konflikt) {
+                    e.akcja = { etykieta: 'Wczytaj aktualny', fn: loadData };
+                }
+                throw e;
             }
-        } catch (err) {
-            showToast('Błąd połączenia.', 'error');
-        }
+        });
     }
 </script>
 {% endblock %}

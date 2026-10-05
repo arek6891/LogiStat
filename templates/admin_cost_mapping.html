@@ -48,7 +48,10 @@
         style="display:none; justify-content:space-between; padding:1rem 1.5rem; background:rgba(99,102,241,0.03); border-top:1px solid var(--border);"
         id="ratesFooter">
         <button class="btn btn-ghost" onclick="copyFromPreviousMonth()">📄 Skopiuj z poprzedniego miesiąca</button>
-        <button class="btn btn-primary" onclick="saveRates()">Zapisz stawki do bazy</button>
+        <div style="display:flex;gap:12px;align-items:center;">
+            <span id="ratesDirty" style="display:none;color:var(--warning);font-weight:600;font-size:0.85rem;">● Niezapisane zmiany stawek</span>
+            <button class="btn btn-primary" onclick="saveRates()">Zapisz stawki do bazy <span id="ratesMonthLabel"></span></button>
+        </div>
     </div>
 </div>
 
@@ -68,10 +71,34 @@
     document.getElementById('yearSelect').value = today.getFullYear();
     document.getElementById('monthSelect').value = today.getMonth() + 1;
 
+    // Stawki to rozliczenie i zostaja z jawnym „Zapisz" (bez autozapisu) — ale
+    // nie moga po cichu przepasc przy wyjsciu ze strony albo zmianie miesiaca.
+    function niezapisaneStawki() {
+        return [...document.querySelectorAll('.rate-input')].some(i => i.value !== i.dataset.original);
+    }
+    function odswiezZnacznikStawek() {
+        document.getElementById('ratesDirty').style.display = niezapisaneStawki() ? '' : 'none';
+    }
+    window.addEventListener('beforeunload', e => {
+        if (niezapisaneStawki()) { e.preventDefault(); e.returnValue = ''; }
+    });
+
+    // Miesiac, ktorego stawki SA w formularzu. Zapis i kopiowanie ida pod niego,
+    // nie pod to, co aktualnie stoi na listach: przestawienie miesiaca bez
+    // „Pokaz stawki" zapisywalo stawki starego miesiaca pod nowy (rozliczenie!).
+    let loadedYear = null;
+    let loadedMonth = null;
+
     // Automatycznie załaduj po wejściu na stronę
     loadRates();
 
     async function loadRates() {
+        if (niezapisaneStawki() && !confirm('Stawki tego miesiąca mają niezapisane zmiany.\n\nWczytać inny miesiąc i je porzucić?')) {
+            // Listy wracaja do miesiaca, ktory naprawde jest w formularzu.
+            document.getElementById('yearSelect').value = loadedYear;
+            document.getElementById('monthSelect').value = loadedMonth;
+            return;
+        }
         const year = document.getElementById('yearSelect').value;
         const month = document.getElementById('monthSelect').value;
         if (!year || !month) return;
@@ -79,12 +106,17 @@
         const container = document.getElementById('ratesContainer');
         container.innerHTML = '<p style="text-align:center; color:var(--text-muted);">Wczytywanie stawek...</p>';
         document.getElementById('ratesFooter').style.display = 'none';
+        loadedYear = loadedMonth = null;
 
         try {
             const res = await fetch(`/api/cost-mapping/${year}/${month}`);
             const rates = res.ok ? await res.json() : {};
 
             renderRatesForm(rates);
+            loadedYear = parseInt(year);
+            loadedMonth = parseInt(month);
+            document.getElementById('ratesMonthLabel').textContent =
+                `(${String(loadedMonth).padStart(2, '0')}/${loadedYear})`;
             document.getElementById('ratesFooter').style.display = 'flex';
         } catch (err) {
             container.innerHTML = '<p style="text-align:center; color:var(--danger);">Błąd połączenia. Nie można pobrać stawek.</p>';
@@ -132,13 +164,15 @@
                     this.style.borderColor = '';
                     this.style.backgroundColor = '';
                 }
+                odswiezZnacznikStawek();
             });
         });
+        odswiezZnacznikStawek();
     }
 
     async function saveRates() {
-        const year = document.getElementById('yearSelect').value;
-        const month = document.getElementById('monthSelect').value;
+        const year = loadedYear;
+        const month = loadedMonth;
         if (!year || !month) return;
 
         const newRates = {};
@@ -155,13 +189,14 @@
             });
 
             if (res.ok) {
-                showToast('Stawki zapisano pomyślnie!', 'success');
+                showToast(`Stawki ${String(month).padStart(2, '0')}/${year} zapisano pomyślnie!`, 'success');
                 // Reset styling
                 document.querySelectorAll('.rate-input').forEach(input => {
                     input.dataset.original = input.value;
                     input.style.borderColor = '';
                     input.style.backgroundColor = '';
                 });
+                odswiezZnacznikStawek();
             } else {
                 showToast('Błąd zapisu stawek.', 'error');
             }
@@ -171,8 +206,9 @@
     }
 
     async function copyFromPreviousMonth() {
-        let year = parseInt(document.getElementById('yearSelect').value);
-        let month = parseInt(document.getElementById('monthSelect').value);
+        // Poprzedni wzgledem WCZYTANEGO miesiaca — kopia laduje w jego formularzu.
+        let year = loadedYear;
+        let month = loadedMonth;
 
         if (!year || !month) return;
 
@@ -213,6 +249,7 @@
                 });
 
                 if (copied) {
+                    odswiezZnacznikStawek();
                     showToast(`Skopiowano stawki z ${prevMonth}/${prevYear}. Pamiętaj, aby kliknąć Zapisz.`, 'info');
                 } else {
                     showToast('Stawki w poprzednim miesiącu są identyczne jak obecnie wpisane.', 'info');

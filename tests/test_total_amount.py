@@ -108,9 +108,11 @@ def test_strona_ma_dymek_wyjasniajacy_total_amount(admin_client):
 
 # ── etykiety dwuczlonowe ─────────────────────────────────────────────────────
 
-def test_etykieta_kategorii_jest_dwuczlonowa():
-    assert logistat.etykieta_kategorii('labelling_on') == 'Labelling one — Etykietowanie pojedyncze'
-    assert logistat.etykieta_kategorii('card_facture') == 'Card facture — Karta / faktura'
+def test_etykieta_kategorii_jest_dwuczlonowa(flask_app):
+    # Od 2026-10: najpierw polska nazwa (edytowalna przez admina), w nawiasie
+    # angielska ze Statystyk ogolnych — patrz tests/test_nazwy_kategorii.py.
+    assert logistat.etykieta_kategorii('labelling_on') == 'Etykietowanie pojedyncze (Labelling one)'
+    assert logistat.etykieta_kategorii('card_facture') == 'Karta / faktura (Card facture)'
 
 
 def test_kazda_kategoria_ma_polskie_tlumaczenie():

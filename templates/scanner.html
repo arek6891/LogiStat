@@ -2,18 +2,18 @@
 {% block title %}LogiStat — Skaner zmiana {{ shift_number }}{% endblock %}
 
 {% block content %}
-<div class="scanner-page">
+<div class="scanner-page" data-shift="{{ shift_number }}">
     <div class="page-header" style="text-align:center;">
         <div class="shift-tabs">
-            <a href="{{ url_for('scanner', shift_number=1) }}"
+            <a href="{{ url_for('scanner', shift_number=1) }}" data-shift="1"
                 class="shift-tab {% if shift_number == 1 %}active{% endif %}">Zmiana 1</a>
-            <a href="{{ url_for('scanner', shift_number=2) }}"
+            <a href="{{ url_for('scanner', shift_number=2) }}" data-shift="2"
                 class="shift-tab {% if shift_number == 2 %}active{% endif %}">Zmiana 2</a>
         </div>
     </div>
 
     <div class="scanner-input-area">
-        <div class="scanner-shift-badge">Zmiana {{ shift_number }}</div>
+        <div class="scanner-shift-badge" data-shift="{{ shift_number }}">Zmiana {{ shift_number }}</div>
         <div class="scanner-subtitle">{{ today.strftime('%d.%m.%Y') }} — Zeskanuj kod kreskowy pracownika</div>
         <input type="text" id="barcodeInput" class="scanner-input" placeholder="Skanuj kod kreskowy..." autofocus
             autocomplete="off">

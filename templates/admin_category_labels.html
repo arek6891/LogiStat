@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}LogiStat — Nazwy kategorii{% endblock %}
+
+{% block content %}
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;gap:1rem;flex-wrap:wrap;">
+    <div>
+        <h2>✏️ Nazwy kategorii</h2>
+        <p class="subtitle">Co widzi pracownik przy kończeniu paczki (Czasy paczek → Koniec), w „✎ Ilości" na liście paczek i w cenniku</p>
+    </div>
+    <span class="autozapis-status" id="autoZapisStatus" title="Nazwa zapisuje się sama chwilę po wpisaniu"></span>
+</div>
+
+<div class="card" style="max-width:860px;">
+    <p style="color:var(--text-muted);font-size:.88rem;margin-top:0;">
+        Wpisz <strong>polską nazwę</strong>, którą rozumie pracownik. W nawiasie zawsze zostaje nazwa ze
+        <strong>Statystyk ogólnych</strong> — tej nie da się zmienić, bo po niej idzie rozliczenie i eksport Excel.
+        Puste pole = nazwa domyślna.
+    </p>
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Statystyki ogólne</th>
+                    <th>Nazwa dla pracownika</th>
+                    <th>Pracownik zobaczy</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for k in kategorie %}
+                <tr>
+                    <td style="white-space:nowrap;color:var(--text-secondary);">{{ k.ang }}</td>
+                    <td>
+                        <input type="text" class="form-control nazwa-pl" data-kat="{{ k.klucz }}"
+                               data-ang="{{ k.ang }}" data-domyslna="{{ k.domyslna }}"
+                               value="{{ k.pl }}" maxlength="60" placeholder="{{ k.domyslna }}"
+                               style="min-width:240px;">
+                    </td>
+                    <td class="podglad" style="font-weight:600;"></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Ten sam format co etykieta_kategorii() w app.py: „Polska (English)".
+    function podglad(pole) {
+        const pl = pole.value.trim() || pole.dataset.domyslna;
+        const tekst = pl ? `${pl} (${pole.dataset.ang})` : pole.dataset.ang;
+        pole.closest('tr').querySelector('.podglad').textContent = tekst;
+    }
+
+    document.querySelectorAll('.nazwa-pl').forEach(pole => {
+        podglad(pole);
+        pole.addEventListener('input', () => podglad(pole));
+        autoZapis.poWpisaniu(pole, () => {
+            const kat = pole.dataset.kat;
+            const body = { nazwy: { [kat]: pole.value } };
+            autoZapis.zaplanuj(`nazwa:${kat}`, () => zapiszJson('/api/category-labels', 'PUT', body), [pole]);
+        });
+    });
+</script>
+{% endblock %}
