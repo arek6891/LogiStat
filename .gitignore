@@ -40,3 +40,6 @@ build/
 
 # Logs
 *.log
+
+# Playwright MCP (Claude Code)
+.playwright-mcp/

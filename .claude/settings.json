@@ -1,0 +1,11 @@
+{
+  "enabledPlugins": {
+    "pyright-lsp@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true
+  },
+  "env": {
+    "PLAYWRIGHT_MCP_BROWSER": "chromium",
+    "PLAYWRIGHT_MCP_HEADLESS": "true"
+  }
+}

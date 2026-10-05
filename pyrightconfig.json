@@ -1,0 +1,15 @@
+{
+  "include": ["app.py", "tests"],
+  "exclude": ["**/__pycache__", "instance", "venv", ".venv"],
+  "typeCheckingMode": "basic",
+  "pythonVersion": "3.12",
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none",
+  "reportAttributeAccessIssue": "none",
+  "reportCallIssue": "none",
+  "reportArgumentType": "none",
+  "reportOptionalMemberAccess": "none",
+  "reportOptionalSubscript": "none",
+  "reportOptionalIterable": "none",
+  "reportDeprecated": "none"
+}
