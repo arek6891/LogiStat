@@ -274,6 +274,25 @@ def test_czesciowe_przeniesienie_linii_z_recznymi_ilosciami_daje_409(leader_clie
     assert karton('D1').data_pliku == date(2026, 9, 10), 'nic nie moze sie zmienic'
 
 
+def test_laczenie_linii_recznej_ze_skanowa_daje_409(leader_client):
+    """Polaczona linia zostalaby 'manual' i skany przestalyby sie rozliczac."""
+    _import(leader_client, '2026-09-09',
+            'Barcode;Land;Stückzahl;Kategorie;Ziel-Datum;Übergabe Nr.\nS9;PL;8;textile;;UB-1\n')
+    s9 = karton('S9')
+    s9.set_scan_categories({'sorting': 8})
+    logistat.recompute_general_stat(*logistat.klucz_linii(s9), from_scan=True)
+    zly = [i for i in _import(leader_client, '2026-09-10') if i['data_pliku'] == '2026-09-10'][0]
+    linia = gstat(loading_date=date(2026, 9, 10))
+    linia.set_category_data({'textile': {'amount': 6, 'cost': 0.0}})
+    logistat.db.session.commit()
+
+    r = _zmien(leader_client, [zly['klucz']], '2026-09-09')
+
+    assert r.status_code == 409
+    assert 'skanów' in r.get_json()['error']
+    assert karton('C1').data_pliku == date(2026, 9, 10)
+
+
 def test_czesciowe_przeniesienie_bez_recznych_dzieli_linie(leader_client):
     _import(leader_client, '2026-09-10')
     druga = 'Barcode;Land;Stückzahl;Kategorie;Ziel-Datum;Übergabe Nr.\nD1;PL;7;textile;;UB-1\n'

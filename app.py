@@ -1343,6 +1343,19 @@ def api_imports_zmien_date():
     istniejace = sum(1 for k in nowe_klucze if GeneralStat.query.filter_by(
         list_id=k[0], country_ledger=k[1], loading_date=k[2]).first())
 
+    # Laczenie linii recznej ze skanowa: przenies_linie() zostawilaby 'manual',
+    # a skany przestalyby liczyc sie do rozliczenia — po cichu. Odmawiamy.
+    laczone = {}
+    for linia in calkiem:
+        laczone.setdefault((linia.list_id, linia.country_ledger), []).append(linia)
+    for (ub, land), linie in laczone.items():
+        cel = GeneralStat.query.filter_by(list_id=ub, country_ledger=land, loading_date=nowa).first()
+        grupa = linie + ([cel] if cel is not None and cel not in linie else [])
+        if (any(ma_reczne_ilosci(x) for x in grupa)
+                and any((x.category_source or 'manual') == 'scan' for x in grupa)):
+            konflikty.append(f'{ub} · {land} · {nowa.strftime("%d.%m.%Y")} '
+                             f'(łączenie ręcznych ilości z ilościami ze skanów)')
+
     skutki = {
         'paczek': len(do_zmiany),
         'juz_z_ta_data': len(kartony) - len(do_zmiany),
