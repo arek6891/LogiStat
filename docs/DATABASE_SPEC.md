@@ -178,10 +178,11 @@ Słownik mapowania kraju na numer zlecenia wewnętrznego (Innenauftrag) z system
 | land | VARCHAR(150) | | Kraj/Innenauftrag z CSV |
 | stueckzahl | INTEGER | DEFAULT 0 | Ilość sztuk w kartonie |
 | kategorie | VARCHAR(100) | | Kategoria produktu |
-| ziel_datum | DATE | | **Loading date** — data załadunku |
+| ziel_datum | DATE | | Ziel-Datum z pliku — **tylko informacyjnie** od 2026-10 (nie grupuje, nieobowiązkowa) |
+| data_pliku | DATE | | **Data pliku** — dzień pracy podany przy imporcie; **klucz linii rozliczenia** (= `general_stat.loading_date`), Dashboard, Forecast, filtry. Stare paczki: lokalny dzień `imported_at` (migracja 2026-10) |
 | uebergabe_nr | VARCHAR(100) | | Numer listy (agreguje kartony w GeneralStat) |
 | country_mapping_id | INTEGER | FK → country_mapping.id | |
-| imported_at | TIMESTAMP | DEFAULT NOW() | |
+| imported_at | TIMESTAMP | naive UTC | Jeden czas na cały plik — import = (imported_by, minuta, data_pliku) przy grupowej poprawie daty |
 | imported_by | INTEGER | FK → user.id | Admin który importował |
 | processed_by | INTEGER | FK → user.id | Pracownik który zeskanował karton |
 | processed_at | TIMESTAMP | | Czas skanowania kartonu |
@@ -190,25 +191,29 @@ Słownik mapowania kraju na numer zlecenia wewnętrznego (Innenauftrag) z system
 | scan_end_at | TIMESTAMP | | Koniec procesowania |
 | scan_end_by | INTEGER | FK → user.id | |
 | double_rate | BOOLEAN | DEFAULT FALSE | Paczka liczona jako double rate (checkbox w Paczkach) → generuje żółtą linię w GeneralStat |
+| added_manually | BOOLEAN | DEFAULT FALSE | Paczka dodana ręcznie w `/paczki` |
+| modified_at / modified_by | TIMESTAMP / INTEGER | | Ostatnia ręczna zmiana (edycja, ✎ Ilości, grupowa zmiana daty pliku) |
+| scan_category_data | TEXT (JSON) | DEFAULT '{}' | Ilości per kategoria wpisane przy końcu paczki — źródło rozliczenia linii `scan` |
 
-**Indeksy:** `ziel_datum`, `uebergabe_nr`, `processed_by`, `land`, `imported_at`
+**Indeksy:** `ziel_datum`, `data_pliku`, `uebergabe_nr`, `processed_by`, `land`, `imported_at`
 
 ---
 
 ### `general_stat`
-Dane zagregowane z importów CSV. Grupowanie po `(uebergabe_nr, land, ziel_datum)`. Zawiera koszty kategorii jako JSONB.
+Dane zagregowane z importów CSV/Excel. Grupowanie po **`(uebergabe_nr, land, data_pliku)`** — `klucz_linii()` w kodzie (do 2026-10: po `ziel_datum`). Ilości kategorii jako JSON w kolumnie **TEXT** (JSONB jest zakazany — psuje `json.loads` w akcesorach).
 
 | Kolumna | Typ | Ograniczenia | Opis |
 |---|---|---|---|
 | id | SERIAL | PK | |
-| loading_date | DATE | NOT NULL | |
+| loading_date | DATE | NOT NULL | = **data pliku** paczek linii; od niej miesiąc stawek i numer tygodnia |
 | week_number | SMALLINT | NOT NULL | Numer tygodnia ISO |
 | list_id | VARCHAR(100) | NOT NULL | = uebergabe_nr z ImportedCarton |
 | country_of_destination | VARCHAR(150) | | Kraj docelowy (z CountryMapping) |
 | country_ledger | VARCHAR(150) | NOT NULL | = land z ImportedCarton |
 | amounts | INTEGER | DEFAULT 0 | Suma stueckzahl dla grupy |
-| category_data | JSONB | DEFAULT '{}' | Ilości i koszty per kategoria (normalna linia) |
-| double_rate_category_data | JSONB/TEXT | DEFAULT '{}' | Ilości per kategoria dla **żółtej linii** double rate (wpisywane ręcznie) |
+| category_data | TEXT (JSON) | DEFAULT '{}' | Ilości per kategoria (normalna linia) |
+| double_rate_category_data | TEXT (JSON) | DEFAULT '{}' | Ilości per kategoria dla **żółtej linii** double rate (wpisywane ręcznie) |
+| category_source | VARCHAR(10) | DEFAULT 'manual' | `manual` (wpisane ręcznie, recompute nie rusza) albo `scan` (suma `scan_category_data` paczek) |
 | created_at | TIMESTAMP | DEFAULT NOW() | |
 | updated_at | TIMESTAMP | | |
 | updated_by | INTEGER | FK → user.id | |
@@ -234,10 +239,11 @@ Dane zagregowane z importów CSV. Grupowanie po `(uebergabe_nr, land, ziel_datum
   "sunglasses":        {"amount": 0,   "cost": 0.0},
   "card_facture":      {"amount": 0,   "cost": 0.0},
   "labelling_polybag": {"amount": 0,   "cost": 0.0},
-  "sorting":           {"amount": 0,   "cost": 0.0},
-  "carton_labeling":   {"amount": 0,   "cost": 0.0}
+  "sorting":           {"amount": 0,   "cost": 0.0}
 }
 ```
+`carton_labeling` usunięto z kategorii 2026-09 — stare wpisy w JSON-ie są ignorowane
+(`to_dict()` iteruje po `STAT_CATEGORIES`).
 
 ---
 
@@ -256,6 +262,12 @@ w `SETTING_DEFAULTS` w kodzie, więc brak wiersza nie jest błędem.
 | Klucz | Domyślnie | Opis |
 |---|---|---|
 | `break_threshold_minutes` | `30` | Próg czasu przerwy podświetlany na czerwono w `/worker-times`; edytowalny w `/admin/settings` (`PUT /api/settings`) |
+| `max_work_minutes` / `min_break_minutes` | `660` / `15` | Progi filtra „⚠️ Tylko błędy" w `/worker-times` |
+| `norm_good_pct` / `norm_weak_pct` / `min_packages_rank` | `110` / `90` / `3` | Progi oceny w Normach |
+| `target_szt_h` | `0` | Cel lidera w Normach (0 = nieustawiony; `PUT /api/stats/target`) |
+| `kategoria_pl:<kategoria>` | *(brak = domyślna)* | Polska nazwa kategorii dla pracownika (`/admin/category-labels`); pusta lub równa domyślnej = wiersz usuwany |
+| `user_options_seeded` | — | Znacznik jednorazowego seedu list na koncie |
+| `migracja_data_pliku` | — | Znacznik jednorazowej migracji daty pliku (2026-10): uzupełnienie `data_pliku` i przeklucz linii `general_stat` |
 
 ### `cost_mapping`
 Stawki kosztów per kategoria per miesiąc/rok. Używane do wyliczania kosztów w GeneralStat.
@@ -285,7 +297,7 @@ Stawki kosztów per kategoria per miesiąc/rok. Używane do wyliczania kosztów 
 ---
 
 ### `forecast`
-Plan dzienny — jeden wpis na dzień, wpisywany ręcznie przez lidera. Porównywany z actual (ImportedCarton per ziel_datum).
+Plan dzienny — jeden wpis na dzień, wpisywany ręcznie przez lidera. Porównywany z actual (suma `stueckzahl` paczek per **data_pliku**; do 2026-10 per ziel_datum).
 
 | Kolumna | Typ | Ograniczenia | Opis |
 |---|---|---|---|

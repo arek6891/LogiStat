@@ -40,7 +40,7 @@
 
 ## 🟡 Planowane usprawnienia
 
-- [x] **Testy** — `tests/` (pytest, 354 testów), nacisk na ścieżki rozliczeniowe
+- [x] **Testy** — `tests/` (pytest, 495 testów), nacisk na ścieżki rozliczeniowe
   - `pip install -r requirements-dev.txt && pytest`
   - Ten sam zestaw na Postgresie: `LOGISTAT_TEST_DATABASE_URL=... pytest`
   - Zestaw przechodzi pod `TZ=UTC`, `Europe/Warsaw` i `America/New_York`
@@ -55,7 +55,7 @@
       `general_stat.double_rate` rozjechał się jeszcze bardziej. Schemat bierze się
       wyłącznie z `db.create_all()` — ORM jest jedynym źródłem prawdy.
 
-- [ ] **Rozbicie `app.py`** (~4000 linii) — modele / API / widoki do osobnych
+- [ ] **Rozbicie `app.py`** (~5000 linii) — modele / API / widoki do osobnych
       modułów. Teraz jest to bezpieczniejsze niż wcześniej, bo testy pokrywają
       ścieżki rozliczeniowe i uprawnienia.
 
@@ -68,6 +68,20 @@
 
 - [ ] **Powiadomienia dźwiękowe** — toast z dźwiękiem przy skanowaniu
   - `new Audio('/static/beep.mp3').play()` po udanym skanie
+
+- [ ] **Stawki na wrzesień/październik 2026 na `.31`** — są tylko za 03/2026, więc koszt
+      w Statystykach ogólnych wynosi 0. Przy wpisywaniu: „Loading date" to od 2026-10
+      **data pliku** (zwykle dzień wcześniej niż dawna Ziel-Datum).
+
+- [ ] **Forecast wstecz** — historyczne forecasty wpisywano z myślą o Ziel-Datum;
+      „Actual" liczy się od 2026-10 po dacie pliku, więc porównanie sprzed zmiany może
+      być przesunięte o dzień.
+
+- [ ] **Nazwy kategorii dla pracownika** — wpisać docelowe w Panel Admina → ✏️ Nazwy
+      kategorii (np. „Niesprocesowane" dla Sorting).
+
+- [ ] **Błędy na liście paczek** pokazują angielską nazwę kategorii (`bledy_paczki()`
+      liczone per paczka — tłumaczenie wymagałoby jednej mapy na całą stronę).
 
 - [x] **Próg czasu przerwy konfigurowalny** — `/admin/settings` (`PUT /api/settings`, klucz `break_threshold_minutes`, domyślnie 30); tabela `AppSetting` (klucz/wartość)
 
@@ -98,6 +112,10 @@
 - [x] Czasy pracowników — moduł liderski z korektami ręcznymi, podświetlenie >30 min przerwy
 - [x] Zmiana hasła — ekran `/profile` z formularzem (aktualne + nowe + potwierdzenie), link w sidebarze
 - [x] Double Rate — checkbox per paczka w `/paczki`; żółta druga linia w Statystykach ogólnych (Amounts auto z paczek double rate, kategorie ręczne, ×1) + w eksporcie xlsx
+- [x] **Kolory zmian** (2026-10-05) — Zmiana 1 niebieska, Zmiana 2 pomarańczowa na wszystkich ekranach ze zmianą
+- [x] **Autozapis** (2026-10-05) — Przydzielanie, Wpis ilości, Forecast, Statystyki ogólne bez przycisku „Zapisz"; ostrzeżenie o drugim liderze na tej samej zmianie; okna nie gubią danych po kliknięciu obok; Stawki zapisują się pod wczytany miesiąc
+- [x] **Nazwy kategorii ustawiane przez admina** (2026-10-05) — „Polska (English)", `/admin/category-labels`
+- [x] **Data pliku** (2026-10-05) — okno daty przy imporcie, główna data pracy i klucz rozliczenia, grupowa poprawa daty, Dashboard Dziś / Wybrany dzień / Podsumowanie niezrobionych; migracja `.31` zweryfikowana
 
 ---
 
@@ -136,7 +154,7 @@
 
 ### Docker
 - Port 5001 (nie 5000 — zajęty przez Jewelry-Tracker)
-- Volume: `./instance:/app/instance` — baza danych persystuje między restartami
+- Baza: wolumen Postgresa (`logistat-test_pgdata` na `.31`) — **nigdy `down -v`**
 - Gunicorn z 2 workerami (wystarczające dla <50 użytkowników)
 
 ### Deployment

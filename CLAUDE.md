@@ -37,7 +37,7 @@ Default admin after seed: `admin` / `admin123` — override with `ADMIN_PASSWORD
 
 ## Architecture
 
-**Everything is in `app.py`** — models, routes, API, seed data (~4500 lines). No separate modules.
+**Everything is in `app.py`** — models, routes, API, seed data (~5100 lines). No separate modules.
 
 **Tests:** `tests/` (pytest). `conftest.py` sets `DATABASE_URL` **before importing `app`** (it runs `init_db()` at import) → `…@127.0.0.1:55432/logistat_test`, overridable with `LOGISTAT_TEST_DATABASE_URL`; unreachable DB → import raises with the start command. Each test gets a fresh schema + seed. Coverage is concentrated on money paths (import aggregation, `recompute_general_stat`, double rate, cost math) plus permissions, day boundaries, validation, page smoke test. `IsolatedClient` clears `g._login_user` / `g._rates_cache` per request — Flask reuses the test's app context, so two clients would otherwise share the cached login.
 

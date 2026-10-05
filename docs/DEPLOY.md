@@ -91,6 +91,22 @@ ich nie nadpisuje. **Nowe kolumny w modelach: obowiązkowo dopisz je do
 do tabeli, która już istnieje, więc bez tego po wdrożeniu każde zapytanie na tym
 modelu kończy się `UndefinedColumn`. Pilnuje tego `tests/test_migracje.py`.
 
+**Jednorazowe migracje danych** biegną w `init_db()` pod tym samym
+`pg_advisory_lock` (jeden worker) i są oznaczane znacznikiem w `app_setting`, więc kolejne
+starty ich nie powtarzają. Obecnie: `migruj_date_pliku()` (znacznik `migracja_data_pliku`,
+2026-10) — uzupełnia `imported_carton.data_pliku` i przenosi linie `general_stat` na klucz
+po dacie pliku. **Przed wdrożeniem takiej zmiany zawsze `pg_dump`** — cofnięcie to odtworzenie
+kopii. Po wdrożeniu sprawdź niezmienniki:
+
+```sql
+select (select sum(amounts) from general_stat) =
+       (select sum(stueckzahl) from imported_carton where uebergabe_nr <> '');   -- true
+select count(*) from imported_carton where data_pliku is null;                 -- 0
+select count(*) from general_stat where loading_date < '2000-01-01';           -- 0
+```
+
+Na `.31` (2026-10-05): 373 → 206 linii, Σ amounts = 1 324 730, wszystkie warunki spełnione.
+
 ## Baza danych
 
 **Wyłącznie PostgreSQL 16** — od 2026-09 SQLite nie jest wspierany (kod obsługi

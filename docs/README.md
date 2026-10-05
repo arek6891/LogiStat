@@ -41,7 +41,7 @@ serwer (domena, backupy) opisuje **`docs/DEPLOY.md`**.
 
 ```bash
 pip install -r requirements-dev.txt
-pytest                       # 354 testów
+pytest                       # 495 testów
 ```
 
 Ten sam zestaw można przejechać po Postgresie (tak chodzi test i produkcja):
@@ -108,6 +108,10 @@ LogiStat/
 │   ├── test_smoke_pages.py         # Każda strona się renderuje
 │   ├── test_config.py              # SECRET_KEY, limit uploadu, ciasteczka
 │   ├── test_migracje.py            # Nowa kolumna wraca przez migrate_columns()
+│   ├── test_data_pliku.py          # Data pliku: import, migracja, grupowa poprawa, Dashboard
+│   ├── test_przydzielanie_wersja.py # Konflikt dwóch liderów (409), blokada zmiany
+│   ├── test_autozapis_ekrany.py    # Ekrany bez „Zapisz", straż modali, kolory skanera
+│   ├── test_nazwy_kategorii.py     # Nazwy kategorii ustawiane przez admina
 │   └── test_init_race.py           # Równoległy start workerów na pustej bazie
 ├── docker-compose.yml      # Aplikacja + PostgreSQL
 ├── docker-compose.test.yml # PostgreSQL pod pytest (port 55432, tmpfs)
@@ -128,7 +132,8 @@ LogiStat/
 │   ├── admin_cost_mapping.html # Stawki kosztów per rok/miesiąc
 │   ├── admin_settings.html # Ustawienia (progi czasu pracy)
 │   ├── admin_user_options.html # Listy na koncie: rodzaj pracownika, nazwa zmiany
-│   ├── import_csv.html     # Importowanie pliku CSV
+│   ├── admin_category_labels.html # Nazwy kategorii widziane przez pracownika
+│   ├── import_csv.html     # Import CSV/Excel (okno daty pliku) + grupowa poprawa daty
 │   ├── general_stats.html  # Statystyki ogólne z CSV (+ żółta linia double rate)
 │   ├── paczki.html         # Surowe paczki CSV (+ filtry dat, double rate, odblokowanie)
 │   ├── scan_package.html   # Skan paczek — podgląd statusu (read-only)
@@ -174,14 +179,14 @@ zalogowanego lidera, bo to ekran stanowiskowy).
 - 🔎 **Paczki inspektor** (`/scan-package`) — podgląd statusu paczki, **tylko do odczytu**
 
 ### 🧑‍💼 Lider
-- 🏠 **Dashboard** (`/dashboard`) — podsumowanie dnia, per pracownik, per zmiana; kliknięcie nazwiska otwiera Normy tej osoby
+- 🏠 **Dashboard** (`/dashboard`) — **Dziś** (plan dzisiejszego pliku), **Wybrany dzień**, **Podsumowanie** (wszystkie niezrobione wg daty pliku), per pracownik, per zmiana; kliknięcie nazwiska otwiera Normy tej osoby
 - 📈 **Forecast** (`/forecast`) — prognoza ilości per dzień
 - 📋 **Przydzielanie** (`/assignment`) — drag & drop operatorów do czynności
 - ✏️ **Wpis ilości** (`/data-entry`) — ilości zrobione per osoba
 - 📊 **Normy** (`/stats`) — przegląd całego zespołu (ranking szt./h względem średniej zespołu, cel lidera, rodzaj pracownika i nazwa zmiany) + per pracownik: ocena na tle zespołu, średnie dzienne/miesięczne paczek i sztuk, wykres dzienny i miesięczny
 - 📦 **Paczki (dane)** (`/paczki`) — surowe dane paczek z filtrami (patrz niżej)
 - 👥 **Czasy pracowników** (`/worker-times`) — przegląd i korekta czasów + filtry
-- 📥 **Import danych** (`/import-csv`) — CSV (`;`) lub Excel (`.xlsx`), dedup po barcode
+- 📥 **Import danych** (`/import-csv`) — CSV (`;`) lub Excel (`.xlsx`), dedup po barcode; przed importem **okno z datą pliku**; niżej **📅 Popraw datę pliku** (grupowo)
 - 👤 **Użytkownicy** (`/admin/users`) — zakładanie i edycja kont, w tym **rodzaj pracownika** i **nazwa zmiany** (listy rozwijane)
 
 ### 🛡️ Admin
@@ -191,12 +196,78 @@ zalogowanego lidera, bo to ekran stanowiskowy).
   stawki kosztów (`/admin/cost-mapping`), ustawienia (`/admin/settings`),
   **listy użytkowników** (`/admin/user-options`) — pozycje „Rodzaj pracownika" (Logwin,
   agencje) i „Nazwa zmiany" (Zmiana A/B/C); zmiana nazwy obowiązuje u wszystkich
-  przypisanych, pozycji w użyciu nie da się usunąć
+  przypisanych, pozycji w użyciu nie da się usunąć;
+  **nazwy kategorii** (`/admin/category-labels`) — co widzi pracownik przy końcu paczki
 
 ### Stopka sidebara
 - 🔑 **Zmiana hasła** (`/profile`) · **Wyloguj**
 
 ## Jak działają kluczowe ekrany
+
+### Data pliku — główna data pracy
+Każda paczka ma **datę pliku**: dzień pracy, którego dotyczy wrzucony plik. Podaje się ją
+**przy imporcie** — po wybraniu pliku pojawia się okno z podpowiedzianą dzisiejszą datą
+(przy innej dacie wyświetla ostrzeżenie). Bez daty import nie ruszy.
+
+Data pliku jest **główną datą w całej aplikacji**:
+- **Statystyki ogólne** — „Loading date" linii rozliczenia to data pliku; linia =
+  Übergabe Nr + kraj + data pliku (od tego zależy też miesiąc stawek i numer tygodnia),
+- **Dashboard** — plan dnia,
+- **Forecast** — kolumna „Actual",
+- **Paczki (dane)** — domyślny filtr dat.
+
+**Ziel-Datum** zostaje w danych jako informacja z pliku, ale niczego już nie grupuje:
+ten sam Übergabe Nr i kraj z dwiema Ziel-Datum w jednym pliku to **jedna linia**,
+a paczki bez Ziel-Datum **też się rozliczają**. Normy liczą się nadal po czasie skanowania.
+
+**Błędna data?** Import danych → **📅 Popraw datę pliku**:
+1. odfiltruj importy (data pliku, dzień wrzucenia, godziny od–do, kto wrzucił),
+2. zaznacz błędne i podaj nową datę,
+3. **Pokaż skutki zmiany** — ile paczek i sztuk, które linie rozliczenia się przesuną
+   (nic jeszcze nie jest zapisane),
+4. **Zmień datę** — paczki dostają nową datę (z zapisem, kto i kiedy zmienił), a linie
+   Statystyk ogólnych przeliczają się same.
+
+Linia rozliczenia, której przechodzą **wszystkie** paczki, przechodzi razem z ręcznie
+wpisanymi ilościami (i łączy się z linią, która już stoi pod nową datą). Zmiana jest
+**odrzucana z wyjaśnieniem**, gdy musiałaby podzielić ręcznie wpisane ilości (przenosisz
+tylko część paczek takiej linii) albo połączyć ręczne ilości z ilościami ze skanów.
+
+### Dashboard
+- **Dziś** — plan **dzisiejszego pliku**: wrzucone / zrobione / pozostało / w toku, w paczkach
+  i sztukach, z paskiem postępu; pod nim „Zakończone dziś" (wg czasu skanu, z plików
+  z każdego dnia), obecni, tabele pracowników i czynności.
+- **Wybrany dzień** — ten sam plan dla dowolnej daty pliku (data zostaje przy odświeżaniu).
+- **Podsumowanie** — **tylko niezrobione paczki**: łącznie i w podziale na daty pliku
+  (od najstarszych), każda data to link do listy paczek.
+
+„Zrobione" w planie pliku znaczy *ma zakończenie*, niezależnie od dnia, w którym je
+skończono — plik z poniedziałku dokończony we wtorek liczy się do poniedziałku.
+
+### Zapisywanie bez przycisku „Zapisz"
+**Przydzielanie, Wpis ilości, Forecast i Statystyki ogólne zapisują się same** —
+pole chwilę (1,2 s) po wpisaniu albo przy wyjściu z niego, przydział po każdym
+przeciągnięciu. Wskaźnik obok pokazuje stan: *✎ Zapis za chwilę… · ⏳ Zapisywanie… ·
+✓ Zapisano 15:26 · ⚠ Nie zapisano* (z przyciskiem **Ponów**; pole świeci na czerwono,
+a przeglądarka ostrzega przy zamykaniu karty). Przełączenie zmiany lub daty, filtr
+i eksport czekają, aż zapis wyjdzie. Wygasła sesja pokazuje błąd, nigdy fałszywe „Zapisano".
+
+Na **Przydzielaniu** dwóch liderów na tej samej zmianie nie nadpisze sobie pracy po
+cichu: drugi dostaje komunikat „Ktoś inny zmienił przydział tej zmiany" z przyciskiem
+**Wczytaj aktualny**. Sugestie AI też zapisują się od razu, więc przy niepustej tablicy
+najpierw pytają.
+
+Przycisk „Zapisz" zostaje tam, gdzie zapis musi być świadomy: okna dodawania/edycji
+(użytkownik, czynność, paczka, zdarzenie czasu), ustawienia, cel w Normach i **Stawki**.
+Okno z wpisanymi danymi **nie zamyka się już po cichu po kliknięciu obok** — najpierw
+pyta. Stawki pokazują „● Niezapisane zmiany stawek" i zapisują się zawsze pod **wczytany**
+miesiąc (przycisk pokazuje który).
+
+### Kolory zmian
+**Zmiana 1 — niebieska, Zmiana 2 — pomarańczowa**: zakładki, pasek nad obszarem
+roboczym edytowanej zmiany (Przydzielanie, Wpis ilości), skaner zmian, karty na
+Dashboardzie, etykiety w Normach i Czasach pracowników. Kolor zawsze stoi obok napisu
+„Zmiana N".
 
 ### Czasy pracowników — filtry i błędy
 Poza wyborem daty są dwa filtry, oba liczone w przeglądarce na danych już pobranych
@@ -241,12 +312,13 @@ Pusty filtr pracownika znaczy **wszyscy** — nigdy nie zawęża wyników.
 
 | Opcja | Pole | Uwagi |
 |---|---|---|
-| **Ziel-Datum** (domyślnie) | `ziel_datum` | data z importu CSV |
+| **Data pliku** (domyślnie) | `data_pliku` | dzień pracy podany przy imporcie |
+| **Ziel-Datum** | `ziel_datum` | data z kolumny pliku (tylko informacyjnie) |
 | **Data importu** | `imported_at` | kiedy paczka trafiła do systemu |
 | **Start paczki** | `scan_start_at` | kiedy pracownik zaczął |
 | **Koniec paczki** | `scan_end_at` | kiedy skończył |
 
-Wcześniej zakres działał tylko po `Ziel-Datum`, więc paczki, których `Ziel-Datum` nie
+Kiedyś zakres działał tylko po `Ziel-Datum`, więc paczki, których `Ziel-Datum` nie
 pokrywa się z dniem skanowania, wypadały z widoku — wyglądało to, jakby filtr pracownika
 gubił ludzi. Szukając „co zrobiono wczoraj", wybierz **Koniec paczki**.
 
@@ -295,7 +367,7 @@ Dwie kolumny, które łatwo pomylić (na ekranie mają dymek ⓘ z tym samym wyj
 
 | Kolumna | Skąd się bierze | Co mówi |
 |---|---|---|
-| **Amounts** | suma `Stückzahl` wszystkich paczek linii, z importu CSV/Excel | ile sztuk **przyjechało** |
+| **Amounts** | suma `Stückzahl` wszystkich paczek linii (Übergabe Nr + kraj + data pliku), z importu | ile sztuk **przyjechało** |
 | **Total Amount** | ilość z kategorii **Labelling one**, wpisana przy zakończeniu paczki | ile sztuk **przerobiono** |
 
 `Total Amount` **nie jest sumą wszystkich kategorii**: jedna sztuka przechodzi przez
@@ -310,9 +382,12 @@ zeskanowanych.
 Koszt liczy się bez zmian: `ilość × stawka` per kategoria, stawki z `/admin/cost-mapping`.
 
 ### Nazwy kategorii
-Na ekranach kategorie mają etykiety dwuczłonowe, np. **Labelling one — Etykietowanie
-pojedyncze**, **Card facture — Karta / faktura**. **Nagłówki eksportu Excel zostają po
-angielsku** — to arkusz rozliczeniowy wychodzący na zewnątrz.
+Pracownik widzi kategorie jako **polska nazwa (nazwa ze Statystyk ogólnych)**, np.
+**Niesprocesowane (Sorting)** — przy końcu paczki, w „✎ Ilości" na liście paczek,
+w Stawkach i w komunikatach o błędnej ilości. **Polską część ustawia admin** w
+Panel Admina → ✏️ Nazwy kategorii (zapis automatyczny, puste pole = nazwa domyślna).
+Angielskiej części nie da się zmienić. **Nagłówki eksportu Excel zostają po angielsku**
+— to arkusz rozliczeniowy wychodzący na zewnątrz.
 
 ## Dalsza dokumentacja
 
@@ -323,4 +398,5 @@ angielsku** — to arkusz rozliczeniowy wychodzący na zewnątrz.
 | `docs/DEPLOY.md` | Wdrożenie, zmienne środowiskowe, backupy |
 | `docs/CHANGELOG.md` | Historia zmian |
 | `docs/TODO.md` | Co zostało do zrobienia |
-| `CLAUDE.md` | Notatki architektoniczne — dlaczego coś jest zrobione tak, a nie inaczej |
+| `CLAUDE.md` | Reguły dla kodu (krótko) |
+| `docs/ARCHITEKTURA.md` | Dlaczego coś jest zrobione tak, a nie inaczej — decyzje, incydenty, liczby |
