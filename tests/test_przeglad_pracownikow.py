@@ -15,7 +15,7 @@ ZIEL = date(2026, 9, 10)
 
 def paczka(barcode, kto, sztuk, start, koniec):
     c = logistat.ImportedCarton(barcode=barcode, land='PL', stueckzahl=sztuk,
-                                ziel_datum=ZIEL, uebergabe_nr='UB-1',
+                                ziel_datum=ZIEL, data_pliku=ZIEL, uebergabe_nr='UB-1',
                                 scan_start_at=start, scan_start_by=kto.id,
                                 scan_end_at=koniec, scan_end_by=kto.id)
     logistat.db.session.add(c)
@@ -166,7 +166,7 @@ def test_paczki_bez_czasu_nie_zawyzaja_sredniej(leader_client):
     godziny_pracy(a, 3, sztuk_na_paczke=50, minut_na_paczke=30)       # 100 szt./h
     b = make_user('operator', username='b', display_name='Bez')
     logistat.db.session.add(logistat.ImportedCarton(
-        barcode='BEZ-CZASU', land='PL', stueckzahl=5000, ziel_datum=ZIEL,
+        barcode='BEZ-CZASU', land='PL', stueckzahl=5000, ziel_datum=ZIEL, data_pliku=ZIEL,
         uebergabe_nr='UB-1', scan_end_at=datetime.utcnow(), scan_end_by=b.id))
     logistat.db.session.commit()
 
@@ -257,7 +257,7 @@ def test_brak_danych_nie_wywala(leader_client):
 def test_paczka_bez_startu_liczy_sztuki_ale_nie_czas(leader_client):
     a = make_user('operator', username='a', display_name='Ala')
     c = logistat.ImportedCarton(barcode='BEZ-STARTU', land='PL', stueckzahl=10,
-                                ziel_datum=ZIEL, uebergabe_nr='UB-1',
+                                ziel_datum=ZIEL, data_pliku=ZIEL, uebergabe_nr='UB-1',
                                 scan_end_at=datetime.utcnow(), scan_end_by=a.id)
     logistat.db.session.add(c)
     logistat.db.session.commit()

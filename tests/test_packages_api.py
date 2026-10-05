@@ -12,6 +12,7 @@ def payload(**kw):
         'stueckzahl': 12,
         'kategorie': 'textile',
         'ziel_datum': ZIEL.isoformat(),
+        'data_pliku': ZIEL.isoformat(),
         'uebergabe_nr': 'UB-1',
     }
     p.update(kw)
@@ -52,7 +53,7 @@ def test_duplikat_barcode_daje_409(leader_client):
 
 
 def test_brakujace_pola_daja_400(leader_client):
-    for pole in ('barcode', 'land', 'uebergabe_nr', 'ziel_datum'):
+    for pole in ('barcode', 'land', 'uebergabe_nr', 'data_pliku'):
         r = leader_client.post('/api/packages', json=payload(**{pole: ''}))
         assert r.status_code == 400, pole
     assert logistat.ImportedCarton.query.count() == 0
@@ -66,10 +67,19 @@ def test_zla_stueckzahl_daje_400(leader_client):
 
 
 def test_zla_data_daje_400(leader_client):
-    r = leader_client.post('/api/packages', json=payload(ziel_datum='32.13.2026'))
-
-    assert r.status_code == 400
+    for pole in ('ziel_datum', 'data_pliku'):
+        r = leader_client.post('/api/packages', json=payload(**{pole: '32.13.2026'}))
+        assert r.status_code == 400, pole
     assert logistat.ImportedCarton.query.count() == 0
+
+
+def test_ziel_datum_jest_opcjonalna(leader_client):
+    """Od 2026-10 linie licza sie po dacie pliku — Ziel-Datum to tylko informacja."""
+    r = leader_client.post('/api/packages', json=payload(ziel_datum=''))
+
+    assert r.status_code == 201
+    assert carton('M1').ziel_datum is None
+    assert gstat().amounts == 12
 
 
 def test_double_rate_przy_recznym_dodaniu(leader_client):
@@ -90,7 +100,7 @@ def test_operator_nie_moze_dodac_paczki(client):
 
 def test_edycja_zaimportowanej_paczki_zabroniona(leader_client):
     logistat.db.session.add(logistat.ImportedCarton(
-        barcode='IMP1', land='PL', stueckzahl=10, ziel_datum=ZIEL,
+        barcode='IMP1', land='PL', stueckzahl=10, ziel_datum=ZIEL, data_pliku=ZIEL,
         uebergabe_nr='UB-1', added_manually=False))
     logistat.db.session.commit()
 

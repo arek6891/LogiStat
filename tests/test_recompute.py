@@ -10,7 +10,7 @@ from test_import_aggregation import ZIEL, gstat, row
 
 
 def test_przelicza_z_sumy_a_nie_z_delty(acting_admin):
-    logistat.process_import_rows([row('B1', 10), row('B2', 5)])
+    logistat.process_import_rows([row('B1', 10), row('B2', 5)], ZIEL)
 
     # Rozjedz `amounts` recznie i sprawdz, ze recompute je naprawia
     gstat().amounts = 999
@@ -23,8 +23,8 @@ def test_przelicza_z_sumy_a_nie_z_delty(acting_admin):
 
 
 def test_dokladne_przy_mieszance_import_plus_recznie(acting_admin):
-    logistat.process_import_rows([row('B1', 10)])
-    logistat.process_import_rows([row('M1', 7, added_manually=True)])
+    logistat.process_import_rows([row('B1', 10)], ZIEL)
+    logistat.process_import_rows([row('M1', 7, added_manually=True)], ZIEL)
 
     logistat.recompute_general_stat('UB-1', 'PL', ZIEL)
     logistat.db.session.commit()
@@ -33,7 +33,7 @@ def test_dokladne_przy_mieszance_import_plus_recznie(acting_admin):
 
 
 def test_zmiana_stueckzahl_kartonu_przelicza_linie(acting_admin):
-    logistat.process_import_rows([row('B1', 10), row('B2', 5)])
+    logistat.process_import_rows([row('B1', 10), row('B2', 5)], ZIEL)
 
     carton = logistat.ImportedCarton.query.filter_by(barcode='B1').first()
     carton.stueckzahl = 30
@@ -45,8 +45,8 @@ def test_zmiana_stueckzahl_kartonu_przelicza_linie(acting_admin):
 
 
 def test_przeniesienie_do_innej_grupy_przelicza_obie_linie(acting_admin):
-    logistat.process_import_rows([row('B1', 10), row('B2', 5)])
-    logistat.process_import_rows([row('C1', 100, uebergabe_nr='UB-2')])
+    logistat.process_import_rows([row('B1', 10), row('B2', 5)], ZIEL)
+    logistat.process_import_rows([row('C1', 100, uebergabe_nr='UB-2')], ZIEL)
 
     carton = logistat.ImportedCarton.query.filter_by(barcode='B1').first()
     carton.uebergabe_nr = 'UB-2'
@@ -63,7 +63,7 @@ def test_przeniesienie_do_innej_grupy_przelicza_obie_linie(acting_admin):
 
 
 def test_oprozniona_grupa_zostaje_na_zero_z_zachowanym_category_data(acting_admin):
-    logistat.process_import_rows([row('B1', 10)])
+    logistat.process_import_rows([row('B1', 10)], ZIEL)
     line = gstat()
     line.set_category_data({**logistat.empty_category_data(),
                             'sorting': {'amount': 3, 'cost': 0.0}})
@@ -82,7 +82,7 @@ def test_oprozniona_grupa_zostaje_na_zero_z_zachowanym_category_data(acting_admi
 
 def test_tworzy_brakujaca_linie_gdy_grupa_ma_kartony(acting_admin):
     logistat.db.session.add(logistat.ImportedCarton(
-        barcode='X1', land='PL', stueckzahl=42, ziel_datum=ZIEL, uebergabe_nr='UB-NEW'))
+        barcode='X1', land='PL', stueckzahl=42, ziel_datum=ZIEL, data_pliku=ZIEL, uebergabe_nr='UB-NEW'))
     logistat.db.session.commit()
     assert gstat(list_id='UB-NEW') is None
 

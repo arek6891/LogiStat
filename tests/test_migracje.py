@@ -17,6 +17,7 @@ KOLUMNY = [
     ('imported_carton', 'scan_category_data'),
     ('user', 'worker_type_id'),
     ('user', 'shift_group_id'),
+    ('imported_carton', 'data_pliku'),
 ]
 
 

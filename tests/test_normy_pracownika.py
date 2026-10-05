@@ -16,7 +16,7 @@ ZIEL = date(2026, 9, 10)
 def paczka(barcode, kto, sztuk, dzien, godzina=10, minut=30, ze_startem=True):
     koniec = logistat.local_day_bounds(dzien)[0] + timedelta(hours=godzina)
     logistat.db.session.add(logistat.ImportedCarton(
-        barcode=barcode, land='PL', stueckzahl=sztuk, ziel_datum=ZIEL,
+        barcode=barcode, land='PL', stueckzahl=sztuk, ziel_datum=ZIEL, data_pliku=ZIEL,
         uebergabe_nr='UB-1',
         scan_start_at=koniec - timedelta(minutes=minut) if ze_startem else None,
         scan_start_by=kto.id if ze_startem else None,

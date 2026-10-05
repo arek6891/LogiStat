@@ -21,7 +21,7 @@ def utc(y, m, d, hh, mm=0):
 def carton(barcode, scan_end_at, user, stueckzahl=10):
     c = logistat.ImportedCarton(
         barcode=barcode, land='PL', stueckzahl=stueckzahl,
-        ziel_datum=ZIEL, uebergabe_nr='UB-1',
+        ziel_datum=ZIEL, data_pliku=ZIEL, uebergabe_nr='UB-1',
         scan_start_at=scan_end_at - timedelta(minutes=5), scan_start_by=user.id,
         scan_end_at=scan_end_at, scan_end_by=user.id,
     )

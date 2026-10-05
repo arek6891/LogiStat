@@ -20,7 +20,7 @@ from flask_login import (
     logout_user, current_user
 )
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import func, and_, case
+from sqlalchemy import func, and_, or_, case
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
@@ -524,6 +524,11 @@ class ImportedCarton(db.Model):
     stueckzahl = db.Column(db.Integer, default=0)
     kategorie = db.Column(db.String(100), nullable=True)
     ziel_datum = db.Column(db.Date, nullable=True)
+    # Dzien pracy, ktorego dotyczy wrzucony plik — podawany przy imporcie
+    # (domyslnie dzis). GLOWNA data paczki: klucz linii rozliczenia (Loading
+    # date w Statystykach ogolnych), Dashboard, Forecast, filtry. Ziel-Datum
+    # zostaje tylko jako informacja z pliku. Patrz klucz_linii().
+    data_pliku = db.Column(db.Date, nullable=True)
     uebergabe_nr = db.Column(db.String(100), nullable=True)
     country_mapping_id = db.Column(db.Integer, db.ForeignKey('country_mapping.id'), nullable=True)
     imported_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -544,6 +549,7 @@ class ImportedCarton(db.Model):
 
     __table_args__ = (
         db.Index('ix_carton_ziel_datum',    'ziel_datum'),
+        db.Index('ix_carton_data_pliku',    'data_pliku'),
         db.Index('ix_carton_uebergabe_nr',  'uebergabe_nr'),
         db.Index('ix_carton_processed_by',  'processed_by'),
         db.Index('ix_carton_land',          'land'),
@@ -588,6 +594,8 @@ class ImportedCarton(db.Model):
             'stueckzahl': self.stueckzahl,
             'kategorie': self.kategorie,
             'ziel_datum': self.ziel_datum.isoformat() if self.ziel_datum else None,
+            'data_pliku': self.data_pliku.isoformat() if self.data_pliku else None,
+            'imported_at': iso_z(self.imported_at),
             'uebergabe_nr': self.uebergabe_nr,
             'country_mapping_id': self.country_mapping_id,
             'processed_by': self.processed_by,
@@ -1180,10 +1188,213 @@ def api_category_labels_update():
                     'etykiety': etykiety_kategorii()}), 200
 
 
+# ── Grupowa poprawa daty pliku ───────────────────────────────────────────────
+#  Import = kartony jednej osoby z jednej minuty importu i jednej daty pliku
+#  (process_import_rows daje calemu plikowi jedno `imported_at`). Klucz importu
+#  w API: "<imported_by>|<minuta UTC ISO>|<data_pliku>".
+
+MAX_IMPORTOW_NA_LISCIE = 300
+
+
+def _minuta_importu():
+    return func.date_trunc('minute', ImportedCarton.imported_at)
+
+
+def _klucz_importu(osoba_id, minuta, data_pliku):
+    return f"{osoba_id or 0}|{minuta.strftime('%Y-%m-%dT%H:%M')}|{data_pliku.isoformat() if data_pliku else ''}"
+
+
+def _kartony_importow(klucze):
+    """Kartony wskazanych importow. Zly klucz → 400 (nic nie zgadujemy)."""
+    warunki = []
+    for klucz in klucze:
+        try:
+            osoba, minuta, plik = str(klucz).split('|')
+            osoba_id = int(osoba) or None
+            minuta_dt = datetime.strptime(minuta, '%Y-%m-%dT%H:%M')
+            plik_d = date.fromisoformat(plik) if plik else None
+        except (ValueError, TypeError):
+            abort(400, f'Nieprawidłowy import: {klucz}.')
+        warunki.append(and_(
+            ImportedCarton.imported_by.is_(None) if osoba_id is None
+            else ImportedCarton.imported_by == osoba_id,
+            ImportedCarton.imported_at >= minuta_dt,
+            ImportedCarton.imported_at < minuta_dt + timedelta(minutes=1),
+            ImportedCarton.data_pliku.is_(None) if plik_d is None
+            else ImportedCarton.data_pliku == plik_d,
+        ))
+    if not warunki:
+        return []
+    return ImportedCarton.query.filter(or_(*warunki)).with_for_update().all()
+
+
+@app.route('/api/imports', methods=['GET'])
+@leader_required
+def api_imports():
+    """Lista importow do grupowej poprawy daty pliku.
+
+    Filtry (wszystkie opcjonalne): `data_pliku`, `dzien_importu` (dzien lokalny),
+    `godz_od` / `godz_do` (HH:MM czasu polskiego, wlacznie), `osoba` (id).
+    """
+    q = db.session.query(
+        ImportedCarton.imported_by,
+        _minuta_importu().label('minuta'),
+        ImportedCarton.data_pliku,
+        func.count(ImportedCarton.id),
+        func.coalesce(func.sum(ImportedCarton.stueckzahl), 0),
+        func.count(ImportedCarton.scan_end_at),
+        func.sum(case((ImportedCarton.added_manually.is_(True), 1), else_=0)),
+    )
+    if request.args.get('data_pliku'):
+        q = q.filter(ImportedCarton.data_pliku == parse_date(request.args['data_pliku'], 'data_pliku'))
+    if request.args.get('dzien_importu'):
+        od, do = local_day_bounds(parse_date(request.args['dzien_importu'], 'dzien_importu'))
+        q = q.filter(ImportedCarton.imported_at >= od, ImportedCarton.imported_at < do)
+    if request.args.get('osoba'):
+        q = q.filter(ImportedCarton.imported_by == require_int(request.args['osoba'], 'osoba'))
+
+    def _godzina(nazwa):
+        v = (request.args.get(nazwa) or '').strip()
+        if not v:
+            return None
+        try:
+            return datetime.strptime(v, '%H:%M').time()
+        except ValueError:
+            abort(400, f'Nieprawidłowa godzina w "{nazwa}" (oczekiwano HH:MM).')
+    godz_od, godz_do = _godzina('godz_od'), _godzina('godz_do')
+
+    wiersze = q.group_by(ImportedCarton.imported_by, 'minuta', ImportedCarton.data_pliku)\
+               .order_by(db.desc('minuta')).all()
+    osoby = {u.id: u for u in User.query.filter(
+        User.id.in_({w[0] for w in wiersze if w[0]})).all()}
+    importy = []
+    for osoba_id, minuta, plik, paczek, sztuk, zrobionych, recznych in wiersze:
+        if minuta is None:
+            continue
+        lokalnie = minuta.replace(tzinfo=timezone.utc).astimezone(LOCAL_TZ)
+        if godz_od and lokalnie.time() < godz_od:
+            continue
+        if godz_do and lokalnie.time() > godz_do:   # minuta importu, wiec „do 7:15" obejmuje 7:15
+            continue
+        u = osoby.get(osoba_id)
+        importy.append({
+            'klucz': _klucz_importu(osoba_id, minuta, plik),
+            'osoba_id': osoba_id,
+            'osoba': (u.display_name if u else '—'),
+            'login': (u.username if u else None),
+            'imported_at': iso_z(minuta),
+            'data_pliku': plik.isoformat() if plik else None,
+            'paczek': int(paczek), 'sztuk': int(sztuk or 0),
+            'zrobionych': int(zrobionych or 0), 'recznych': int(recznych or 0),
+        })
+        if len(importy) >= MAX_IMPORTOW_NA_LISCIE:
+            break
+    importerzy = User.query.filter(User.id.in_(
+        db.session.query(ImportedCarton.imported_by).distinct())).order_by(User.display_name).all()
+    return jsonify({
+        'importy': importy,
+        'osoby': [{'id': u.id, 'nazwa': u.display_name, 'login': u.username} for u in importerzy],
+        'ucieto': len(importy) >= MAX_IMPORTOW_NA_LISCIE,
+    }), 200
+
+
+@app.route('/api/imports/zmien-date', methods=['POST'])
+@leader_required
+def api_imports_zmien_date():
+    """Grupowa zmiana daty pliku dla wybranych importow.
+
+    `{importy: [klucz, ...], nowa_data: 'YYYY-MM-DD', podglad: bool}`. Z
+    `podglad: true` liczy skutki i NIC nie zapisuje — ekran pokazuje je przed
+    potwierdzeniem. Data pliku jest kluczem linii rozliczenia, wiec zmiana
+    przesuwa paczki miedzy liniami Statystyk ogolnych:
+    - linia, ktorej przechodza WSZYSTKIE paczki, przechodzi razem z nimi
+      (z recznymi ilosciami), laczac sie z linia, ktora juz stoi pod nowa data;
+    - gdy przechodzi tylko czesc paczek linii z recznymi ilosciami → 409:
+      nie da sie uczciwie podzielic recznie wpisanych liczb.
+    """
+    dane = json_body()
+    klucze = dane.get('importy')
+    if not isinstance(klucze, list) or not klucze:
+        abort(400, 'Zaznacz co najmniej jeden import.')
+    nowa = wymagana_data_pliku(dane.get('nowa_data'))
+    podglad = bool(dane.get('podglad'))
+
+    kartony = _kartony_importow(klucze)
+    if not kartony:
+        abort(404, 'Wybrane importy nie mają już paczek (ktoś je zmienił?). Odśwież listę.')
+    do_zmiany = [c for c in kartony if c.data_pliku != nowa]
+    ids = {c.id for c in do_zmiany}
+
+    stare_klucze = {klucz_linii(c) for c in do_zmiany if c.uebergabe_nr and c.data_pliku}
+    calkiem, konflikty = [], []
+    for k in stare_klucze:
+        linia = GeneralStat.query.filter_by(
+            list_id=k[0], country_ledger=k[1], loading_date=k[2]).first()
+        if linia is None:
+            continue
+        zostaje = ImportedCarton.query.filter(
+            ImportedCarton.uebergabe_nr == k[0], ImportedCarton.land == k[1],
+            ImportedCarton.data_pliku == k[2], ImportedCarton.id.notin_(ids)).count()
+        if zostaje == 0:
+            calkiem.append(linia)
+        elif ma_reczne_ilosci(linia) or _ma_ilosci(linia.get_double_rate_category_data()):
+            konflikty.append(f'{k[0]} · {k[1]} · {k[2].strftime("%d.%m.%Y")}')
+    nowe_klucze = {(k[0], k[1], nowa) for k in stare_klucze}
+    istniejace = sum(1 for k in nowe_klucze if GeneralStat.query.filter_by(
+        list_id=k[0], country_ledger=k[1], loading_date=k[2]).first())
+
+    skutki = {
+        'paczek': len(do_zmiany),
+        'juz_z_ta_data': len(kartony) - len(do_zmiany),
+        'sztuk': sum(c.stueckzahl or 0 for c in do_zmiany),
+        'zrobionych': sum(1 for c in do_zmiany if c.scan_end_at),
+        'linii_przenoszonych': len(calkiem),
+        'linii_dzielonych': len(stare_klucze) - len(calkiem),
+        'linii_docelowych_istniejacych': istniejace,
+        'konflikty': konflikty,
+    }
+    if konflikty:
+        db.session.rollback()
+        return jsonify({**skutki, 'error':
+            'Część linii rozliczenia ma ręcznie wpisane ilości, a datę zmienia tylko '
+            'część ich paczek — ręcznych liczb nie da się podzielić. Zaznacz wszystkie '
+            'importy tych linii albo popraw ilości ręcznie: ' + '; '.join(konflikty[:10])}), 409
+    if podglad or not do_zmiany:
+        db.session.rollback()
+        return jsonify({**skutki, 'podglad': True}), 200
+
+    teraz = datetime.utcnow()
+    for c in do_zmiany:
+        c.data_pliku = nowa
+        c.modified_at = teraz
+        c.modified_by = current_user.id
+    db.session.flush()
+
+    _odsun_linie(calkiem)
+    plan = {}
+    for linia in calkiem:
+        plan.setdefault((linia.list_id, linia.country_ledger, nowa), []).append(linia)
+    for k in nowe_klucze:
+        plan.setdefault(k, [])
+    for k, linie in plan.items():
+        ze_skanem = any(c.has_scan_categories() for c in do_zmiany
+                        if (c.uebergabe_nr, c.land) == (k[0], k[1]))
+        przenies_linie(linie, k, actor_id=current_user.id, from_scan=ze_skanem)
+    # Stare klucze: linia czesciowo oprozniona przelicza sie z pozostalych paczek;
+    # przeniesionej w calosci juz tam nie ma, a przy 0 sztuk nic nie powstaje.
+    for k in stare_klucze:
+        recompute_general_stat(*k, actor_id=current_user.id)
+    db.session.commit()
+    return jsonify({**skutki, 'message':
+        f'Zmieniono datę pliku {len(do_zmiany)} paczek na {nowa.strftime("%d.%m.%Y")}.'}), 200
+
+
 @app.route('/import-csv')
 @leader_required
 def import_csv_page():
-    return render_template('import_csv.html')
+    # Dzis LOKALNIE (Warszawa) — podpowiedz daty pliku w oknie importu; zegar
+    # przegladarki moze stac w innej strefie albo sie spieszyc.
+    return render_template('import_csv.html', dzis=local_today().isoformat())
 
 PACZKI_NA_STRONE = 100
 #  Prog tolerancji: ilosc wpisana per kategoria wieksza niz Stueckzahl o wiecej
@@ -1191,11 +1402,13 @@ PACZKI_NA_STRONE = 100
 TOLERANCJA_ILOSCI = 1.10
 
 #  Po ktorym polu daty filtruje ekran /paczki (`date_typ`). Klucz -> (etykieta,
-#  kolumna, czy to DateTime). `ziel_datum` to db.Date i porownuje sie wprost;
+#  kolumna, czy to DateTime). Domyslnie `plik` (data pliku — glowna data pracy
+#  od 2026-10). `data_pliku` i `ziel_datum` to db.Date i porownuja sie wprost;
 #  pozostale trzy to naive-UTC DateTime, wiec granice doby musi liczyc
 #  local_day_bounds() — inaczej „dzien" na tym ekranie znaczylby co innego niz
 #  na dashboardzie i statystykach (patrz uwaga o strefach w CLAUDE.md).
 PACZKI_POLA_DAT = {
+    'plik':   ('Data pliku',     ImportedCarton.data_pliku,    False),
     'ziel':   ('Ziel-Datum',     ImportedCarton.ziel_datum,    False),
     'import': ('Data importu',   ImportedCarton.imported_at,   True),
     'start':  ('Start paczki',   ImportedCarton.scan_start_at, True),
@@ -1265,9 +1478,9 @@ def bledy_paczki(carton):
 def paczki_view():
     date_from_str = request.args.get('date_from', '')
     date_to_str = request.args.get('date_to', '')
-    date_typ = request.args.get('date_typ', 'ziel')
+    date_typ = request.args.get('date_typ', 'plik')
     if date_typ not in PACZKI_POLA_DAT:
-        date_typ = 'ziel'
+        date_typ = 'plik'
     barcode = request.args.get('barcode', '').strip()
     land = request.args.get('land', '').strip()
     osoba_id = request.args.get('osoba', type=int)
@@ -1303,7 +1516,7 @@ def paczki_view():
     if date_to:
         # Gorna granica doby jest polotwarta (`<` na poczatek nastepnego dnia) —
         # `<=` wciagneloby paczki z pierwszych godzin kolejnego dnia lokalnego.
-        # Dlatego ta galaz uzywa `<`, a `ziel_datum` (czysta data) `<=`.
+        # Dlatego ta galaz uzywa `<`, a kolumny db.Date (czysta data) `<=`.
         if kolumna_jest_czasem:
             query = query.filter(kolumna_daty < local_day_bounds(date_to)[1])
         else:
@@ -1365,6 +1578,7 @@ def paczki_view():
     country_mappings = CountryMapping.query.order_by(CountryMapping.country).all()
 
     return render_template('paczki.html',
+                           dzis=local_today().isoformat(),
                            pagination=pagination,
                            items=pagination.items,
                            date_from=date_from_str,
@@ -1562,23 +1776,33 @@ def general_stats_export():
     return response
 
 
+def klucz_linii(carton):
+    """Klucz linii rozliczenia (GeneralStat) dla kartonu:
+    (uebergabe_nr, land, data_pliku) == (list_id, country_ledger, loading_date).
+
+    JEDYNA definicja — kazde miejsce, ktore przelicza albo szuka linii kartonu,
+    idzie przez nia. Od 2026-10 kluczem jest data pliku, nie Ziel-Datum.
+    """
+    return (carton.uebergabe_nr, carton.land, carton.data_pliku)
+
+
 def double_rate_amount_map():
     """Sum of Stückzahl of double-rate cartons, keyed by
-    (uebergabe_nr, land, ziel_datum) == (list_id, country_ledger, loading_date)."""
+    (uebergabe_nr, land, data_pliku) == (list_id, country_ledger, loading_date) — klucz_linii()."""
     rows = db.session.query(
         ImportedCarton.uebergabe_nr,
         ImportedCarton.land,
-        ImportedCarton.ziel_datum,
+        ImportedCarton.data_pliku,
         func.coalesce(func.sum(ImportedCarton.stueckzahl), 0),
     ).filter(ImportedCarton.double_rate.is_(True)).group_by(
         ImportedCarton.uebergabe_nr,
         ImportedCarton.land,
-        ImportedCarton.ziel_datum,
+        ImportedCarton.data_pliku,
     ).all()
     return {(u, l, d): int(s or 0) for u, l, d, s in rows}
 
 
-def scan_category_totals(uebergabe_nr, land, ziel_datum):
+def scan_category_totals(uebergabe_nr, land, data_pliku):
     """Suma ilosci per kategoria ze skanow paczek w danej grupie rozliczeniowej.
 
     Kategorie siedza w kolumnie Text jako JSON (patrz `category_data`), wiec
@@ -1588,7 +1812,7 @@ def scan_category_totals(uebergabe_nr, land, ziel_datum):
     kartony = ImportedCarton.query.filter(
         ImportedCarton.uebergabe_nr == uebergabe_nr,
         ImportedCarton.land == land,
-        ImportedCarton.ziel_datum == ziel_datum,
+        ImportedCarton.data_pliku == data_pliku,
     ).all()
     suma = {kat: 0 for kat in STAT_CATEGORIES}
     for karton in kartony:
@@ -1606,7 +1830,7 @@ def ma_reczne_ilosci(stat):
 
 
 def scan_coverage_map():
-    """Pokrycie skanami per grupa: {(uebergabe, land, ziel): (zeskanowane, wszystkie)}.
+    """Pokrycie skanami per grupa: {(uebergabe, land, data_pliku): (zeskanowane, wszystkie)}.
 
     Linia zasilana skanami czyta w trakcie zmiany mniej niz finalnie — bez tego
     licznika latwo wyeksportowac polowicznie zeskanowana linie jako gotowa.
@@ -1620,13 +1844,13 @@ def scan_coverage_map():
     rows = db.session.query(
         ImportedCarton.uebergabe_nr,
         ImportedCarton.land,
-        ImportedCarton.ziel_datum,
+        ImportedCarton.data_pliku,
         func.count(ImportedCarton.id),
         func.coalesce(func.sum(ma_skan), 0),
     ).group_by(
         ImportedCarton.uebergabe_nr,
         ImportedCarton.land,
-        ImportedCarton.ziel_datum,
+        ImportedCarton.data_pliku,
     ).all()
     return {(u, l, d): (int(zesk or 0), int(wsz or 0)) for u, l, d, wsz, zesk in rows}
 
@@ -2924,7 +3148,20 @@ def _partiami(iterable, rozmiar):
         yield partia
 
 
-def process_import_rows(rows):
+def wymagana_data_pliku(wartosc):
+    """Data pliku z requestu — WYMAGANA. Nie przez parse_date(): ta dla pustej
+    wartosci zwraca dzis, a cichy domysl to dokladnie blad, przed ktorym
+    chroni okno z data przy imporcie."""
+    tekst = str(wartosc or '').strip()
+    if not tekst:
+        abort(400, 'Podaj datę pliku (dzień, którego dotyczy plik).')
+    try:
+        return date.fromisoformat(tekst)
+    except ValueError:
+        abort(400, 'Nieprawidłowa data pliku (oczekiwano YYYY-MM-DD).')
+
+
+def process_import_rows(rows, data_pliku):
     """Shared import pipeline for CSV and Excel.
 
     `rows` is an iterable of dicts keyed by NORMALIZED header names
@@ -2933,7 +3170,13 @@ def process_import_rows(rows):
     coercion is type-aware. Creates ImportedCarton records (deduped by
     barcode) and upserts aggregated GeneralStat rows. Returns the result
     dict for the API response.
+
+    `data_pliku` (wymagana) dostaje kazdy karton i jest kluczem linii.
+    `imported_at` jest jeden na caly import: lista importow przy grupowej
+    poprawie daty grupuje po (osoba, minuta), a plik wczytywany kilkadziesiat
+    sekund nie moze sie rozpasc na dwa "importy".
     """
+    teraz = datetime.utcnow()
     imported = 0
     skipped = 0
     skipped_barcodes = []
@@ -2988,26 +3231,30 @@ def process_import_rows(rows):
                 country_mapping_id=mapping.id if mapping else None,
                 double_rate=bool(row.get('double_rate')),
                 added_manually=bool(row.get('added_manually')),
-                imported_by=current_user.id
+                imported_by=current_user.id,
+                imported_at=teraz,
+                data_pliku=data_pliku,
             )
             db.session.add(carton)
             imported += 1
 
-            # Aggregate for GeneralStat
-            if uebergabe_nr and ziel_datum:
-                agg_key = (uebergabe_nr, land, ziel_datum.isoformat())
+            # Aggregate for GeneralStat — klucz_linii(): (UB, land, data_pliku).
+            # Ziel-Datum nie jest juz wymagana (decyzja 2026-10: paczki bez niej
+            # tez sie rozliczaja).
+            if uebergabe_nr:
+                agg_key = klucz_linii(carton)
                 if agg_key not in aggregation:
                     aggregation[agg_key] = {
                         'stueckzahl': 0,
                         'country': mapping.country if mapping else None,
-                        'date': ziel_datum
+                        'date': data_pliku
                     }
                 aggregation[agg_key]['stueckzahl'] += stueckzahl
 
     # Create/update GeneralStat entries
     stats_created = 0
     stats_updated = 0
-    for (list_id, land_val, date_str), agg in aggregation.items():
+    for (list_id, land_val, _data), agg in aggregation.items():
         existing = GeneralStat.query.filter_by(
             list_id=list_id,
             country_ledger=land_val,
@@ -3047,6 +3294,7 @@ def process_import_rows(rows):
 @app.route('/api/import-csv', methods=['POST'])
 @leader_required
 def api_import_csv():
+    data_pliku = wymagana_data_pliku(request.form.get('data_pliku'))
     if 'file' not in request.files:
         return jsonify({'error': 'Brak pliku.'}), 400
 
@@ -3067,12 +3315,13 @@ def api_import_csv():
         return jsonify({'error': 'Plik CSV nie ma nag\u0142\u00f3wk\u00f3w.'}), 400
 
     rows = ({header_map.get(k, k): v for k, v in row.items()} for row in reader)
-    return jsonify(process_import_rows(rows)), 200
+    return jsonify(process_import_rows(rows, data_pliku)), 200
 
 
 @app.route('/api/import/excel', methods=['POST'])
 @leader_required
 def api_import_excel():
+    data_pliku = wymagana_data_pliku(request.form.get('data_pliku'))
     if 'file' not in request.files:
         return jsonify({'error': 'Brak pliku.'}), 400
 
@@ -3108,7 +3357,7 @@ def api_import_excel():
         for values in row_iter:
             yield {header_map.get(idx, idx): val for idx, val in enumerate(values)}
 
-    result = jsonify(process_import_rows(rows_gen())), 200
+    result = jsonify(process_import_rows(rows_gen(), data_pliku)), 200
     wb.close()
     return result
 
@@ -3299,8 +3548,62 @@ def api_dashboard():
         'workers_today': workers_today,
         'activities_today': activities_today,
         'per_worker': per_worker,
+        # Plan dnia dla dzisiejszego pliku i zalegle (niezrobione) per data pliku.
+        'plik_dzis': plan_dnia_pliku(today),
+        'zalegle': zalegle_wg_daty_pliku(),
         'as_of': datetime.now(LOCAL_TZ).strftime('%H:%M:%S'),
     })
+
+
+def plan_dnia_pliku(dzien):
+    """Paczki z plikow danego dnia (data pliku): wrzucone / zrobione / w toku /
+    pozostalo, w paczkach i sztukach.
+
+    „Zrobione" = karton tego pliku z `scan_end_at` — niezaleznie od tego, KIEDY
+    go skonczono. To co innego niz „zakonczone dzis" (po czasie skanu): plik z
+    poniedzialku konczony we wtorek liczy sie do poniedzialku.
+    """
+    zrobiona = ImportedCarton.scan_end_at.isnot(None)
+    w_toku = and_(ImportedCarton.scan_start_at.isnot(None), ImportedCarton.scan_end_at.is_(None))
+    w = db.session.query(
+        func.count(ImportedCarton.id),
+        func.coalesce(func.sum(ImportedCarton.stueckzahl), 0),
+        func.count(ImportedCarton.scan_end_at),
+        func.coalesce(func.sum(case((zrobiona, ImportedCarton.stueckzahl), else_=0)), 0),
+        func.coalesce(func.sum(case((w_toku, 1), else_=0)), 0),
+    ).filter(ImportedCarton.data_pliku == dzien).one()
+    paczek, sztuk, zrob, zrob_szt, toku = (int(x or 0) for x in w)
+    return {
+        'data_pliku': dzien.isoformat(),
+        'paczek': paczek, 'sztuk': sztuk,
+        'zrobione': zrob, 'zrobione_sztuk': zrob_szt,
+        'w_toku': toku,
+        'pozostalo': paczek - zrob, 'pozostalo_sztuk': sztuk - zrob_szt,
+        'procent': round(zrob / paczek * 100, 1) if paczek else 0,
+    }
+
+
+def zalegle_wg_daty_pliku():
+    """Wszystkie niezrobione paczki (scan_end_at IS NULL) per data pliku,
+    najstarsze najpierw — Podsumowanie Dashboardu."""
+    wiersze = db.session.query(
+        ImportedCarton.data_pliku,
+        func.count(ImportedCarton.id),
+        func.coalesce(func.sum(ImportedCarton.stueckzahl), 0),
+        func.coalesce(func.sum(case((ImportedCarton.scan_start_at.isnot(None), 1), else_=0)), 0),
+    ).filter(ImportedCarton.scan_end_at.is_(None))\
+     .group_by(ImportedCarton.data_pliku)\
+     .order_by(ImportedCarton.data_pliku.asc().nullsfirst()).all()
+    dni = [{'data_pliku': d.isoformat() if d else None, 'paczek': int(n), 'sztuk': int(szt or 0),
+            'w_toku': int(t or 0)} for d, n, szt, t in wiersze]
+    return {'paczek': sum(x['paczek'] for x in dni), 'sztuk': sum(x['sztuk'] for x in dni), 'dni': dni}
+
+
+@app.route('/api/dashboard/plik')
+@leader_required
+def api_dashboard_plik():
+    """Plan dnia dla wybranej daty pliku (`?date=`, domyslnie dzis)."""
+    return jsonify(plan_dnia_pliku(parse_date(request.args.get('date'))))
 
 
 @app.route('/api/dashboard/shifts')
@@ -3482,9 +3785,11 @@ def api_package_create():
     kategorie = (data.get('kategorie') or '').strip()
     uebergabe_nr = (data.get('uebergabe_nr') or '').strip()
     ziel_datum_str = (data.get('ziel_datum') or '').strip()
+    data_pliku_str = (data.get('data_pliku') or '').strip()
     double_rate = bool(data.get('double_rate'))
 
-    # Required fields (5) — must not be skipped, else the package can't bill
+    # Required fields — must not be skipped, else the package can't bill.
+    # Ziel-Datum jest od 2026-10 opcjonalna (kluczem linii jest data pliku).
     missing = []
     if not barcode:
         missing.append('Barcode')
@@ -3492,8 +3797,8 @@ def api_package_create():
         missing.append('Land')
     if not uebergabe_nr:
         missing.append('Übergabe Nr.')
-    if not ziel_datum_str:
-        missing.append('Ziel-Datum')
+    if not data_pliku_str:
+        missing.append('Data pliku')
     if missing:
         return jsonify({'error': 'Brakuje wymaganych pól: ' + ', '.join(missing)}), 400
 
@@ -3505,9 +3810,10 @@ def api_package_create():
     if stueckzahl <= 0:
         return jsonify({'error': 'Stückzahl musi być większe od zera.'}), 400
 
-    # Date — must parse
-    ziel_datum = _cell_to_date(ziel_datum_str)
-    if ziel_datum is None:
+    # Dates — must parse
+    data_pliku = wymagana_data_pliku(data_pliku_str)
+    ziel_datum = _cell_to_date(ziel_datum_str) if ziel_datum_str else None
+    if ziel_datum_str and ziel_datum is None:
         return jsonify({'error': 'Nieprawidłowy format daty Ziel-Datum.'}), 400
 
     # Duplicate barcode → 409 (pre-check; race handled by IntegrityError below)
@@ -3526,7 +3832,7 @@ def api_package_create():
     }
 
     try:
-        result = process_import_rows([row])
+        result = process_import_rows([row], data_pliku)
     except IntegrityError:
         # Concurrent add of the same barcode slipped past the pre-check
         db.session.rollback()
@@ -3543,30 +3849,33 @@ def api_package_create():
     }), 201
 
 
-def recompute_general_stat(uebergabe_nr, land, ziel_datum, actor_id=None, from_scan=False):
+def recompute_general_stat(uebergabe_nr, land, data_pliku, actor_id=None, from_scan=False):
     """Recompute a GeneralStat line's `amounts` from the SUM of its cartons.
 
+    Argumenty to klucz_linii(): (uebergabe_nr, land, data_pliku) — wolajacy
+    podaje `*klucz_linii(carton)`, nigdy wlasnej trojki.
+
     `amounts` is a pure carton aggregate (only written by process_import_rows),
-    so recomputing from SUM(stueckzahl) over the (uebergabe_nr, land, ziel_datum)
-    group is exact — it avoids delta drift and stays correct when manual and
-    imported cartons share a line. Groups without uebergabe_nr or ziel_datum
-    never aggregate, so nothing to recompute. If the group emptied to 0, the
-    GeneralStat row is kept at amounts=0 (preserves any entered category_data).
+    so recomputing from SUM(stueckzahl) over the group is exact — it avoids
+    delta drift and stays correct when manual and imported cartons share a
+    line. Groups without uebergabe_nr or data_pliku never aggregate, so nothing
+    to recompute. If the group emptied to 0, the GeneralStat row is kept at
+    amounts=0 (preserves any entered category_data).
     """
-    if not (uebergabe_nr and ziel_datum):
+    if not (uebergabe_nr and data_pliku):
         return
     total = db.session.query(
         func.coalesce(func.sum(ImportedCarton.stueckzahl), 0)
     ).filter(
         ImportedCarton.uebergabe_nr == uebergabe_nr,
         ImportedCarton.land == land,
-        ImportedCarton.ziel_datum == ziel_datum,
+        ImportedCarton.data_pliku == data_pliku,
     ).scalar() or 0
 
     existing = GeneralStat.query.filter_by(
         list_id=uebergabe_nr,
         country_ledger=land,
-        loading_date=ziel_datum,
+        loading_date=data_pliku,
     ).first()
 
     if existing:
@@ -3583,22 +3892,22 @@ def recompute_general_stat(uebergabe_nr, land, ziel_datum, actor_id=None, from_s
             existing.category_source = 'scan'
         if existing.category_source == 'scan':
             existing.set_category_data(
-                scan_category_totals(uebergabe_nr, land, ziel_datum))
+                scan_category_totals(uebergabe_nr, land, data_pliku))
         existing.updated_at = datetime.utcnow()
         if actor_id:
             existing.updated_by = actor_id
     elif total > 0:
         mapping = CountryMapping.query.filter_by(innenauftrag=land).first()
         stat = GeneralStat(
-            loading_date=ziel_datum,
-            week_number=ziel_datum.isocalendar()[1],
+            loading_date=data_pliku,
+            week_number=data_pliku.isocalendar()[1],
             list_id=uebergabe_nr,
             country_of_destination=mapping.country if mapping else None,
             country_ledger=land,
             amounts=total,
             category_source='scan' if from_scan else 'manual',
             category_data=json.dumps(
-                scan_category_totals(uebergabe_nr, land, ziel_datum)
+                scan_category_totals(uebergabe_nr, land, data_pliku)
                 if from_scan else empty_category_data()),
         )
         db.session.add(stat)
@@ -3610,7 +3919,7 @@ def api_package_update(carton_id):
     """Edit a manually-added package; recompute affected GeneralStat lines.
 
     Only `added_manually` packages are editable (imported ones are read-only →
-    403). Changing a group field (uebergabe/land/ziel) moves the carton between
+    403). Changing a group field (uebergabe/land/data_pliku) moves the carton between
     GeneralStat groups — both the old and new lines are recomputed from carton
     sums so billing stays exact.
     """
@@ -3624,6 +3933,7 @@ def api_package_update(carton_id):
     kategorie = (data.get('kategorie') or '').strip()
     uebergabe_nr = (data.get('uebergabe_nr') or '').strip()
     ziel_datum_str = (data.get('ziel_datum') or '').strip()
+    data_pliku_str = (data.get('data_pliku') or '').strip()
     double_rate = bool(data.get('double_rate'))
 
     missing = []
@@ -3633,8 +3943,8 @@ def api_package_update(carton_id):
         missing.append('Land')
     if not uebergabe_nr:
         missing.append('Übergabe Nr.')
-    if not ziel_datum_str:
-        missing.append('Ziel-Datum')
+    if not data_pliku_str:
+        missing.append('Data pliku')
     if missing:
         return jsonify({'error': 'Brakuje wymaganych pól: ' + ', '.join(missing)}), 400
 
@@ -3645,15 +3955,16 @@ def api_package_update(carton_id):
     if stueckzahl <= 0:
         return jsonify({'error': 'Stückzahl musi być większe od zera.'}), 400
 
-    ziel_datum = _cell_to_date(ziel_datum_str)
-    if ziel_datum is None:
+    data_pliku = wymagana_data_pliku(data_pliku_str)
+    ziel_datum = _cell_to_date(ziel_datum_str) if ziel_datum_str else None
+    if ziel_datum_str and ziel_datum is None:
         return jsonify({'error': 'Nieprawidłowy format daty Ziel-Datum.'}), 400
 
     if barcode != carton.barcode and ImportedCarton.query.filter_by(barcode=barcode).first():
         return jsonify({'error': f'Paczka o barcode "{barcode}" już istnieje.'}), 409
 
     # Capture the OLD group before mutating, so we can recompute it after the move
-    old_group = (carton.uebergabe_nr, carton.land, carton.ziel_datum)
+    old_group = klucz_linii(carton)
 
     mapping = CountryMapping.query.filter_by(innenauftrag=land).first()
     carton.barcode = barcode
@@ -3661,13 +3972,14 @@ def api_package_update(carton_id):
     carton.stueckzahl = stueckzahl
     carton.kategorie = kategorie
     carton.ziel_datum = ziel_datum
+    carton.data_pliku = data_pliku
     carton.uebergabe_nr = uebergabe_nr
     carton.double_rate = double_rate
     carton.country_mapping_id = mapping.id if mapping else None
     carton.modified_at = datetime.utcnow()
     carton.modified_by = current_user.id
 
-    new_group = (uebergabe_nr, land, ziel_datum)
+    new_group = klucz_linii(carton)
 
     try:
         db.session.flush()  # push the carton UPDATE so recompute SUMs see new values / catch collision
@@ -3865,7 +4177,7 @@ def api_package_time_end():
     if kategorie:
         carton.set_scan_categories(kategorie)
         # Ilosci ze skanu staja sie zrodlem rozliczenia tej linii.
-        recompute_general_stat(carton.uebergabe_nr, carton.land, carton.ziel_datum,
+        recompute_general_stat(*klucz_linii(carton),
                                actor_id=user.id, from_scan=True)
     db.session.commit()
 
@@ -3899,7 +4211,7 @@ def api_package_categories_update(carton_id):
     carton.set_scan_categories(kategorie)
     carton.modified_at = datetime.utcnow()
     carton.modified_by = current_user.id
-    recompute_general_stat(carton.uebergabe_nr, carton.land, carton.ziel_datum,
+    recompute_general_stat(*klucz_linii(carton),
                            actor_id=current_user.id, from_scan=True)
     db.session.commit()
     return jsonify(carton.to_dict()), 200
@@ -4280,15 +4592,15 @@ def api_forecast_chart_data():
         date_to = local_today() + timedelta(days=14)
 
     actual_rows = db.session.query(
-        ImportedCarton.ziel_datum,
+        ImportedCarton.data_pliku,
         func.sum(ImportedCarton.stueckzahl).label('total')
     ).filter(
-        ImportedCarton.ziel_datum >= date_from,
-        ImportedCarton.ziel_datum <= date_to,
-        ImportedCarton.ziel_datum.isnot(None)
-    ).group_by(ImportedCarton.ziel_datum).all()
+        ImportedCarton.data_pliku >= date_from,
+        ImportedCarton.data_pliku <= date_to,
+        ImportedCarton.data_pliku.isnot(None)
+    ).group_by(ImportedCarton.data_pliku).all()
 
-    actual_map = {row.ziel_datum: (row.total or 0) for row in actual_rows}
+    actual_map = {row.data_pliku: (row.total or 0) for row in actual_rows}
 
     forecast_rows = Forecast.query.filter(
         Forecast.date >= date_from,
@@ -4370,15 +4682,15 @@ def api_forecast_export():
         date_to = local_today() + timedelta(days=14)
 
     actual_rows = db.session.query(
-        ImportedCarton.ziel_datum,
+        ImportedCarton.data_pliku,
         func.sum(ImportedCarton.stueckzahl).label('total')
     ).filter(
-        ImportedCarton.ziel_datum >= date_from,
-        ImportedCarton.ziel_datum <= date_to,
-        ImportedCarton.ziel_datum.isnot(None)
-    ).group_by(ImportedCarton.ziel_datum).all()
+        ImportedCarton.data_pliku >= date_from,
+        ImportedCarton.data_pliku <= date_to,
+        ImportedCarton.data_pliku.isnot(None)
+    ).group_by(ImportedCarton.data_pliku).all()
 
-    actual_map = {row.ziel_datum: (row.total or 0) for row in actual_rows}
+    actual_map = {row.data_pliku: (row.total or 0) for row in actual_rows}
 
     forecast_rows = Forecast.query.filter(
         Forecast.date >= date_from,
@@ -4588,6 +4900,7 @@ def migrate_columns():
             # a try/except ponizej by to po cichu polknal.
             ('"user"', "worker_type_id", "INTEGER REFERENCES user_option(id)"),
             ('"user"', "shift_group_id", "INTEGER REFERENCES user_option(id)"),
+            ("imported_carton", "data_pliku",         "DATE"),
         ]
 
         for table, column, col_def in migrations:
@@ -4600,6 +4913,7 @@ def migrate_columns():
 
         indexes = [
             "CREATE INDEX IF NOT EXISTS ix_carton_ziel_datum   ON imported_carton (ziel_datum)",
+            "CREATE INDEX IF NOT EXISTS ix_carton_data_pliku   ON imported_carton (data_pliku)",
             "CREATE INDEX IF NOT EXISTS ix_carton_uebergabe_nr ON imported_carton (uebergabe_nr)",
             "CREATE INDEX IF NOT EXISTS ix_carton_processed_by ON imported_carton (processed_by)",
             "CREATE INDEX IF NOT EXISTS ix_carton_land         ON imported_carton (land)",
@@ -4615,6 +4929,141 @@ def migrate_columns():
                 conn.commit()
             except Exception:
                 conn.rollback()
+
+
+ZNACZNIK_MIGRACJI_DATY_PLIKU = 'migracja_data_pliku'
+
+
+def _suma_kategorii(*slowniki):
+    """Suma ilosci per kategoria kilku `category_data` (ksztalt {kat: {'amount': N}})."""
+    suma = {kat: 0 for kat in STAT_CATEGORIES}
+    for dane in slowniki:
+        for kat, wartosc in (dane or {}).items():
+            if kat in suma and isinstance(wartosc, dict):
+                suma[kat] += int(wartosc.get('amount', 0) or 0)
+    return {kat: {'amount': n, 'cost': 0.0} for kat, n in suma.items()}
+
+
+def _ma_ilosci(dane):
+    return any(isinstance(v, dict) and v.get('amount') for v in (dane or {}).values())
+
+
+def przenies_linie(zrodla, klucz, actor_id=None, from_scan=False):
+    """Zlacz linie `zrodla` (GeneralStat) w jedna linie pod kluczem `klucz`
+    (uebergabe_nr, land, data_pliku) i przelicz ja z kartonow.
+
+    Uzywane przez jednorazowa migracje i grupowa zmiane daty pliku, zeby obie
+    trzymaly sie tych samych regul:
+    - linia, ktora juz stoi pod `klucz`, przezywa; inaczej pierwsza ze zrodel;
+    - reczne `category_data` (linie 'manual') i `double_rate_category_data` sa
+      SUMOWANE — to jedyne dane linii, ktorych nie da sie odtworzyc z kartonow;
+    - `amounts` i ilosci ze skanow liczy od nowa recompute_general_stat();
+    - linia ze zrodlem 'scan' zostaje 'scan', chyba ze ktores zrodlo ma reczne
+      ilosci (wtedy 'manual' z suma — skany i tak leza na kartonach).
+    Wolajacy musi wczesniej odsunac zrodla z ich starych kluczy (patrz
+    _odsun_linie), bo unikalny (list_id, country_ledger, loading_date) nie
+    pozwala przesunac linii na miejsce, ktore jeszcze zajmuje inna.
+    """
+    ub, land, data = klucz
+    docelowa = GeneralStat.query.filter_by(
+        list_id=ub, country_ledger=land, loading_date=data).first()
+    wszystkie = list({id(x): x for x in ([docelowa] if docelowa else []) + list(zrodla)}.values())
+    if not wszystkie:
+        recompute_general_stat(ub, land, data, actor_id=actor_id, from_scan=from_scan)
+        return
+    zostaje = docelowa or wszystkie[0]
+    reczne = [x for x in wszystkie if (x.category_source or 'manual') == 'manual'
+              and _ma_ilosci(x.get_category_data())]
+    skanowe = any((x.category_source or 'manual') == 'scan' for x in wszystkie)
+    zostaje.set_double_rate_category_data(
+        _suma_kategorii(*(x.get_double_rate_category_data() for x in wszystkie)))
+    if reczne:
+        zostaje.category_source = 'manual'
+        zostaje.set_category_data(_suma_kategorii(*(x.get_category_data() for x in reczne)))
+    elif skanowe:
+        zostaje.category_source = 'scan'
+    if not zostaje.country_of_destination:
+        zostaje.country_of_destination = next(
+            (x.country_of_destination for x in wszystkie if x.country_of_destination), None)
+    for x in wszystkie:
+        if x is not zostaje:
+            db.session.delete(x)
+    db.session.flush()
+    zostaje.loading_date = data
+    zostaje.week_number = data.isocalendar()[1]
+    db.session.flush()
+    recompute_general_stat(ub, land, data, actor_id=actor_id,
+                           from_scan=from_scan and not reczne)
+
+
+def _odsun_linie(linie):
+    """Przestaw linie na tymczasowe, unikalne daty (1900-01-01 + id), zeby
+    zwolnic ich klucze przed przesunieciem — inaczej linia A wchodzaca na dzien
+    linii B, ktora sama dopiero sie przesuwa, lamie unikalny indeks."""
+    for x in linie:
+        x.loading_date = date(1900, 1, 1) + timedelta(days=x.id)
+    db.session.flush()
+
+
+def migruj_date_pliku():
+    """Jednorazowo (znacznik w AppSetting): data pliku dla starych kartonow
+    i przeklucz linii rozliczenia z Ziel-Datum na date pliku.
+
+    1. Karton bez daty pliku dostaje lokalny (Europe/Warsaw) dzien importu,
+       a bez `imported_at` — swoja Ziel-Datum. W SQL-u, z `at time zone`:
+       data UTC przesunelaby nocne importy na zly dzien.
+    2. Kazda linia idzie pod klucz_linii() swoich kartonow. Linie trafiajace
+       pod ten sam klucz sa laczone (przenies_linie). Linia, ktorej kartony
+       rozjechaly sie na kilka dni, oddaje reczne ilosci dniowi z najwieksza
+       liczba sztuk — pozostale dni dostaja linie przeliczone z kartonow.
+    3. Klucze, ktorych dotad nie bylo (np. kartony bez Ziel-Datum, ktore
+       wczesniej sie nie rozliczaly — decyzja 2026-10: maja sie rozliczac),
+       dostaja nowe linie.
+    Bieg w init_db() pod pg_advisory_lock — jeden worker, jedna transakcja.
+    """
+    if db.session.get(AppSetting, ZNACZNIK_MIGRACJI_DATY_PLIKU) is not None:
+        return
+    db.session.execute(db.text("""
+        UPDATE imported_carton
+           SET data_pliku = COALESCE(
+                 (imported_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Warsaw')::date,
+                 ziel_datum)
+         WHERE data_pliku IS NULL
+    """))
+    db.session.flush()
+
+    # stary klucz (UB, land, ziel) -> {nowy klucz: sztuki}
+    stare = {}
+    for ub, land, ziel, plik, szt in db.session.query(
+            ImportedCarton.uebergabe_nr, ImportedCarton.land, ImportedCarton.ziel_datum,
+            ImportedCarton.data_pliku, ImportedCarton.stueckzahl):
+        if ub and ziel and plik:
+            cel = stare.setdefault((ub, land, ziel), {})
+            cel[(ub, land, plik)] = cel.get((ub, land, plik), 0) + (szt or 0)
+
+    plan = {}          # nowy klucz -> [linie]
+    for linia in GeneralStat.query.all():
+        cele = stare.get((linia.list_id, linia.country_ledger, linia.loading_date))
+        if not cele:
+            continue   # linia bez kartonow (np. reczna) zostaje, gdzie byla
+        glowny = max(cele, key=lambda k: cele[k])
+        plan.setdefault(glowny, []).append(linia)
+        for k in cele:
+            plan.setdefault(k, [])
+
+    _odsun_linie([x for linie in plan.values() for x in linie])
+    for klucz, linie in plan.items():
+        przenies_linie(linie, klucz)
+
+    # Klucze kartonow, ktore nie mialy linii (np. bez Ziel-Datum).
+    for klucz in db.session.query(ImportedCarton.uebergabe_nr, ImportedCarton.land,
+                                  ImportedCarton.data_pliku).distinct():
+        if klucz[0] and klucz[2] and tuple(klucz) not in plan:
+            recompute_general_stat(*klucz)
+
+    db.session.add(AppSetting(key=ZNACZNIK_MIGRACJI_DATY_PLIKU, value='1'))
+    db.session.commit()
+    print(f'[MIGRACJA] Data pliku: {len(plan)} linii rozliczenia pod nowymi kluczami.')
 
 
 def init_db():
@@ -4633,6 +5082,7 @@ def init_db():
         try:
             db.create_all()
             migrate_columns()
+            migruj_date_pliku()
             seed_data()
         finally:
             conn.execute(db.text('SELECT pg_advisory_unlock(:id)'), {'id': lock_id})
