@@ -4,7 +4,7 @@
 <div class="scanner-page">
     <div class="page-header" style="text-align:center;">
         <h1>⏱ Czas pracy</h1>
-        <p style="color:var(--text-muted);">Zeskanuj kod pracownika aby zarejestrować przerwę lub koniec pracy.</p>
+        <p style="color:var(--text-muted);">Zeskanuj kod pracownika aby zarejestrować przerwę, szkolenie lub koniec pracy.</p>
     </div>
 
     <!-- Zakładki -->
@@ -12,6 +12,7 @@
                 padding:4px;margin-bottom:2rem;">
         <button class="shift-tab active" id="tab-break"    onclick="switchMode('break')">☕ Przerwa</button>
         <button class="shift-tab"        id="tab-other"    onclick="switchMode('other')">🚪 Inne</button>
+        <button class="shift-tab"        id="tab-training" onclick="switchMode('training')">🎓 Szkolenie</button>
         <button class="shift-tab"        id="tab-work-end" onclick="switchMode('work_end')">🏁 Koniec pracy</button>
     </div>
 
@@ -43,6 +44,7 @@
     const LABELS = {
         break:    { badge: '☕', label: 'Skanuj aby wejść / wyjść z przerwy' },
         other:    { badge: '🚪', label: 'Skanuj aby wyjść / wrócić — Inne (np. wyjście do HR)' },
+        training: { badge: '🎓', label: 'Skanuj aby rozpocząć / zakończyć szkolenie (tylko osoby szkolące)' },
         work_end: { badge: '🏁', label: 'Skanuj aby zarejestrować koniec pracy' },
     };
     const EVENT_COLORS = {
@@ -50,11 +52,14 @@
         break_end:   'var(--success)',
         other_start: 'var(--accent)',
         other_end:   'var(--success)',
+        training_start: 'var(--info)',
+        training_end:   'var(--success)',
         work_end:    'var(--danger)',
     };
     const EVENT_ICONS = {
         break_start: '☕', break_end: '✅',
         other_start: '🚪', other_end: '✅',
+        training_start: '🎓', training_end: '✅',
         work_end: '🏁',
     };
     const EVENT_LABELS = {
@@ -62,12 +67,14 @@
         break_end:   'Powrót z przerwy',
         other_start: 'Wyjście — Inne',
         other_end:   'Powrót z „Inne"',
+        training_start: 'Początek szkolenia',
+        training_end:   'Koniec szkolenia',
         work_end:    'Koniec pracy',
     };
 
     function switchMode(m) {
         mode = m;
-        ['break','other','work_end'].forEach(t => {
+        ['break','other','training','work_end'].forEach(t => {
             document.getElementById('tab-' + t.replace('_','-')).classList.toggle('active', t === m);
         });
         document.getElementById('modeBadge').textContent = LABELS[m].badge;
@@ -125,8 +132,8 @@
             card.innerHTML = `
                 <div class="user-avatar" style="background:var(--danger);">✕</div>
                 <div class="user-info">
-                    <div class="user-name" style="color:var(--danger);">${barcode}</div>
-                    <div class="user-time">${errorMsg}</div>
+                    <div class="user-name" style="color:var(--danger);">${escapeHtml(barcode)}</div>
+                    <div class="user-time">${escapeHtml(errorMsg)}</div>
                 </div>`;
         } else {
             const et  = data.event_type;
@@ -135,7 +142,7 @@
             card.innerHTML = `
                 <div class="user-avatar" style="background:${col};">${EVENT_ICONS[et]}</div>
                 <div class="user-info">
-                    <div class="user-name">${data.user.display_name}</div>
+                    <div class="user-name">${escapeHtml(data.user.display_name)}</div>
                     <div class="user-time">${EVENT_LABELS[et]} · ${time}</div>
                 </div>`;
         }

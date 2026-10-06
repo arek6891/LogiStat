@@ -15,7 +15,7 @@ docker compose down
 # Tests — need a Postgres; the compose file below provides one (port 55432, tmpfs)
 docker compose -f docker-compose.test.yml up -d
 pip install -r requirements-dev.txt
-pytest                               # 495 tests
+pytest                               # 516 tests
 docker compose -f docker-compose.test.yml down
 LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://u:p@host:5432/db pytest   # another DB
 # On .32 there is no pytest/venv — use the prebuilt runner image instead:
@@ -90,7 +90,8 @@ Default admin after seed: `admin` / `admin123` — override with `ADMIN_PASSWORD
 - **Podsumowanie = unfinished packages only** (`zalegle`: `scan_end_at IS NULL`, all-time, per data pliku, oldest first, rows link to `/paczki?date_typ=plik&…`).
 - Per zmiana: packages have no shift → attributed **by attendance** of the `scan_end_by` worker that day; no attendance or both shifts → `unattributed` (each package once). Legacy keys `remaining_*`/`total_*`/`progress_pct` still in the JSON, no longer shown.
 
-**Time tracking:** `/time-tracking` scan → `POST /api/time/scan` `mode`: `break` (`break_start`/`break_end`) | `other` („Inne", off-station non-break; `other_start`/`other_end`) | `work_end`. Events in `WorkerTimeEvent`; state = `count(*_start) - count(*_end)`, no flag on User.
+**Time tracking:** `/time-tracking` scan → `POST /api/time/scan` `mode` (`TRYBY_CZASU`): `break` (`break_start`/`break_end`) | `other` („Inne", off-station non-break; `other_start`/`other_end`) | `training` („🎓 Szkolenie", `training_start`/`training_end`) | `work_end`. Events in `WorkerTimeEvent`; state = `count(*_start) - count(*_end)`, no flag on User.
+- **Szkolenie** — only `User.is_trainer` („🎓 Szkolący", checkbox in Użytkownicy; leader may set it on operators) may **start** one (else 403; manual `training_start` event → 400); ending an open one is always allowed. It is **work time**: not subtracted, reported as `training_minutes` / `trainings[]` / `on_training`. Break, „Inne" and training are **mutually exclusive** (any start while another is open → 409). `work_end` closes all three.
 - „Inne" subtracts like a break but is reported separately (`other_minutes`, `others[]`, `on_other`). Break and „Inne" **cannot overlap** (409). `work_end` closes both.
 - Manual corrections can still overlap → `_compute_worker_times` subtracts the **union** (`suma_zlaczonych_okresow()`); `break_minutes`/`other_minutes` stay raw.
 - `/worker-times` per-worker and „⚠️ Tylko błędy" filters run **in the browser** over `/api/worker-times`. No-break / short-break count **only once `work_ended`**.
@@ -117,7 +118,9 @@ Default admin after seed: `admin` / `admin123` — override with `ADMIN_PASSWORD
 - `STAT_CATEGORY_LABELS` (English — General Stats + Excel export headers, external artifact, keep English, **never admin-editable**) vs `STAT_CATEGORY_LABELS_PL` (**defaults only**). Screens use `etykiety_kategorii()` (one query) / `etykieta_kategorii(kat, nazwy_pl=None)` → **„Polish (English)"**, e.g. „Niesprocesowane (Sorting)" — worker-facing: end-of-package step, „✎ Ilości" on `/paczki`, cost mapping, scan-quantity validation errors. Polish names are admin-edited at `/admin/category-labels` (`PUT /api/category-labels {nazwy: {kat: str}}`, autosave) and stored in `AppSetting` as `kategoria_pl:<kat>` (no column); empty or equal to the default → the row is **deleted**, so a changed default in code still applies. `bledy_paczki()` keeps the English name (called per carton — a label lookup there would be N+1). General Stats shows English + the current Polish name.
 
 **Normy (`/stats`) — overview `GET /api/stats/overview?date_from=&date_to=` (leader+)** — built on **finished packages, not `DailyStat`**.
-- Metric = `sum(stueckzahl)` / **union** of the worker's scan intervals (`suma_zlaczonych_okresow()`), i.e. pieces per hour of *scanning* (breaks don't reduce it — label it so).
+- Metric = `sum(stueckzahl)` / **union** of the worker's scan intervals (`suma_zlaczonych_okresow()`), i.e. pieces per hour of *scanning* (breaks don't reduce it — label it so). **Computed only in `policz_wydajnosc()`** — overview, per-worker `norma` and both charts go through it.
+- **Training packages** (operations, 2026-10-06): a package whose `scan_end_at` lies inside one of the worker's training periods (`okresy_szkolen()`; open period capped at now / 12 h) counts as **exactly 100 % of the target of the package's local day** — its scan time × `cel(dzien)` instead of real pieces. **Only those packages**: the rest of the day stays real, and training with no packages adds nothing (not „the whole day"). Target 0 that day → real pieces. No start scan → no time, out of szt./h. Training packages are **excluded from the team mean**. Row/point fields: `paczek_szkolenia`, `godzin_szkolenia`; `sztuk`/bars stay real, so `szt_h` ≠ `sztuk/godzin` for trainers (🎓 badge explains).
+- **Target history** `HistoriaCelu(dzien, wartosc)` — `cele_dzienne()` = latest row ≤ day. `PUT /api/stats/target` first seeds (`zasiej_historie_celu()`, also in `init_db()`) the old value from `POCZATEK_HISTORII_CELU`, then upserts today. Without the seed the first change would reprice every past training day.
 - Baseline = **team mean for the period** (`srednia_szt_h` = all pieces / all scanning hours), never a stored norm. Includes the „za mało danych" bucket (hour-weighted); cartons without measured time excluded. `proc_sredniej` = vs colleagues, and the UI says so.
 - `min_packages_rank` (3) gates **ranking and verdicts only**, not the mean; below it → „za mało danych" (never hidden).
 - `AppSetting`: `norm_good_pct` (110, 🟢, `>=`), `norm_weak_pct` (90, 🔴, `<=`), `min_packages_rank` (3) — via `PUT /api/settings`, `/admin/settings`.

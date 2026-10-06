@@ -1,5 +1,16 @@
 # LogiStat — Changelog
 
+## 2026-10-06 — Osoba szkoląca i „Szkolenie"
+
+### Dodane
+- **🎓 Szkolący** — znacznik na koncie (Użytkownicy). Kolumna `user.is_trainer`.
+- **Kafelek „🎓 Szkolenie"** w Czasie pracy (tylko osoby szkolące). Szkolenie to czas pracy —
+  nie pomniejsza go; osobna kolumna w Czasach pracowników. Nie nakłada się z przerwą ani „Inne".
+- **Normy:** paczki zakończone w czasie szkolenia liczą się szkolącemu jako 100% celu szt./h
+  z dnia paczki i nie wchodzą do średniej zespołu. Reszta dnia — z prawdziwych sztuk.
+- **Historia celu** (`historia_celu`): cel obowiązujący danego dnia; zmiana celu nie
+  przelicza starych dni.
+
 ## 2026-10-05 — Data pliku, autozapis, kolory zmian, nazwy kategorii (PR #19, #20)
 
 Wdrożone na `.31` 2026-10-05 (`main` `34eb44e`), backup przed:
