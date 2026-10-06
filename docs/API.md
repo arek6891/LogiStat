@@ -183,13 +183,15 @@ Ustawia docelową wydajność (**lider+**, inaczej niż admin-only `PUT /api/set
 { "target_szt_h": 250 }
 ```
 
-Liczba całkowita ≥ 0; **0 wyłącza** kolumnę celu. Endpoint przyjmuje **wyłącznie ten klucz** — nie jest furtką do reszty `AppSetting`. Uzasadnienie uprawnień: cel jest informacyjny (koloruje kolumnę), nie dotyka rozliczeń ani żadnej blokady, a poprzeczkę ustala lider prowadzący zmianę.
+Liczba całkowita ≥ 0; **0 wyłącza** kolumnę celu. Zapis trafia też do `historia_celu` jako cel od dziś (ostatni zapis dnia wygrywa) — paczki ze szkolenia liczą się celem z dnia paczki. Endpoint przyjmuje **wyłącznie ten klucz** — nie jest furtką do reszty `AppSetting`. Uzasadnienie uprawnień: cel jest informacyjny (koloruje kolumnę), nie dotyka rozliczeń ani żadnej blokady, a poprzeczkę ustala lider prowadzący zmianę.
 
 **Skok do paczek:** każdy wiersz przeglądu linkuje do `/paczki?osoba=<id>&date_typ=koniec&date_from=&date_to=` — paczki, które złożyły się na wynik, w tym samym zakresie dat. `date_typ=koniec` sam zdejmuje domyślne „tylko niezrobione".
 
 **`za_malo_danych`** — osoby poniżej `min_packages_rank` paczek albo bez zmierzonego czasu (`szt_h: null`). Nie są ukrywane: pracowały, tylko nie ma z czego liczyć średniej. Bez tego progu konto z jedną błyskawiczną paczką ląduje na szczycie rankingu (na `.31` realnie: 26 038 szt./h przy 2 paczkach).
 
 Zakres dat filtruje `scan_end_at` przez `local_day_bounds()`, górna granica półotwarta.
+
+**Szkolenie (🎓):** czas paczki nakładający się na szkolenie osoby szkolącej liczy się jako 100% celu z dnia paczki; reszta paczki — proporcjonalny ułamek prawdziwych sztuk. Te fragmenty nie wchodzą do `srednia_szt_h`. Wiersz (i punkty wykresów `/api/stats/user`) ma `paczek_szkolenia` i `godzin_szkolenia`; `sztuk` zostaje prawdziwe, więc u szkolącego `szt_h` ≠ `sztuk / godzin`.
 
 ## Normy — statystyki użytkownika
 
@@ -277,7 +279,8 @@ linkuje dashboard (`user_id` jest w `workers_today` i `unattributed.workers`).
   "role": "operator",
   "password": "",
   "worker_type_id": 1,
-  "shift_group_id": 4
+  "shift_group_id": 4,
+  "is_trainer": false
 }
 ```
 
@@ -326,9 +329,9 @@ Ekran: `/admin/user-options` (Panel Admina → Listy użytkowników).
 
 | Method | URL | Opis |
 |--------|-----|------|
-| POST | `/api/time/scan` | Skan kodu pracownika na `/time-tracking`. Body: `{ "barcode": "...", "mode": "break" \| "other" \| "work_end" }`. Tryby `break` i `other` **przełączają** stan (liczony z `count(*_start) - count(*_end)`, brak flagi na User); `work_end` zamyka pracę i **auto-domyka otwartą przerwę oraz otwarte „Inne"**. Przerwa i „Inne" nie mogą trwać jednocześnie → 409. Brak kodu / nieznany tryb → 400, nieznany pracownik → 404, brak obecności dziś → 400, praca już zakończona → 409. |
-| GET | `/api/worker-times?date=YYYY-MM-DD` | Podsumowanie per pracownik: `shift_in`, `break_minutes`, `other_minutes`, `work_minutes`, `breaks[]`, `others[]`, `on_break`, `on_other`, `work_ended`, `events[]`. Jeden wpis na pracownika — brana jest **najwcześniejsza** obecność w danym dniu. Czas „Inne" **pomniejsza `work_minutes` tak samo jak przerwa**, ale jest raportowany osobno. Filtr po pracowniku i filtr błędów działają w przeglądarce na tych danych — API ich nie przyjmuje. |
-| POST | `/api/worker-times/event` | Ręczne zdarzenie (korekta). Body: `user_id`, `shift_id`, `event_type` (`break_start` \| `break_end` \| `other_start` \| `other_end` \| `work_end`), `timestamp` (naive UTC ISO), opcjonalnie `note`. Ustawia `is_manual=True` i `recorded_by`. → **201**. Nieznany `user_id`/`shift_id` lub zły typ → 400. |
+| POST | `/api/time/scan` | Skan kodu pracownika na `/time-tracking`. Body: `{ "barcode": "...", "mode": "break" \| "other" \| "training" \| "work_end" }`. Tryby `break`, `other` i `training` **przełączają** stan (liczony z `count(*_start) - count(*_end)`, brak flagi na User); `work_end` zamyka pracę i **auto-domyka otwartą przerwę, „Inne" i szkolenie**. Przerwa, „Inne" i szkolenie nie mogą trwać jednocześnie → 409. Rozpoczęcie szkolenia przez osobę bez `is_trainer` → **403** (zakończenie trwającego — zawsze). Brak kodu / nieznany tryb → 400, nieznany pracownik → 404, brak obecności dziś → 400, praca już zakończona → 409. |
+| GET | `/api/worker-times?date=YYYY-MM-DD` | Podsumowanie per pracownik: `shift_in`, `break_minutes`, `other_minutes`, `training_minutes`, `work_minutes`, `breaks[]`, `others[]`, `trainings[]`, `on_break`, `on_other`, `on_training`, `work_ended`, `events[]`. Jeden wpis na pracownika — brana jest **najwcześniejsza** obecność w danym dniu. Czas „Inne" **pomniejsza `work_minutes` tak samo jak przerwa**, ale jest raportowany osobno. Szkolenie **nie pomniejsza** `work_minutes` (to praca). Filtr po pracowniku i filtr błędów działają w przeglądarce na tych danych — API ich nie przyjmuje. |
+| POST | `/api/worker-times/event` | Ręczne zdarzenie (korekta). Body: `user_id`, `shift_id`, `event_type` (`break_start` \| `break_end` \| `other_start` \| `other_end` \| `training_start` \| `training_end` \| `work_end`), `timestamp` (naive UTC ISO), opcjonalnie `note`. Ustawia `is_manual=True` i `recorded_by`. → **201**. Nieznany `user_id`/`shift_id` lub zły typ → 400; `training_start` dla osoby bez `is_trainer` → 400. |
 | PUT | `/api/worker-times/event/<id>` | Edycja zdarzenia (`event_type`, `timestamp`, `note`) |
 | DELETE | `/api/worker-times/event/<id>` | Usunięcie zdarzenia |
 

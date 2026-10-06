@@ -312,3 +312,34 @@ def test_dwa_zapisy_celu_jednego_dnia(leader_client):
 
     assert logistat.cele_dzienne()(logistat.local_today()) == 130
     assert logistat.HistoriaCelu.query.count() == 2   # zasiew + dzis
+
+
+def test_paczka_zaczeta_przed_szkoleniem_zalicza_tylko_czas_w_szkoleniu(leader_client):
+    """Paczka 8:05–10:05 (120 szt., 60 szt./h), szkolenie od 10:00: 5 minut celu
+    (100 szt./h), reszta z prawdziwych sztuk — nie 2 h po 100."""
+    ustaw_cel(100)
+    t = szkolacy()
+    szkolenie(t, DZIEN, chwila(DZIEN, 10), chwila(DZIEN, 12))
+    paczka(t, 120, chwila(DZIEN, 8, 5), chwila(DZIEN, 10, 5))
+
+    dane = przeglad(leader_client)
+    r = wiersz(dane, 'Trener')
+
+    assert r['paczek_szkolenia'] == 1
+    assert r['szt_h'] == 61.7                  # (115 + 100 * 5/60) / 2 h
+    assert r['godzin_szkolenia'] == round(5 / 60, 2)
+    assert dane['srednia_szt_h'] == 60         # tylko czesc poza szkoleniem
+
+
+def test_paczka_w_szkoleniu_rownolegle_z_inna_nie_liczy_czasu_dwa_razy(leader_client):
+    """Mianownik to jedna suma zlaczonych okresow wszystkich paczek."""
+    ustaw_cel(100)
+    t = szkolacy()
+    szkolenie(t, DZIEN, chwila(DZIEN, 8), chwila(DZIEN, 9))
+    paczka(t, 10, chwila(DZIEN, 8), chwila(DZIEN, 9))
+    paczka(t, 10, chwila(DZIEN, 8), chwila(DZIEN, 9))
+
+    r = wiersz(przeglad(leader_client), 'Trener')
+
+    assert r['godzin'] == 1.0
+    assert r['szt_h'] == 100                   # cel, nie 2 × cel

@@ -15,7 +15,7 @@ docker compose down
 # Tests — need a Postgres; the compose file below provides one (port 55432, tmpfs)
 docker compose -f docker-compose.test.yml up -d
 pip install -r requirements-dev.txt
-pytest                               # 516 tests
+pytest                               # 518 tests
 docker compose -f docker-compose.test.yml down
 LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://u:p@host:5432/db pytest   # another DB
 # On .32 there is no pytest/venv — use the prebuilt runner image instead:
@@ -119,7 +119,7 @@ Default admin after seed: `admin` / `admin123` — override with `ADMIN_PASSWORD
 
 **Normy (`/stats`) — overview `GET /api/stats/overview?date_from=&date_to=` (leader+)** — built on **finished packages, not `DailyStat`**.
 - Metric = `sum(stueckzahl)` / **union** of the worker's scan intervals (`suma_zlaczonych_okresow()`), i.e. pieces per hour of *scanning* (breaks don't reduce it — label it so). **Computed only in `policz_wydajnosc()`** — overview, per-worker `norma` and both charts go through it.
-- **Training packages** (operations, 2026-10-06): a package whose `scan_end_at` lies inside one of the worker's training periods (`okresy_szkolen()`; open period capped at now / 12 h) counts as **exactly 100 % of the target of the package's local day** — its scan time × `cel(dzien)` instead of real pieces. **Only those packages**: the rest of the day stays real, and training with no packages adds nothing (not „the whole day"). Target 0 that day → real pieces. No start scan → no time, out of szt./h. Training packages are **excluded from the team mean**. Row/point fields: `paczek_szkolenia`, `godzin_szkolenia`; `sztuk`/bars stay real, so `szt_h` ≠ `sztuk/godzin` for trainers (🎓 badge explains).
+- **Training** (operations, 2026-10-06): 100 % of the target **only for time spent training, only for packages done in it**. The part of a package's scan interval that overlaps the worker's training periods (`okresy_szkolen()`; open period capped at now / 12 h) is credited as time × `cel(local day of scan_end_at)`; the rest of that package = the proportional share of its real pieces. Credited time is the **union** of those fragments per day (parallel packages don't get the same minute twice); the denominator is still the union of all scan intervals. Training with no packages adds nothing — **not „the whole day"** (rejected: a few minutes would turn a weak day into 100 %). Target 0 that day → real pieces. No start scan + end in training → out of szt./h. Training fragments are **excluded from the team mean**. Row/point fields: `paczek_szkolenia`, `godzin_szkolenia`; `sztuk`/bars stay real, so `szt_h` ≠ `sztuk/godzin` for trainers (🎓 badge explains).
 - **Target history** `HistoriaCelu(dzien, wartosc)` — `cele_dzienne()` = latest row ≤ day. `PUT /api/stats/target` first seeds (`zasiej_historie_celu()`, also in `init_db()`) the old value from `POCZATEK_HISTORII_CELU`, then upserts today. Without the seed the first change would reprice every past training day.
 - Baseline = **team mean for the period** (`srednia_szt_h` = all pieces / all scanning hours), never a stored norm. Includes the „za mało danych" bucket (hour-weighted); cartons without measured time excluded. `proc_sredniej` = vs colleagues, and the UI says so.
 - `min_packages_rank` (3) gates **ranking and verdicts only**, not the mean; below it → „za mało danych" (never hidden).
