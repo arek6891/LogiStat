@@ -115,6 +115,8 @@
 - [x] **Kolory zmian** (2026-10-05) — Zmiana 1 niebieska, Zmiana 2 pomarańczowa na wszystkich ekranach ze zmianą
 - [x] **Autozapis** (2026-10-05) — Przydzielanie, Wpis ilości, Forecast, Statystyki ogólne bez przycisku „Zapisz"; ostrzeżenie o drugim liderze na tej samej zmianie; okna nie gubią danych po kliknięciu obok; Stawki zapisują się pod wczytany miesiąc
 - [x] **Nazwy kategorii ustawiane przez admina** (2026-10-05) — „Polska (English)", `/admin/category-labels`
+- [x] **Szkolący i osoby szkolone** (2026-10-08) — zakładka 🎓 Szkolenie (szkolący + min. 1 szkolony, koniec wszystkich naraz); szkolący 100% celu dnia za czas szkolenia, szkoleni poza normami i średnią; historia celu
+- [x] **Forecast: różnica = Actual − Forecast** (2026-10-08) — minus = przyjechało mniej niż plan
 - [x] **Data pliku** (2026-10-05) — okno daty przy imporcie, główna data pracy i klucz rozliczenia, grupowa poprawa daty, Dashboard Dziś / Wybrany dzień / Podsumowanie niezrobionych; migracja `.31` zweryfikowana
 
 ---
