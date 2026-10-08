@@ -340,7 +340,7 @@ Ekran: `/admin/user-options` (Panel Admina → Listy użytkowników).
 
 | Method | URL | Opis |
 |--------|-----|------|
-| GET | `/api/forecast/chart-data?date_from=&date_to=` | Prognoza vs wykonanie, dzień po dniu. Zwraca listę `{date, forecast, actual, diff, notes}`. `actual` = suma `stueckzahl` paczek z daną **datą pliku** (do 2026-10: `ziel_datum`). Domyślny zakres: −7 / +14 dni. Zła data → cichy powrót do domyślnej. |
+| GET | `/api/forecast/chart-data?date_from=&date_to=` | Prognoza vs wykonanie, dzień po dniu. Zwraca listę `{date, forecast, actual, diff, notes}`, gdzie **`diff = actual − forecast`** (minus = przyjechało mniej niż plan; do 2026-10-08 było odwrotnie). Ten sam znak w eksporcie Excel (kolumna „Różnica (A-F)”). `actual` = suma `stueckzahl` paczek z daną **datą pliku** (do 2026-10: `ziel_datum`). Domyślny zakres: −7 / +14 dni. Zła data → cichy powrót do domyślnej. |
 | POST | `/api/forecast/save` | Zapis prognozy. Body: obiekt **albo lista** obiektów `{date, quantity, notes}`. Upsert po dacie. Wiersz z niesparsowalną datą jest **pomijany po cichu**; nieliczbowe `quantity` → 400. Zwraca `{message, saved}`. |
 | GET | `/api/forecast/export?date_from=&date_to=` | Eksport XLSX z wykresem słupkowym (forecast vs actual) |
 

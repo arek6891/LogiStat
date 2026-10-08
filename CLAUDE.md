@@ -15,7 +15,7 @@ docker compose down
 # Tests — need a Postgres; the compose file below provides one (port 55432, tmpfs)
 docker compose -f docker-compose.test.yml up -d
 pip install -r requirements-dev.txt
-pytest                               # 495 tests
+pytest                               # 498 tests
 docker compose -f docker-compose.test.yml down
 LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://u:p@host:5432/db pytest   # another DB
 # On .32 there is no pytest/venv — use the prebuilt runner image instead:
@@ -64,6 +64,7 @@ Default admin after seed: `admin` / `admin123` — override with `ADMIN_PASSWORD
 - **Shift attendance:** leader scans badges → `ShiftAttendance` per `Shift`.
 - **Activity assignment:** drag operators to activities → `ActivityAssignment`. `POST /api/assignment/save` **replaces the whole shift** (delete + insert), so: it locks the `Shift` row (`with_for_update()`), and `GET /api/assignment/data` returns `wersja` (`wersja_przydzialu()` — hash of the sorted `(user_id, activity_id)` pairs, no column) which the client sends back; a stale one → **409 + `konflikt: true`**, nothing overwritten (two leaders on one shift). No `wersja` in the body = old behaviour (`tests/test_przydzielanie_wersja.py`). AI suggestions save immediately too, so applying them over a non-empty board asks first.
 - **Daily stats:** leader enters quantities → `DailyStat` (audit trail).
+- **Forecast:** `diff` = **Actual − Forecast** everywhere (API `/api/forecast/chart-data`, table, summary, chart, Excel „Różnica (A-F)") — minus = arrived less than planned. It was F−A until 2026-10-08 and operations read +70 000 as a surplus.
 - **AI suggestions** (`/api/assignment/suggestions`): greedy, 30-day average `DailyStat.quantity` per user × activity.
 
 **Package scanning — two modules:**

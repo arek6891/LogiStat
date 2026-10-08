@@ -1,5 +1,12 @@
 # LogiStat — Changelog
 
+## 2026-10-08 — Forecast: znak różnicy
+
+### Poprawione
+- **Forecast: różnica = Actual − Forecast.** Plan 90 000, przyjechało 20 000 pokazywało
+  +70 000; teraz −70 000 (minus = przyjechało mniej niż plan). Tabela, podsumowanie,
+  wykres i eksport Excel (kolumna „Różnica (A-F)").
+
 ## 2026-10-05 — Data pliku, autozapis, kolory zmian, nazwy kategorii (PR #19, #20)
 
 Wdrożone na `.31` 2026-10-05 (`main` `34eb44e`), backup przed:

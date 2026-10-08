@@ -174,7 +174,7 @@
         <div class="value" id="sumActual">—</div>
     </div>
     <div class="summary-card dif">
-        <div class="label">Różnica (F-A)</div>
+        <div class="label">Różnica (A−F)</div>
         <div class="value" id="sumDiff">—</div>
     </div>
 </div>
@@ -185,7 +185,7 @@
         <canvas id="barChart" height="220"></canvas>
     </div>
     <div class="chart-card">
-        <h3>Różnica (Forecast − Actual)</h3>
+        <h3>Różnica (Actual − Forecast)</h3>
         <canvas id="diffChart" height="220"></canvas>
     </div>
 </div>
@@ -203,7 +203,7 @@
                     <th>Dzień tygodnia</th>
                     <th>Forecast (plan)</th>
                     <th>Actual (paczki)</th>
-                    <th>Różnica</th>
+                    <th title="Actual − Forecast: minus = przyjechało mniej niż plan">Różnica (A−F)</th>
                     <th>Notatki</th>
                 </tr>
             </thead>
@@ -283,7 +283,7 @@ function updateDiff(input) {
     if (!row) return;
     const newFc = parseInt(input.value) || 0;
     row.forecast = newFc;
-    const diff = newFc - row.actual;
+    const diff = row.actual - newFc;
     row.diff = diff;
     const diffCell = document.querySelector(`[data-diff="${d}"]`);
     if (diffCell) {
@@ -296,7 +296,7 @@ function updateDiff(input) {
 function renderSummary(data) {
     const sumFc  = data.reduce((s, r) => s + (r.forecast || 0), 0);
     const sumAct = data.reduce((s, r) => s + (r.actual  || 0), 0);
-    const sumDif = sumFc - sumAct;
+    const sumDif = sumAct - sumFc;
     document.getElementById('sumForecast').textContent = sumFc.toLocaleString('pl');
     document.getElementById('sumActual').textContent   = sumAct.toLocaleString('pl');
     const el = document.getElementById('sumDiff');
@@ -340,7 +340,7 @@ function renderCharts(data) {
         data: {
             labels,
             datasets: [{
-                label: 'Różnica (F-A)',
+                label: 'Różnica (A−F)',
                 data: diffVals,
                 backgroundColor: diffColors,
                 borderRadius: 4
