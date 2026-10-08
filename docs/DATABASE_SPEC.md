@@ -331,11 +331,12 @@ Eventy czasu pracy pracownika: rozpoczęcie/zakończenie przerwy, koniec pracy. 
 | id | SERIAL | PK | |
 | user_id | INTEGER | FK → user.id NOT NULL | |
 | shift_id | INTEGER | FK → shift.id NOT NULL | |
-| event_type | VARCHAR(20) | NOT NULL | `break_start` / `break_end` / `other_start` / `other_end` / `training_start` / `training_end` / `work_end` |
+| event_type | VARCHAR(20) | NOT NULL | `break_start` / `break_end` / `other_start` / `other_end` / `training_start` / `training_end` / `trainee_start` / `trainee_end` / `work_end` |
 | timestamp | TIMESTAMP | NOT NULL DEFAULT NOW() | |
 | recorded_by | INTEGER | FK → user.id | |
 | is_manual | BOOLEAN | DEFAULT FALSE | Korekta ręczna przez lidera |
 | note | VARCHAR(300) | | |
+| training_lead_id | INTEGER | FK → user.id, NULL | Tylko `trainee_*`: kto prowadzi szkolenie (2026-10-08, `migrate_columns()`) |
 
 **Indeksy:** `(user_id, shift_id)`, `shift_id`
 

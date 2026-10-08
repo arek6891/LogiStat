@@ -194,3 +194,15 @@ Nazwy siedza w `AppSetting` (`kategoria_pl:<kat>`), nie w nowej kolumnie ani tab
 
 **Historia celu.** „Norma" = cel szt./h (`target_szt_h`), ktory do tej pory byl jedna biezaca wartoscia. Paczka ze szkolenia ma byc liczona celem z TEGO dnia, wiec `HistoriaCelu` (nowa tabela, `create_all()`). Pulapka: dzien sprzed pierwszego wpisu musi miec wartosc sprzed zmiany, inaczej pierwsza zmiana celu po wdrozeniu przeliczylaby wstecz wszystkie szkolenia — stad zasiew biezacej wartosci od 2000-01-01 przy starcie i przed pierwszym zapisem. Cel 0 danego dnia → paczki ze szkolenia licza sie normalnie (nie ma czego zaliczyc). Kolumna „% celu" w przegladzie nadal uzywa biezacego celu — przy zmianie celu w trakcie okresu szkolacy nie wyjdzie rowno 100%.
 
+### Osoby szkolone (2026-10-08)
+
+Operacje dopisaly: w zakladce Szkolenie oprocz szkolacego skanuje sie tez osoby szkolone; one i ich paczki z czasu szkolenia nie wchodza do norm i srednich; szkoleni koncza razem ze szkolacym.
+
+**Szkolenie zaczyna sie od pierwszego szkolonego.** Skan szkolacego niczego nie zapisuje — `training_start` (szkolacy) i `trainee_start` (szkolony) powstaja razem przy pierwszej osobie szkolonej, z tym samym czasem. Bez tego sam skan szkolacego dawalby mu 100% celu bez nikogo do szkolenia. Stary przelacznik `mode=training` w `/api/time/scan` zostal wylaczony, bo omijalby ten wymog. Kolejne osoby mozna dopisac w trakcie (spoznienia). Pierwszy szkolony z dwoch stacji naraz dawal dwa `training_start` — blokada wiersza `User` szkolacego (test z dwoma watkami w `test_szkolenie.py`, bez blokady pada).
+
+**Link `training_lead_id`.** Dwa szkolenia moga trwac jednoczesnie, wiec koniec jednego musi zamknac tylko jego szkolonych. Kolumna na `worker_time_event` (FK do `"user"` — cudzyslow takze w `REFERENCES`, inaczej try/except w `migrate_columns()` polyka blad skladni). Jedna funkcja konczy szkolenie (`zakoncz_szkolenie()`): przycisk i „Koniec pracy" szkolacego. Reczna korekta `training_end` na Czasach pracownikow NIE domyka szkolonych — to swiadoma korekta, lider poprawia ich osobno.
+
+**Ponowny skan szkolacego nie konczy szkolenia.** Ze skanera potrafi przyjsc ten sam kod kilka razy (incydent z Czasow paczek), wiec konczy tylko przycisk z potwierdzeniem; skan szkolacego przypomina o przycisku.
+
+**Szkolony w Normach.** Fragment czasu paczki przypadajacy na bycie szkolonym wypada w calosci — czas i proporcjonalna czesc sztuk (paczka bez „Start" zakonczona w szkoleniu — cala). Liczone przed zaliczaniem szkolacemu i niezaleznie od celu (cel 0 nie moze przywrocic paczek szkolonego). Prog `min_packages_rank` liczy tylko paczki, ktore zostaly w ocenie — inaczej szkolony z 3 wylaczonymi i 1 zwykla paczka trafialby do rankingu na jednej paczce. Gdy wypada wszystko — wlasny powod „szkolony" zamiast mylacego „brak czasu". `paczki_podsumowanie` (ile paczek, srednie) zostaje prawdziwe — to nie norma.
+

@@ -24,6 +24,11 @@
                placeholder="Skanuj kod pracownika..." autofocus autocomplete="off">
     </div>
 
+    <!-- Szkolenie: wybrany szkolacy i jego szkoleni -->
+    <div id="szkoleniePanel" class="card" style="display:none;max-width:560px;margin:0 auto 1.5rem;text-align:left;"></div>
+    <!-- Szkolenie: trwajace szkolenia (przejecie z innej stacji) -->
+    <div id="aktywneSzkolenia" style="display:none;max-width:560px;margin:0 auto 1.5rem;text-align:left;"></div>
+
     <!-- Licznik sesji -->
     <div class="scanned-count" id="sessionCount" style="display:none;">
         Zdarzeń dziś: <strong id="countVal">0</strong>
@@ -39,12 +44,16 @@
     let mode = 'break';
     let count = 0;
     let scanTimer = null;
+    let zajete = false;
+    // Szkolenie: wybrany szkolacy {id, display_name, barcode_id} albo null.
+    let trener = null;
+    let stanSzkolenia = null;
 
     const scanInput = document.getElementById('scanInput');
     const LABELS = {
         break:    { badge: '☕', label: 'Skanuj aby wejść / wyjść z przerwy' },
         other:    { badge: '🚪', label: 'Skanuj aby wyjść / wrócić — Inne (np. wyjście do HR)' },
-        training: { badge: '🎓', label: 'Skanuj aby rozpocząć / zakończyć szkolenie (tylko osoby szkolące)' },
+        training: { badge: '🎓', label: 'Zeskanuj kod osoby szkolącej' },
         work_end: { badge: '🏁', label: 'Skanuj aby zarejestrować koniec pracy' },
     };
     const EVENT_COLORS = {
@@ -54,12 +63,14 @@
         other_end:   'var(--success)',
         training_start: 'var(--info)',
         training_end:   'var(--success)',
+        trainee_start:  'var(--info)',
         work_end:    'var(--danger)',
     };
     const EVENT_ICONS = {
         break_start: '☕', break_end: '✅',
         other_start: '🚪', other_end: '✅',
         training_start: '🎓', training_end: '✅',
+        trainee_start: '🎓',
         work_end: '🏁',
     };
     const EVENT_LABELS = {
@@ -69,16 +80,20 @@
         other_end:   'Powrót z „Inne"',
         training_start: 'Początek szkolenia',
         training_end:   'Koniec szkolenia',
+        trainee_start:  'Dołączył/a do szkolenia',
         work_end:    'Koniec pracy',
     };
 
     function switchMode(m) {
         mode = m;
+        trener = null;
+        odswiezSzkolenie();
         ['break','other','training','work_end'].forEach(t => {
             document.getElementById('tab-' + t.replace('_','-')).classList.toggle('active', t === m);
         });
         document.getElementById('modeBadge').textContent = LABELS[m].badge;
         document.getElementById('modeLabel').textContent  = LABELS[m].label;
+        if (m === 'training') wczytajAktywne();
         scanInput.focus();
     }
 
@@ -97,6 +112,18 @@
     scanInput.addEventListener('blur', () => setTimeout(() => scanInput.focus(), 100));
 
     async function doScan(barcode) {
+        // Jedno zadanie naraz — skaner potrafi wyslac ten sam kod kilka razy.
+        if (zajete) { showToast('Chwila — poprzedni skan jeszcze się zapisuje.', 'warning'); return; }
+        zajete = true;
+        try {
+            if (mode === 'training') await skanSzkolenia(barcode);
+            else await skanCzasu(barcode);
+        } finally {
+            zajete = false;
+        }
+    }
+
+    async function skanCzasu(barcode) {
         try {
             const res = await fetch('/api/time/scan', {
                 method: 'POST',
@@ -119,6 +146,173 @@
         } catch {
             showToast('Błąd połączenia.', 'error');
         }
+    }
+
+    // ── Szkolenie ────────────────────────────────────────────────────────────
+    // 1) skan szkolacego (nic nie zapisuje), 2) skan osob szkolonych — pierwsza
+    // zaczyna szkolenie, kolejne dolaczaja takze w trakcie, 3) „Zakończ
+    // szkolenie" — wszyscy naraz. Ponowny skan szkolacego NIE konczy (skaner
+    // potrafi powtorzyc kod), tylko przypomina o przycisku.
+    async function postJson(url, body) {
+        const res = await fetch(url, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        let data = {};
+        try { data = await res.json(); } catch { data = { error: 'Błąd serwera.' }; }
+        return { res, data };
+    }
+
+    async function skanSzkolenia(barcode) {
+        try {
+            if (!trener) {
+                const { res, data } = await postJson('/api/time/training/trener', { barcode });
+                if (!res.ok) { bladSkanu(barcode, data.error, res.status); return; }
+                trener = data.trener;
+                stanSzkolenia = data;
+                showToast(data.trwa ? `${trener.display_name} — szkolenie trwa, możesz dopisać osoby.`
+                                    : `${trener.display_name} — teraz zeskanuj osoby szkolone.`, 'success');
+                odswiezSzkolenie();
+                return;
+            }
+            if (barcode === trener.barcode_id) {
+                showToast('To osoba szkoląca. Szkolenie kończy przycisk „Zakończ szkolenie".', 'warning');
+                return;
+            }
+            const { res, data } = await postJson('/api/time/training/szkolony',
+                                                 { trener_id: trener.id, barcode });
+            if (!res.ok) { bladSkanu(barcode, data.error, res.status); return; }
+            stanSzkolenia = data;
+            showToast(data.message, 'success');
+            const nowy = data.szkoleni[data.szkoleni.length - 1];
+            dodajKarte('var(--info)', '🎓', nowy ? nowy.display_name : '', `Szkolony/a · prowadzi ${trener.display_name}`);
+            odswiezSzkolenie();
+        } catch {
+            showToast('Błąd połączenia.', 'error');
+        }
+    }
+
+    async function zakonczSzkolenie() {
+        if (!trener || zajete) return;
+        const n = stanSzkolenia ? stanSzkolenia.szkoleni.length : 0;
+        if (!confirm(`Zakończyć szkolenie — ${trener.display_name} i ${n} os. szkolonych?`)) return;
+        zajete = true;
+        try {
+            const { res, data } = await postJson('/api/time/training/koniec', { trener_id: trener.id });
+            if (!res.ok) { showToast(data.error, 'error'); return; }
+            showToast(data.message, 'success');
+            dodajKarte('var(--success)', '✅', trener.display_name, 'Koniec szkolenia' +
+                (data.szkoleni.length ? ' · szkoleni: ' + data.szkoleni.join(', ') : ''));
+            trener = null;
+            odswiezSzkolenie();
+            wczytajAktywne();
+        } catch {
+            showToast('Błąd połączenia.', 'error');
+        } finally {
+            zajete = false;
+            scanInput.focus();
+        }
+    }
+
+    function zmienSzkolacego() {
+        trener = null;
+        odswiezSzkolenie();
+        wczytajAktywne();
+        scanInput.focus();
+    }
+
+    function odswiezSzkolenie() {
+        const panel = document.getElementById('szkoleniePanel');
+        const label = document.getElementById('modeLabel');
+        if (mode !== 'training' || !trener) {
+            panel.style.display = 'none';
+            if (mode === 'training') label.textContent = LABELS.training.label;
+            return;
+        }
+        document.getElementById('aktywneSzkolenia').style.display = 'none';
+        const s = stanSzkolenia || { trwa: false, szkoleni: [] };
+        label.textContent = 'Skanuj osoby szkolone' + (s.trwa ? '' : ' — szkolenie zacznie się od pierwszej');
+        const od = s.od ? new Date(s.od).toLocaleTimeString('pl', { hour: '2-digit', minute: '2-digit' }) : '';
+        panel.style.display = '';
+        panel.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:.8rem;color:var(--text-muted);">Osoba szkoląca</div>
+                    <div style="font-weight:700;font-size:1.1rem;">🎓 ${escapeHtml(trener.display_name)}</div>
+                    <div style="font-size:.85rem;color:${s.trwa ? 'var(--info)' : 'var(--warning)'};">
+                        ${s.trwa ? 'Szkolenie trwa od ' + escapeHtml(od) : 'Czeka na pierwszą osobę szkoloną — szkolenie jeszcze nie trwa'}
+                    </div>
+                </div>
+                <div style="display:flex;gap:6px;">
+                    ${s.trwa ? '<button class="btn btn-sm" style="background:var(--danger);color:#fff;" onclick="zakonczSzkolenie()">🏁 Zakończ szkolenie</button>' : ''}
+                    <button class="btn btn-ghost btn-sm" onclick="zmienSzkolacego()">Zmień szkolącego</button>
+                </div>
+            </div>
+            <div style="margin-top:.75rem;font-size:.8rem;color:var(--text-muted);">Osoby szkolone (${s.szkoleni.length})</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">
+                ${s.szkoleni.map(u => `<span class="badge" style="background:var(--info-bg);color:var(--info);">${escapeHtml(u.display_name)}</span>`).join('')
+                  || '<span style="color:var(--text-muted);font-size:.85rem;">— nikt jeszcze —</span>'}
+            </div>
+            <div style="margin-top:.6rem;font-size:.75rem;color:var(--text-muted);">
+                Paczki osób szkolonych z czasu szkolenia nie wchodzą do norm i średniej.
+                Szkoleni kończą szkolenie razem z osobą szkolącą.
+            </div>`;
+    }
+
+    async function wczytajAktywne() {
+        const el = document.getElementById('aktywneSzkolenia');
+        if (mode !== 'training' || trener) { el.style.display = 'none'; return; }
+        try {
+            const res = await fetch('/api/time/training/aktywne');
+            const data = await res.json();
+            if (mode !== 'training' || trener || !res.ok || !data.szkolenia.length) {
+                el.style.display = 'none'; return;
+            }
+            window._aktywne = data.szkolenia;
+            el.style.display = '';
+            el.innerHTML = '<div style="font-size:.8rem;color:var(--text-muted);margin-bottom:4px;">Trwające szkolenia — kliknij, aby dopisać osoby lub zakończyć</div>'
+                + data.szkolenia.map((s, i) => `
+                <div class="scanned-card js-aktywne" data-indeks="${i}" style="cursor:pointer;border-left:3px solid var(--info);">
+                    <div class="user-avatar" style="background:var(--info);">🎓</div>
+                    <div class="user-info">
+                        <div class="user-name">${escapeHtml(s.trener.display_name)}</div>
+                        <div class="user-time">od ${escapeHtml(new Date(s.od).toLocaleTimeString('pl', { hour: '2-digit', minute: '2-digit' }))}
+                            · szkoleni: ${s.szkoleni.map(u => escapeHtml(u.display_name)).join(', ')}</div>
+                    </div>
+                </div>`).join('');
+        } catch { el.style.display = 'none'; }
+    }
+
+    document.getElementById('aktywneSzkolenia').addEventListener('click', (e) => {
+        const karta = e.target.closest('.js-aktywne');
+        if (karta) wybierzAktywne(parseInt(karta.dataset.indeks, 10));
+    });
+
+    function wybierzAktywne(i) {
+        const s = (window._aktywne || [])[i];
+        if (!s) return;
+        trener = s.trener;
+        stanSzkolenia = s;
+        odswiezSzkolenie();
+        scanInput.focus();
+    }
+
+    function bladSkanu(barcode, blad, status) {
+        showToast(blad, status === 409 ? 'warning' : 'error');
+        addCard(null, barcode, blad, true);
+    }
+
+    function dodajKarte(kolor, ikona, nazwa, opis) {
+        const card = document.createElement('div');
+        card.className = 'scanned-card';
+        card.style.borderLeft = `3px solid ${kolor}`;
+        card.innerHTML = `
+            <div class="user-avatar" style="background:${kolor};">${ikona}</div>
+            <div class="user-info">
+                <div class="user-name">${escapeHtml(nazwa)}</div>
+                <div class="user-time">${escapeHtml(opis)} · ${new Date().toLocaleTimeString('pl')}</div>
+            </div>`;
+        document.getElementById('eventList').prepend(card);
     }
 
     function addCard(data, barcode, errorMsg, isError) {

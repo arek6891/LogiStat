@@ -103,7 +103,7 @@ def test_lider_nie_ustawi_znacznika_liderowi(leader_client):
     assert not inny.is_trainer
 
 
-# ── kafelek „Szkolenie" ──────────────────────────────────────────────────────
+# ── zakladka „Szkolenie": szkolacy + osoby szkolone ─────────────────────────
 
 def obecny(user, minut_temu=120):
     shift = logistat.get_or_create_shift(logistat.local_today(), 1)
@@ -118,43 +118,190 @@ def skan(client, mode, barcode='T1'):
     return client.post('/api/time/scan', json={'barcode': barcode, 'mode': mode})
 
 
-def test_szkolenie_tylko_dla_szkolacego(leader_client):
+def wybierz_trenera(client, barcode='T1'):
+    return client.post('/api/time/training/trener', json={'barcode': barcode})
+
+
+def dopisz(client, trener, barcode):
+    return client.post('/api/time/training/szkolony',
+                       json={'trener_id': trener.id, 'barcode': barcode})
+
+
+def zakoncz(client, trener):
+    return client.post('/api/time/training/koniec', json={'trener_id': trener.id})
+
+
+def zdarzenia(user):
+    return [(e.event_type, e.timestamp, e.training_lead_id)
+            for e in logistat.WorkerTimeEvent.query.filter_by(user_id=user.id)
+            .order_by(logistat.WorkerTimeEvent.id)]
+
+
+def ekipa():
+    """Szkolacy T1 + dwie osoby do szkolenia (S1, S2), wszyscy obecni dzis."""
+    t = szkolacy(barcode='T1')
+    s1 = make_user('operator', username='s1', display_name='Szkolona1', barcode_id='S1')
+    s2 = make_user('operator', username='s2', display_name='Szkolona2', barcode_id='S2')
+    for u in (t, s1, s2):
+        obecny(u)
+    return t, s1, s2
+
+
+def test_szkolenia_nie_prowadzi_osoba_bez_znacznika(leader_client):
     obecny(make_user('operator', barcode_id='T1'))
-    r = skan(leader_client, 'training')
+    r = wybierz_trenera(leader_client)
     assert r.status_code == 403
     assert 'szkolącą' in r.get_json()['error']
 
 
-def test_szkolacy_wchodzi_i_wychodzi_ze_szkolenia(leader_client):
+def test_zwykly_skan_nie_zaczyna_szkolenia(leader_client):
+    """Wymog min. 1 szkolonego — stary przelacznik by go omijal."""
     obecny(szkolacy(barcode='T1'))
-    assert skan(leader_client, 'training').get_json()['event_type'] == 'training_start'
-    assert skan(leader_client, 'training').get_json()['event_type'] == 'training_end'
+    assert skan(leader_client, 'training').status_code == 400
+    assert skan(leader_client, 'trainee').status_code == 400
 
 
-def test_szkolenie_nie_naklada_sie_z_przerwa_ani_inne(leader_client):
-    obecny(szkolacy(barcode='T1'))
-    skan(leader_client, 'training')
-    for tryb in ('break', 'other'):
-        r = skan(leader_client, tryb)
-        assert r.status_code == 409 and 'szkoleniu' in r.get_json()['error']
-    skan(leader_client, 'training')                 # koniec szkolenia
-    skan(leader_client, 'break')                    # przerwa
-    r = skan(leader_client, 'training')
-    assert r.status_code == 409 and 'przerwie' in r.get_json()['error']
-    skan(leader_client, 'break')
-    skan(leader_client, 'other')
-    r = skan(leader_client, 'training')
-    assert r.status_code == 409 and 'Inne' in r.get_json()['error']
+def test_sam_skan_szkolacego_niczego_nie_zapisuje(leader_client):
+    t, _, _ = ekipa()
+    r = wybierz_trenera(leader_client)
+    assert r.status_code == 200
+    assert r.get_json()['trwa'] is False and r.get_json()['szkoleni'] == []
+    assert zdarzenia(t) == []
 
 
-def test_koniec_pracy_zamyka_szkolenie(leader_client):
-    u = szkolacy(barcode='T1')
-    shift = obecny(u)
-    skan(leader_client, 'training')
+def test_pierwszy_szkolony_zaczyna_szkolenie_w_tej_samej_chwili(leader_client):
+    t, s1, _ = ekipa()
+    r = dopisz(leader_client, t, 'S1')
+
+    assert r.status_code == 200
+    dane = r.get_json()
+    assert dane['trwa'] is True
+    assert [u['display_name'] for u in dane['szkoleni']] == ['Szkolona1']
+    (typ_t, ts_t, _), = zdarzenia(t)
+    (typ_s, ts_s, lead), = zdarzenia(s1)
+    assert (typ_t, typ_s) == ('training_start', 'trainee_start')
+    assert ts_t == ts_s and lead == t.id
+
+
+def test_szkolonego_mozna_dopisac_w_trakcie(leader_client):
+    t, s1, s2 = ekipa()
+    dopisz(leader_client, t, 'S1')
+    r = dopisz(leader_client, t, 'S2')
+
+    assert r.status_code == 200
+    assert len(r.get_json()['szkoleni']) == 2
+    assert [z[0] for z in zdarzenia(t)] == ['training_start']   # bez drugiego startu
+    assert wybierz_trenera(leader_client).get_json()['trwa'] is True
+
+
+def test_koniec_szkolenia_konczy_wszystkich_naraz(leader_client):
+    t, s1, s2 = ekipa()
+    dopisz(leader_client, t, 'S1')
+    dopisz(leader_client, t, 'S2')
+
+    r = zakoncz(leader_client, t)
+
+    assert r.status_code == 200
+    konce = [zdarzenia(u)[-1] for u in (t, s1, s2)]
+    assert [k[0] for k in konce] == ['training_end', 'trainee_end', 'trainee_end']
+    assert len({k[1] for k in konce}) == 1
+    assert zakoncz(leader_client, t).status_code == 409
+
+
+def test_koniec_pracy_szkolacego_konczy_szkolonych(leader_client):
+    t, s1, _ = ekipa()
+    dopisz(leader_client, t, 'S1')
+
     assert skan(leader_client, 'work_end').status_code == 200
-    typy = [e.event_type for e in logistat.WorkerTimeEvent.query.filter_by(
-        user_id=u.id, shift_id=shift.id).order_by(logistat.WorkerTimeEvent.id)]
-    assert typy == ['training_start', 'training_end', 'work_end']
+
+    assert [z[0] for z in zdarzenia(t)] == ['training_start', 'training_end', 'work_end']
+    assert [z[0] for z in zdarzenia(s1)] == ['trainee_start', 'trainee_end']
+
+
+def test_koniec_pracy_szkolonego_zamyka_tylko_jego(leader_client):
+    t, s1, s2 = ekipa()
+    dopisz(leader_client, t, 'S1')
+    dopisz(leader_client, t, 'S2')
+
+    skan(leader_client, 'work_end', barcode='S1')
+
+    assert [z[0] for z in zdarzenia(s1)] == ['trainee_start', 'trainee_end', 'work_end']
+    assert [u['display_name'] for u in wybierz_trenera(leader_client).get_json()['szkoleni']] \
+        == ['Szkolona2']
+
+
+def test_dwa_szkolenia_naraz_koncza_sie_osobno(leader_client):
+    t, s1, _ = ekipa()
+    t2 = szkolacy('Trener2', barcode='T2')
+    obecny(t2)
+    s3 = make_user('operator', username='s3', barcode_id='S3')
+    obecny(s3)
+    dopisz(leader_client, t, 'S1')
+    dopisz(leader_client, t2, 'S3')
+
+    zakoncz(leader_client, t)
+
+    assert zdarzenia(s1)[-1][0] == 'trainee_end'
+    assert zdarzenia(s3)[-1][0] == 'trainee_start'
+
+
+def test_szkolony_nie_wyjdzie_na_przerwe(leader_client):
+    t, _, _ = ekipa()
+    dopisz(leader_client, t, 'S1')
+    r = skan(leader_client, 'break', barcode='S1')
+    assert r.status_code == 409 and 'szkolona' in r.get_json()['error']
+
+
+def test_szkolacy_nie_wyjdzie_na_przerwe_w_trakcie(leader_client):
+    t, _, _ = ekipa()
+    dopisz(leader_client, t, 'S1')
+    r = skan(leader_client, 'break')
+    assert r.status_code == 409 and 'szkolenie' in r.get_json()['error']
+
+
+def test_bledy_przy_dopisywaniu(leader_client):
+    t, s1, s2 = ekipa()
+    nieobecny = make_user('operator', barcode_id='N1')
+    skan(leader_client, 'break', barcode='S2')                 # S2 na przerwie
+
+    assert dopisz(leader_client, t, 'XX').status_code == 404
+    assert dopisz(leader_client, t, 'T1').status_code == 400   # kod szkolacego
+    assert dopisz(leader_client, t, 'N1').status_code == 400   # nie ma go na zmianie
+    r = dopisz(leader_client, t, 'S2')
+    assert r.status_code == 409 and 'przerwie' in r.get_json()['error']
+    assert zdarzenia(t) == []                                   # nic nie zaczeto
+    dopisz(leader_client, t, 'S1')
+    r = dopisz(leader_client, t, 'S1')
+    assert r.status_code == 409 and 'już jest na tym szkoleniu' in r.get_json()['error']
+    assert nieobecny.id
+
+
+def test_szkolacy_na_przerwie_nie_zacznie(leader_client):
+    t, _, _ = ekipa()
+    skan(leader_client, 'break')
+    assert wybierz_trenera(leader_client).status_code == 409
+    assert dopisz(leader_client, t, 'S1').status_code == 409
+
+
+def test_aktywne_szkolenia(leader_client):
+    t, _, _ = ekipa()
+    assert leader_client.get('/api/time/training/aktywne').get_json()['szkolenia'] == []
+    dopisz(leader_client, t, 'S1')
+    dane = leader_client.get('/api/time/training/aktywne').get_json()['szkolenia']
+    assert [d['trener']['id'] for d in dane] == [t.id]
+    assert [u['display_name'] for u in dane[0]['szkoleni']] == ['Szkolona1']
+
+
+def test_czas_szkolonego_nie_pomniejsza_pracy(leader_client):
+    t, s1, _ = ekipa()
+    dopisz(leader_client, t, 'S1')
+    shift = logistat.get_or_create_shift(logistat.local_today(), 1)
+    wejscie = logistat.ShiftAttendance.query.filter_by(user_id=s1.id).one().scanned_at
+
+    w = logistat._compute_worker_times(s1.id, shift, wejscie)
+
+    assert w['on_trainee'] and w['work_minutes'] >= 119
+    assert len(w['trainee_periods']) == 1
 
 
 def test_szkolenie_nie_pomniejsza_czasu_pracy(flask_app):
@@ -343,3 +490,137 @@ def test_paczka_w_szkoleniu_rownolegle_z_inna_nie_liczy_czasu_dwa_razy(leader_cl
 
     assert r['godzin'] == 1.0
     assert r['szt_h'] == 100                   # cel, nie 2 × cel
+
+
+# ── Normy: osoba szkolona wypada z oceny w czasie szkolenia ─────────────────
+
+def jako_szkolony(kto, trener, dzien, od, do):
+    shift = logistat.get_or_create_shift(dzien, 1)
+    for typ, ts in (('trainee_start', od), ('trainee_end', do)):
+        logistat.db.session.add(logistat.WorkerTimeEvent(
+            user_id=kto.id, shift_id=shift.id, event_type=typ, timestamp=ts,
+            training_lead_id=trener.id))
+    logistat.db.session.commit()
+
+
+def test_paczki_szkolonego_z_czasu_szkolenia_wypadaja(leader_client):
+    t = szkolacy()
+    s = make_user('operator', username='nowa', display_name='Nowa')
+    jako_szkolony(s, t, DZIEN, chwila(DZIEN, 8), chwila(DZIEN, 10))
+    paczki_po_kolei(s, DZIEN, 8, ile=4, sztuk=1, minut=30)    # w szkoleniu, 2 szt./h
+    paczki_po_kolei(s, DZIEN, 12, ile=3, sztuk=20, minut=20)  # po szkoleniu, 60 szt./h
+
+    dane = przeglad(leader_client)
+    r = wiersz(dane, 'Nowa')
+
+    assert r['paczek'] == 7 and r['paczek_jako_szkolony'] == 4
+    assert r['paczek_do_oceny'] == 3
+    assert r['szt_h'] == 60
+    assert dane['srednia_szt_h'] == 60
+    assert r in dane['pracownicy']
+
+
+def test_szkolony_wypada_takze_bez_celu(flask_app):
+    """Wylaczenie szkolonego nie zalezy od celu (cel 0 nie wylacza wylaczenia)."""
+    ustaw_cel(0)
+    t = szkolacy()
+    s = make_user('operator', username='nowa', display_name='Nowa')
+    jako_szkolony(s, t, DZIEN, chwila(DZIEN, 8), chwila(DZIEN, 10))
+    paczki_po_kolei(s, DZIEN, 8, ile=4, sztuk=1, minut=30)
+
+    r = logistat.przeglad_zespolu(DZIEN, DZIEN)
+
+    assert r['srednia_szt_h'] is None
+    assert wiersz(r, 'Nowa')['szt_h'] is None
+
+
+def test_paczka_szkolonego_przecieta_szkoleniem_liczy_sie_czesciowo(leader_client):
+    """Paczka 9:00–11:00 (120 szt.), szkolenie do 10:00 → zostaje 1 h i 60 szt."""
+    t = szkolacy()
+    s = make_user('operator', username='nowa', display_name='Nowa')
+    jako_szkolony(s, t, DZIEN, chwila(DZIEN, 8), chwila(DZIEN, 10))
+    paczka(s, 120, chwila(DZIEN, 9), chwila(DZIEN, 11))
+
+    r = wiersz(przeglad(leader_client), 'Nowa')
+
+    assert r['godzin'] == 1.0 and r['szt_h'] == 60
+    assert r['godzin_jako_szkolony'] == 1.0
+
+
+def test_paczka_szkolonego_bez_startu_wypada(leader_client):
+    t = szkolacy()
+    s = make_user('operator', username='nowa', display_name='Nowa')
+    jako_szkolony(s, t, DZIEN, chwila(DZIEN, 8), chwila(DZIEN, 10))
+    paczka(s, 50, None, chwila(DZIEN, 9))
+
+    r = wiersz(przeglad(leader_client), 'Nowa')
+
+    assert r['paczek_do_oceny'] == 0 and r['paczek_jako_szkolony'] == 1
+
+
+def test_szkolony_bez_innych_paczek_dostaje_wlasny_powod(leader_client):
+    t = szkolacy()
+    s = make_user('operator', username='nowa', display_name='Nowa')
+    jako_szkolony(s, t, DZIEN, chwila(DZIEN, 8), chwila(DZIEN, 12))
+    paczki_po_kolei(s, DZIEN, 8, ile=4, sztuk=10, minut=30)
+
+    dane = leader_client.get(
+        f'/api/stats/user/{s.id}?date_from={DZIEN}&date_to={DZIEN}').get_json()
+
+    assert dane['norma']['powod_braku_oceny'] == 'szkolony'
+    assert dane['norma']['wiersz'] == wiersz(przeglad(leader_client), 'Nowa')
+    assert dane['wykres_dzienny'][0]['szt_h'] is None
+    assert dane['wykres_dzienny'][0]['paczek_jako_szkolony'] == 4
+    # Podsumowanie paczek to nie norma — liczy prawdziwe paczki.
+    assert dane['paczki_podsumowanie']['paczek'] == 4
+
+
+def test_szkolacy_dalej_dostaje_100_procent_przy_szkolonym(leader_client):
+    """Ten sam przeplyw ze skanera: szkolacy zaliczony, szkolony wylaczony."""
+    ustaw_cel(100)
+    t, s1, _ = ekipa()
+    dopisz(leader_client, t, 'S1')
+    teraz = datetime.utcnow()
+    paczka(t, 1, teraz - timedelta(seconds=1), teraz)
+    zakoncz(leader_client, t)
+    dzis = logistat.local_today()
+
+    dane = przeglad(leader_client, dzis, dzis)
+
+    assert wiersz(dane, 'Trener')['paczek_szkolenia'] == 1
+
+
+def test_dwie_stacje_naraz_daja_jeden_start_szkolenia(flask_app, leader, monkeypatch):
+    """Pierwszy szkolony z dwoch stacji jednoczesnie: bez blokady wiersza
+    szkolacego oba zadania widzialy „szkolenie nie trwa" i pisaly dwa starty."""
+    import threading
+    import time
+    from conftest import login
+
+    t, _, _ = ekipa()
+    nazwa_lidera = leader.username
+    oryginal = logistat.stan_czasu_dzis
+
+    def wolno(user):
+        wynik = oryginal(user)
+        time.sleep(0.3)
+        return wynik
+
+    monkeypatch.setattr(logistat, 'stan_czasu_dzis', wolno)
+    wyniki = []
+
+    def zadanie(kod):
+        with flask_app.app_context():
+            k = flask_app.test_client()
+            login(k, nazwa_lidera)
+            wyniki.append(dopisz(k, t, kod).status_code)
+            logistat.db.session.remove()
+
+    watki = [threading.Thread(target=zadanie, args=(kod,)) for kod in ('S1', 'S2')]
+    for w in watki:
+        w.start()
+    for w in watki:
+        w.join(timeout=15)
+
+    assert wyniki == [200, 200]
+    assert [z[0] for z in zdarzenia(t)] == ['training_start']

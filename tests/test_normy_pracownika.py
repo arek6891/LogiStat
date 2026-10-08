@@ -125,7 +125,8 @@ def test_wykres_dzienny_z_paczek_rosnaco(leader_client):
 
     assert [p['okres'] for p in w] == ['2026-09-01', '2026-09-05']
     assert w[0] == {'okres': '2026-09-01', 'paczek': 2, 'sztuk': 60,
-                    'godzin': 1.0, 'szt_h': 60.0, 'paczek_szkolenia': 0}
+                    'godzin': 1.0, 'szt_h': 60.0, 'paczek_szkolenia': 0,
+                    'paczek_jako_szkolony': 0}
     assert w[1]['szt_h'] == 120.0
 
 

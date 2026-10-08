@@ -66,7 +66,8 @@
             🎓 <strong>Szkolący:</strong> czas paczek przypadający na szkolenie (kafelek „Szkolenie"
             w Czasie pracy) liczy się jako dokładnie 100% celu z dnia paczki i nie wchodzi do średniej
             zespołu. Pozostały czas i pozostałe paczki — z prawdziwych sztuk. Dzień bez ustawionego
-            celu — wszystko z prawdziwych sztuk.
+            celu — wszystko z prawdziwych sztuk. <strong>Osoby szkolone:</strong> czas ich paczek
+            z czasu szkolenia w ogóle nie wchodzi do norm ani średniej (plakietka „🎓 szkolony/a").
         </p>
         <div class="table-container">
             <table>
@@ -100,7 +101,8 @@
             Dwa różne powody, warto je rozróżnić:
         </p>
         <ul style="color:var(--text-secondary);font-size:.85rem;margin:0 0 1rem;padding-left:1.2rem;">
-            <li><strong>Paczek mniej niż <span id="progMinPaczek"></span></strong> — za mała próbka, nic nadzwyczajnego.</li>
+            <li><strong>Paczek mniej niż <span id="progMinPaczek"></span></strong> — za mała próbka, nic nadzwyczajnego.
+                Paczki zrobione jako osoba szkolona (🎓) nie liczą się do tego progu.</li>
             <li><strong>Godzin = 0 mimo paczek</strong> — paczki zamykane bez skanu „Start" albo
                 start i koniec w tej samej sekundzie. Tu nie chodzi o wydajność, tylko o to,
                 <em>jak</em> skanuje: bez startu nie da się zmierzyć czasu. Warto pokazać obsługę.</li>
@@ -399,8 +401,13 @@
     // Paczki ze szkolenia licza sie jako 100% celu dnia — bez tej plakietki
     // szt./h szkolacego nie zgadzalby sie z „Sztuk / Godzin" w tym samym wierszu.
     function plakietkaSzkolenia(r) {
-        if (!r.paczek_szkolenia) return '';
-        return ` <span title="Paczek zrobionych w czasie szkolenia: ${r.paczek_szkolenia} (${r.godzin_szkolenia.toLocaleString('pl')} h) — liczone jako 100% celu dnia"
+        let html = '';
+        if (r.paczek_jako_szkolony) {
+            html += ` <span title="Paczek zrobionych jako osoba szkolona: ${r.paczek_jako_szkolony} (${r.godzin_jako_szkolony.toLocaleString('pl')} h) — czas szkolenia nie wchodzi do oceny ani średniej"
+            style="margin-left:4px;font-size:.7rem;padding:1px 6px;border-radius:8px;background:var(--bg-secondary);color:var(--text-muted);">🎓 szkolony/a ${r.paczek_jako_szkolony}</span>`;
+        }
+        if (!r.paczek_szkolenia) return html;
+        return html + ` <span title="Paczek zrobionych w czasie szkolenia: ${r.paczek_szkolenia} (${r.godzin_szkolenia.toLocaleString('pl')} h) — liczone jako 100% celu dnia"
             style="margin-left:4px;font-size:.7rem;padding:1px 6px;border-radius:8px;background:var(--info-bg);color:var(--info);">🎓 ${r.paczek_szkolenia}</span>`;
     }
 
@@ -648,6 +655,7 @@
         if (!r || n.powod_braku_oceny) {
             const powody = {
                 brak_paczek: 'Brak zakończonych paczek w tym okresie — nie ma czego oceniać.',
+                szkolony: 'Wszystkie paczki w tym okresie zrobione jako osoba szkolona — czas szkolenia nie wchodzi do norm.',
                 za_malo_paczek: `Za mało paczek do oceny (próg: ${n.progi.min_paczek}). Jedna-dwie paczki potrafią dać przypadkowy wynik.`,
                 brak_czasu: 'Paczki są, ale bez zmierzonego czasu (zamykane bez skanu „Start"). Nie da się policzyć szt./h — warto pokazać obsługę skanera.',
             };

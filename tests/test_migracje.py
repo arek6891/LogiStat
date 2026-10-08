@@ -19,6 +19,7 @@ KOLUMNY = [
     ('user', 'shift_group_id'),
     ('imported_carton', 'data_pliku'),
     ('user', 'is_trainer'),
+    ('worker_time_event', 'training_lead_id'),
 ]
 
 

@@ -10,6 +10,12 @@
   z dnia paczki i nie wchodzą do średniej zespołu. Reszta dnia — z prawdziwych sztuk.
 - **Historia celu** (`historia_celu`): cel obowiązujący danego dnia; zmiana celu nie
   przelicza starych dni.
+- **Osoby szkolone** (2026-10-08): w zakładce Szkolenie po szkolącym skanuje się osoby
+  szkolone; szkolenie zaczyna się od pierwszej z nich (bez szkolonych — brak szkolenia),
+  kolejne dołączają w trakcie. „Zakończ szkolenie" kończy wszystkich naraz (także „Koniec
+  pracy" szkolącego). Paczki osób szkolonych z czasu szkolenia nie wchodzą do norm ani
+  średniej. Trwające szkolenia widać na liście — druga stacja może je przejąć. Kolumna
+  `worker_time_event.training_lead_id`.
 
 ## 2026-10-05 — Data pliku, autozapis, kolory zmian, nazwy kategorii (PR #19, #20)
 
