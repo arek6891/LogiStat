@@ -98,6 +98,7 @@ LogiStat/
 │   ├── test_package_times.py       # Blokada właściciela paczki
 │   ├── test_filtry_paczek.py       # Filtry /paczki (daty, osoba, błędy) + odblokowanie
 │   ├── test_czas_inne.py           # Tryb „Inne" i złączanie okresów
+│   ├── test_szkolenie.py           # Szkolący / szkoleni, normy w czasie szkolenia
 │   ├── test_przeglad_pracownikow.py # Ranking wydajności zespołu (szt./h)
 │   ├── test_progi_bledow.py        # Progi filtra błędów (ustawienia admina)
 │   ├── test_permissions.py         # Guardy ról, is_active_user
@@ -139,7 +140,7 @@ LogiStat/
 │   ├── scan_package.html   # Skan paczek — podgląd statusu (read-only)
 │   ├── scan_paczki.html    # Czasy paczek — Start/Koniec
 │   ├── dashboard.html      # Dashboard dzienny
-│   ├── time_tracking.html  # Czas pracy (przerwa / Inne / koniec)
+│   ├── time_tracking.html  # Czas pracy (przerwa / Inne / szkolenie / koniec)
 │   ├── worker_times.html   # Czasy pracowników (korekty + filtry)
 │   ├── forecast.html       # Prognoza ilości
 │   └── profile.html        # Zmiana hasła
@@ -174,7 +175,7 @@ zalogowanego lidera, bo to ekran stanowiskowy).
 
 ### 👷 Pracownik
 - 📷 **Skaner zmian** (`/scanner/1`, `/scanner/2`) — rejestracja obecności, EAN-128
-- 🕐 **Czas pracy** (`/time-tracking`) — skan kodu pracownika: ☕ przerwa · 🚪 **Inne** · 🏁 koniec pracy
+- 🕐 **Czas pracy** (`/time-tracking`) — skan kodu pracownika: ☕ przerwa · 🚪 **Inne** · 🎓 **Szkolenie** · 🏁 koniec pracy
 - ⏱ **Czasy paczek** (`/scan-paczki`) — Start/Koniec procesowania + ilości per kategoria przy końcu
 - 🔎 **Paczki inspektor** (`/scan-package`) — podgląd statusu paczki, **tylko do odczytu**
 
@@ -294,6 +295,21 @@ rozlicza te dwie rzeczy inaczej. Przerwa i „Inne" nie mogą trwać jednocześn
 końca pracy domyka oba otwarte okresy. Ręczna korekta zdarzeń potrafi stworzyć okresy
 nachodzące na siebie, dlatego czas pracy odejmuje **sumę złączonych okresów**, a nie
 sumę ich długości.
+
+### Czas pracy — 🎓 Szkolenie
+Konto z zaznaczonym **🎓 Szkolący** (Użytkownicy) może prowadzić szkolenie. W zakładce
+„Szkolenie": najpierw skan osoby szkolącej, potem skan osób szkolonych — **szkolenie
+zaczyna się od pierwszej osoby szkolonej** (bez szkolonych nie ma szkolenia), kolejne
+można dopisać w trakcie. **„Zakończ szkolenie"** kończy je szkolącemu i wszystkim
+szkolonym naraz (tak samo „Koniec pracy" szkolącego). Ponowny skan szkolącego niczego nie
+kończy. Trwające szkolenia widać pod polem skanu — druga stacja może je przejąć.
+Szkolenie to czas pracy: nie pomniejsza go, w Czasach pracowników ma osobną kolumnę.
+
+**W Normach:** szkolącemu czas paczek przypadający na szkolenie liczy się jako **100%
+celu szt./h z dnia paczki** (bez ustawionego celu — z prawdziwych sztuk); osobie
+szkolonej czas paczek ze szkolenia **w ogóle nie wchodzi** do norm ani średniej zespołu.
+Paczki poza szkoleniem liczą się normalnie. Cel ma historię — zmiana celu nie przelicza
+starych dni.
 
 ### Paczki (dane) — filtry i odblokowanie
 **Domyślnie widać tylko paczki niezrobione** (bez zarejestrowanego „Końca paczki").

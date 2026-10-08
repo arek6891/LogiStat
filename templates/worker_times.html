@@ -48,6 +48,10 @@
                 <option value="break_end">✅ Powrót z przerwy</option>
                 <option value="other_start">🚪 Wyjście — Inne</option>
                 <option value="other_end">✅ Powrót z „Inne"</option>
+                <option value="training_start">🎓 Początek szkolenia</option>
+                <option value="training_end">✅ Koniec szkolenia</option>
+                <option value="trainee_start">🎓 Szkolony — początek</option>
+                <option value="trainee_end">✅ Szkolony — koniec</option>
                 <option value="work_end">🏁 Koniec pracy</option>
             </select>
         </div>
@@ -82,11 +86,15 @@
     const ET_LABEL = {
         break_start: '☕ Przerwa wyjście', break_end: '✅ Przerwa powrót',
         other_start: '🚪 Inne wyjście',    other_end: '✅ Inne powrót',
+        training_start: '🎓 Szkolenie start', training_end: '✅ Szkolenie koniec',
+        trainee_start: '🎓 Szkolony start',   trainee_end: '✅ Szkolony koniec',
         work_end: '🏁 Koniec pracy',
     };
     const ET_COLOR = {
         break_start: 'var(--warning)', break_end: 'var(--success)',
         other_start: 'var(--accent)',  other_end: 'var(--success)',
+        training_start: 'var(--info)', training_end: 'var(--success)',
+        trainee_start: 'var(--info)',  trainee_end: 'var(--success)',
         work_end: 'var(--danger)',
     };
 
@@ -185,6 +193,7 @@
             <th>Przerwy</th>
             <th>Czas przerw</th>
             <th>Inne</th>
+            <th title="Szkolenie to czas pracy — nie pomniejsza „Czasu pracy"">Szkolenie</th>
             <th>Koniec pracy</th>
             <th>Czas pracy</th>
             <th style="width:100px;"></th>
@@ -203,6 +212,8 @@
             ).join('<br>') || '—';
             const breaksSummary = okresy(w.breaks);
             const otherSummary  = okresy(w.others || []);
+            const trainingSummary = (w.trainings || []).length ? 'prowadzi: ' + okresy(w.trainings) : '';
+            const traineeSummary  = (w.trainee_periods || []).length ? 'szkolony/a: ' + okresy(w.trainee_periods) : '';
 
             const bledyHtml = bledy.length ? `
                 <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">
@@ -221,6 +232,8 @@
                         <span style="font-weight:600;">${escapeHtml(w.user_name)}</span>
                         ${w.on_break ? '<span style="margin-left:4px;font-size:.75rem;background:var(--warning-bg);color:var(--warning);padding:2px 8px;border-radius:8px;">na przerwie</span>' : ''}
                         ${w.on_other ? '<span style="margin-left:4px;font-size:.75rem;background:rgba(99,102,241,.18);color:var(--accent);padding:2px 8px;border-radius:8px;">Inne</span>' : ''}
+                        ${w.on_trainee ? '<span style="margin-left:4px;font-size:.75rem;background:var(--info-bg);color:var(--info);padding:2px 8px;border-radius:8px;">🎓 szkolony/a</span>' : ''}
+                        ${w.on_training ? '<span style="margin-left:4px;font-size:.75rem;background:var(--info-bg);color:var(--info);padding:2px 8px;border-radius:8px;">🎓 szkolenie</span>' : ''}
                     </div>
                     ${bledyHtml}
                 </td>
@@ -234,6 +247,11 @@
                     ${otherSummary}
                     ${w.other_minutes ? `<div style="font-weight:700;color:var(--accent);">${fmtMins(w.other_minutes)}</div>` : ''}
                 </td>
+                <td style="font-size:.82rem;line-height:1.6;">
+                    ${trainingSummary}${trainingSummary && traineeSummary ? '<br>' : ''}${traineeSummary}
+                    ${!trainingSummary && !traineeSummary ? '—' : ''}
+                    ${(w.training_minutes || w.trainee_minutes) ? `<div style="font-weight:700;color:var(--info);">${fmtMins((w.training_minutes || 0) + (w.trainee_minutes || 0))}</div>` : ''}
+                </td>
                 <td style="font-family:monospace;${w.work_end ? 'color:var(--danger);font-weight:600;' : 'color:var(--text-muted);'}">${fmt(w.work_end)}</td>
                 <td style="font-weight:700;color:var(--success);">${fmtMins(w.work_minutes)}</td>
                 <td>
@@ -245,7 +263,7 @@
             </tr>
             ${w.events.length ? `
             <tr style="background:var(--bg-secondary);">
-                <td colspan="9" style="padding:0 0 0 48px;">
+                <td colspan="10" style="padding:0 0 0 48px;">
                     <div style="display:flex;flex-wrap:wrap;gap:6px;padding:10px 16px 10px 0;">
                         ${w.events.map(e => `
                         <div style="display:inline-flex;align-items:center;gap:6px;

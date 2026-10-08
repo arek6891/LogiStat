@@ -5,6 +5,7 @@ import json
 import calendar
 import hashlib
 import math
+from bisect import bisect_right
 from datetime import datetime, date, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 from functools import wraps
@@ -223,6 +224,10 @@ class User(UserMixin, db.Model):
     shift_group_id = db.Column(db.Integer, db.ForeignKey('user_option.id'), nullable=True)
     worker_type = db.relationship('UserOption', foreign_keys=[worker_type_id])
     shift_group = db.relationship('UserOption', foreign_keys=[shift_group_id])
+    # „Szkolacy" — osoba szkolaca nowych. Tylko ona moze wbic sie na kafelek
+    # „Szkolenie" w Czasie pracy, a paczki zakonczone W CZASIE szkolenia licza
+    # sie jej w Normach jako 100% celu z dnia paczki (`policz_wydajnosc()`).
+    is_trainer = db.Column(db.Boolean, default=False, nullable=False)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -244,6 +249,7 @@ class User(UserMixin, db.Model):
             'worker_type': self.worker_type.name if self.worker_type else None,
             'shift_group_id': self.shift_group_id,
             'shift_group': self.shift_group.name if self.shift_group else None,
+            'is_trainer': bool(self.is_trainer),
         }
 
 
@@ -765,6 +771,9 @@ class WorkerTimeEvent(db.Model):
     recorded_by  = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     is_manual    = db.Column(db.Boolean, default=False)
     note         = db.Column(db.String(300), nullable=True)
+    # Tylko przy 'trainee_*': kto prowadzi szkolenie. Dwa szkolenia naraz —
+    # koniec jednego zamyka tylko jego szkolonych (`zakoncz_szkolenie()`).
+    training_lead_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
 
     __table_args__ = (
         db.Index('ix_wte_user_shift', 'user_id', 'shift_id'),
@@ -775,6 +784,7 @@ class WorkerTimeEvent(db.Model):
                                backref=db.backref('time_events', lazy=True))
     shift    = db.relationship('Shift', backref=db.backref('time_events', lazy=True))
     recorder = db.relationship('User', foreign_keys=[recorded_by])
+    training_lead = db.relationship('User', foreign_keys=[training_lead_id])
 
     def to_dict(self):
         return {
@@ -787,12 +797,50 @@ class WorkerTimeEvent(db.Model):
             'is_manual':      self.is_manual,
             'note':           self.note or '',
             'recorded_by_name': self.recorder.display_name if self.recorder else None,
+            'training_lead_id': self.training_lead_id,
         }
 
 
-EVENT_TYPES = ('break_start', 'break_end', 'other_start', 'other_end', 'work_end')
+EVENT_TYPES = ('break_start', 'break_end', 'other_start', 'other_end',
+               'training_start', 'training_end', 'trainee_start', 'trainee_end',
+               'work_end')
 # 'other_*' — czas poza stanowiskiem inny niz przerwa (np. wyjscie do HR).
 # Liczony jak przerwa: pomniejsza czas pracy, ale raportowany osobno.
+# 'training_*' — szkolenie prowadzone przez osobe szkolaca (`User.is_trainer`).
+# To CZAS PRACY: niczego nie pomniejsza, raportowane osobno; w Normach paczki
+# zakonczone w trakcie szkolenia = 100% celu (`policz_wydajnosc()`).
+# 'trainee_*' — osoba SZKOLONA na szkoleniu prowadzonym przez `training_lead_id`.
+# Tez czas pracy; jej paczki z tego czasu wypadaja z Norm i sredniej.
+# Szkolenie zaczyna sie dopiero od pierwszej osoby szkolonej, a konczy je
+# szkolacy — wszystkim naraz (zakladka „Szkolenie", `/api/time/training/*`).
+
+# Stany, ktore sie wzajemnie wykluczaja (otwarte = wiecej *_start niz *_end).
+TRYBY_CZASU = ('break', 'other', 'training', 'trainee')
+# Przelaczane zwyklym skanem w `/api/time/scan`; szkolenie ma wlasna zakladke.
+TRYBY_SKANU = ('break', 'other')
+KOMUNIKATY_TRWANIA = {
+    'break':    'jest na przerwie — najpierw zakończ przerwę.',
+    'other':    'jest na „Inne" — najpierw zakończ „Inne".',
+    'training': 'prowadzi szkolenie — najpierw zakończ szkolenie.',
+    'trainee':  'jest na szkoleniu jako osoba szkolona — zakończy je osoba szkoląca.',
+}
+
+
+class HistoriaCelu(db.Model):
+    """Cel szt./h obowiazujacy od dnia `dzien` (do nastepnego wpisu).
+
+    `AppSetting.target_szt_h` trzyma tylko biezaca wartosc, a paczka ze
+    szkolenia ma byc liczona celem z dnia, w ktorym ja zakonczono — bez historii
+    zmiana celu po fakcie przeliczylaby wszystkie stare szkolenia. Wpis robi `PUT /api/stats/target`
+    (ostatni zapis danego dnia wygrywa); pierwszy wiersz (`POCZATEK_HISTORII_CELU`)
+    zasiewa `zasiej_historie_celu()` biezaca wartoscia sprzed historii.
+    """
+    __tablename__ = 'historia_celu'
+    dzien = db.Column(db.Date, primary_key=True)
+    wartosc = db.Column(db.Integer, nullable=False)
+
+
+POCZATEK_HISTORII_CELU = date(2000, 1, 1)
 
 
 class AppSetting(db.Model):
@@ -2319,20 +2367,14 @@ def api_daily_stat_update(stat_id):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def wydajnosc_pracownikow(date_from=None, date_to=None):
-    """Wydajnosc kazdego pracownika liczona z ZAKONCZONYCH PACZEK.
+    """Zakonczone paczki kazdego pracownika: `{uid: [(start, koniec, sztuk)]}`.
 
     Dlaczego z paczek, a nie z `DailyStat`: wpis ilosci jest uzupelniany
     sporadycznie (na `.31` to kilka wierszy), a skan paczek leci przy kazdej
     sztuce — to jedyne zrodlo, ktore realnie pokrywa zespol.
 
-    Czas liczy `suma_zlaczonych_okresow()`, a nie suma dlugosci paczek: nic w
-    schemacie nie zabrania trzymania dwoch paczek otwartych naraz, a wtedy
-    zsumowane czasy liczylyby ten sam kwadrans dwa razy i zanizyly szt./h.
-    To ten sam helper, ktorego uzywa `_compute_worker_times` dla przerw.
-
-    Uwaga na interpretacje: mianownikiem jest czas SKANOWANIA paczek, nie czas
-    obecnosci na zmianie — przerwy i „Inne" go nie pomniejszaja, bo ich tu nie
-    ma. To „sztuki na godzine skanowania", nie „na godzine pracy".
+    Liczenie (szt./h, szkolenia) robi `policz_wydajnosc()` — tu tylko dane.
+    `start` bywa None (paczka zamknieta bez skanu „Start") — czasu wtedy nie ma.
     """
     q = db.session.query(
         ImportedCarton.scan_end_by,
@@ -2351,12 +2393,224 @@ def wydajnosc_pracownikow(date_from=None, date_to=None):
 
     per_osoba = {}
     for uid, start, koniec, sztuk in q.all():
-        wpis = per_osoba.setdefault(uid, {'paczek': 0, 'sztuk': 0, 'okresy': []})
-        wpis['paczek'] += 1
-        wpis['sztuk'] += (sztuk or 0)
-        if start:                      # bez startu nie da sie zmierzyc czasu
-            wpis['okresy'].append((start, koniec))
+        per_osoba.setdefault(uid, []).append((start, koniec, sztuk or 0))
     return per_osoba
+
+
+# Szkolenie bez „konca" (zapomniany skan, brak „Koniec pracy") liczymy do teraz,
+# ale najwyzej tyle — inaczej jedno zapomniane wejscie sprzed tygodnia robiloby
+# „szkoleniowymi" wszystkie paczki tej osoby az do dzis.
+MAKS_OTWARTEGO_SZKOLENIA = timedelta(hours=12)
+
+
+def okresy_szkolen(user_ids, date_from=None, date_to=None):
+    """`(prowadzone, jako_szkolony)` — dwa `{uid: [(start, koniec)]}` (naive UTC).
+
+    `prowadzone` = szkolenia, ktore osoba prowadzila (`training_*`),
+    `jako_szkolony` = czas, w ktorym sama byla szkolona (`trainee_*`). Jedno
+    zapytanie na oba rodzaje. Pary start/koniec skladamy w obrebie (osoba,
+    zmiana), tak samo jak `_compute_worker_times()`. Margines doby przy
+    granicach zakresu: paczka zakonczona tuz po polnocy moze lezec w szkoleniu
+    zaczetym wieczorem.
+    """
+    if not user_ids:
+        return {}, {}
+    q = WorkerTimeEvent.query.filter(
+        WorkerTimeEvent.user_id.in_(list(user_ids)),
+        WorkerTimeEvent.event_type.in_(
+            ('training_start', 'training_end', 'trainee_start', 'trainee_end')))
+    margines = timedelta(days=1)
+    if date_from:
+        q = q.filter(WorkerTimeEvent.timestamp >= local_day_bounds(date_from)[0] - margines)
+    if date_to:
+        q = q.filter(WorkerTimeEvent.timestamp < local_day_bounds(date_to)[1] + margines)
+
+    otwarte = {}
+    wynik = {'training': {}, 'trainee': {}}
+    for e in q.order_by(WorkerTimeEvent.timestamp, WorkerTimeEvent.id):
+        rodzaj, _, koncowka = e.event_type.rpartition('_')
+        klucz = (rodzaj, e.user_id, e.shift_id)
+        if koncowka == 'start':
+            otwarte[klucz] = e.timestamp
+        elif klucz in otwarte:
+            wynik[rodzaj].setdefault(e.user_id, []).append((otwarte.pop(klucz), e.timestamp))
+    teraz = datetime.utcnow()
+    for (rodzaj, uid, _), start in otwarte.items():
+        wynik[rodzaj].setdefault(uid, []).append(
+            (start, min(teraz, start + MAKS_OTWARTEGO_SZKOLENIA)))
+    return wynik['training'], wynik['trainee']
+
+
+def cele_dzienne():
+    """Funkcja `dzien -> cel szt./h obowiazujacy tego dnia` (0 = nie ustawiono).
+
+    Z `HistoriaCelu`; dzien sprzed pierwszego wpisu (historia jeszcze nie
+    zasiana) dostaje biezaca wartosc ustawienia.
+    """
+    wiersze = HistoriaCelu.query.order_by(HistoriaCelu.dzien).all()
+    dni = [w.dzien for w in wiersze]
+    wartosci = [w.wartosc for w in wiersze]
+    biezacy = get_setting_int('target_szt_h', 0)
+
+    def cel(dzien):
+        i = bisect_right(dni, dzien)
+        return wartosci[i - 1] if i else biezacy
+    return cel
+
+
+def _zlacz_okresy(okresy):
+    """Posortowane, rozlaczne okresy (start, koniec) — nakladajace sie scalone."""
+    wynik = []
+    for start, koniec in sorted(okresy):
+        if koniec <= start:
+            continue
+        if wynik and start <= wynik[-1][1]:
+            wynik[-1] = (wynik[-1][0], max(wynik[-1][1], koniec))
+        else:
+            wynik.append((start, koniec))
+    return wynik
+
+
+def _odejmij_okresy(start, koniec, wylaczone):
+    """Czesci `[start, koniec)` lezace poza okresami `wylaczone` (zlaczonymi)."""
+    reszta = []
+    biezacy = start
+    for s, k in wylaczone:
+        if k <= biezacy or s >= koniec:
+            continue
+        if s > biezacy:
+            reszta.append((biezacy, s))
+        biezacy = max(biezacy, k)
+        if biezacy >= koniec:
+            break
+    if biezacy < koniec:
+        reszta.append((biezacy, koniec))
+    return reszta
+
+
+def _w_okresach(chwila, okresy):
+    return any(s <= chwila <= k for s, k in okresy)
+
+
+def policz_wydajnosc(paczki, szkolenia=(), cel_dnia=None, jako_szkolony=()):
+    """Szt./h z listy paczek `[(start, koniec, sztuk)]` jednej osoby.
+
+    Jedyne miejsce liczenia wydajnosci — przeglad zespolu, ocena osoby i jej
+    wykresy ida przez nie, wiec nigdy sie nie rozjada.
+
+    Mianownikiem jest czas SKANOWANIA paczek liczony `suma_zlaczonych_okresow()`
+    (dwie paczki otwarte naraz nie licza tego samego kwadransa dwa razy), nie
+    czas obecnosci — przerwy i „Inne" go nie pomniejszaja. To „sztuki na
+    godzine skanowania", nie „na godzine pracy".
+
+    **Osoba szkolona** (`jako_szkolony`, decyzja operacji 2026-10-08): czas jej
+    paczek przypadajacy na szkolenie wypada z Norm i sredniej w calosci —
+    czas i proporcjonalna czesc sztuk. Liczone PIERWSZE i niezaleznie od celu.
+    Paczka bez skanu „Start" zakonczona w szkoleniu wypada cala.
+
+    **Osoba szkolaca** (`szkolenia`, decyzja 2026-10-06): z tego, co zostalo,
+    fragment czasu paczki nakladajacy sie na prowadzone szkolenie = czas × cel
+    z dnia zakonczenia paczki (dokladnie 100%), reszta paczki = odpowiedni
+    ulamek prawdziwych sztuk. Zaliczony czas to suma ZLACZONYCH fragmentow
+    per dzien (dwie paczki naraz nie dostana tej samej minuty dwa razy). Samo
+    szkolenie bez paczek nic nie dolicza; dzien bez celu (0) — normalnie.
+    Paczka bez „Start" zakonczona w szkoleniu nie ma czasu, wiec nie wchodzi
+    do szt./h (nie udajemy ani zera, ani celu).
+
+    `sztuk_do_sredniej` / `sekundy_do_sredniej` to wylacznie czas i sztuki
+    liczone normalnie — zaliczone ciagnelyby srednia zespolu w strone celu.
+    """
+    cel_dnia = cel_dnia or (lambda _dzien: 0)
+    szkolenia = _zlacz_okresy(szkolenia)
+    jako_szkolony = _zlacz_okresy(jako_szkolony)
+    wszystkie_okresy = []
+    zwykle_okresy = []         # czas liczony normalnie
+    sztuk_zwykle = 0.0         # prawdziwe sztuki liczone normalnie
+    sekundy_poza_czesciowych = 0.0
+    w_szkoleniu_dnia = {}      # dzien -> fragmenty paczek w prowadzonym szkoleniu
+    paczek_szkolenia = 0
+    paczek_jako_szkolony = 0
+    paczek_wylaczonych = 0     # w calosci z czasu bycia szkolonym
+    sekundy_jako_szkolony = 0.0
+    for start, koniec, sztuk in paczki:
+        dzien = utc_to_local(koniec).date()
+        trwanie = (koniec - start).total_seconds() if start else 0.0
+        if trwanie <= 0:
+            # Bez zmierzonego czasu nie ma czego przycinac — decyduje koniec.
+            if jako_szkolony and _w_okresach(koniec, jako_szkolony):
+                paczek_jako_szkolony += 1
+                paczek_wylaczonych += 1
+                continue
+            if not start and szkolenia and _w_okresach(koniec, szkolenia) \
+                    and cel_dnia(dzien) > 0:
+                paczek_szkolenia += 1
+                continue
+            sztuk_zwykle += sztuk
+            if start:
+                wszystkie_okresy.append((start, koniec))
+                zwykle_okresy.append((start, koniec))
+            continue
+
+        pozostale = (_odejmij_okresy(start, koniec, jako_szkolony)
+                     if jako_szkolony else [(start, koniec)])
+        sek_pozostale = sum((k - s).total_seconds() for s, k in pozostale)
+        if sek_pozostale < trwanie:
+            paczek_jako_szkolony += 1
+            sekundy_jako_szkolony += trwanie - sek_pozostale
+            if not pozostale:
+                paczek_wylaczonych += 1
+                continue
+        wszystkie_okresy.extend(pozostale)
+
+        fragmenty = ([(max(a, s), min(b, k)) for a, b in pozostale for s, k in szkolenia
+                      if min(b, k) > max(a, s)]
+                     if szkolenia and cel_dnia(dzien) > 0 else [])
+        if not fragmenty:
+            sztuk_zwykle += sztuk * (sek_pozostale / trwanie)
+            zwykle_okresy.extend(pozostale)
+            continue
+        poza = max(0.0, sek_pozostale - sum((k - s).total_seconds() for s, k in fragmenty))
+        paczek_szkolenia += 1
+        w_szkoleniu_dnia.setdefault(dzien, []).extend(fragmenty)
+        sztuk_zwykle += sztuk * (poza / trwanie)
+        sekundy_poza_czesciowych += poza
+
+    sekundy_szkolenia = 0.0
+    sztuk_zaliczonych = 0.0
+    for dzien, fragmenty in w_szkoleniu_dnia.items():
+        sek = suma_zlaczonych_okresow(fragmenty)
+        sekundy_szkolenia += sek
+        sztuk_zaliczonych += sek / 3600.0 * cel_dnia(dzien)
+
+    sekundy = suma_zlaczonych_okresow(wszystkie_okresy)
+    return {
+        'paczek': len(paczki),
+        'sztuk': sum(p[2] for p in paczki),
+        # Do progu `min_packages_rank` licza sie tylko paczki, ktore zostaly
+        # w ocenie — szkolony z 3 wylaczonymi i 1 zwykla nie wchodzi do rankingu.
+        'paczek_do_oceny': len(paczki) - paczek_wylaczonych,
+        'sekundy': sekundy,
+        # Bez zmierzonego czasu szt./h nie istnieje — nie udajemy zera.
+        'szt_h': (round((sztuk_zwykle + sztuk_zaliczonych) / (sekundy / 3600.0), 1)
+                  if sekundy > 0 else None),
+        'paczek_szkolenia': paczek_szkolenia,
+        'sekundy_szkolenia': sekundy_szkolenia,
+        'paczek_jako_szkolony': paczek_jako_szkolony,
+        'sekundy_jako_szkolony': sekundy_jako_szkolony,
+        'sztuk_do_sredniej': sztuk_zwykle,
+        'sekundy_do_sredniej': suma_zlaczonych_okresow(zwykle_okresy) + sekundy_poza_czesciowych,
+    }
+
+
+def zasiej_historie_celu():
+    """Pusta `HistoriaCelu` → jeden wiersz z biezacym celem od `POCZATEK_HISTORII_CELU`.
+
+    Bez tego pierwsza zmiana celu po wdrozeniu przeliczylaby wstecz wszystkie
+    wczesniejsze szkolenia (dzien bez wpisu bralby biezacy cel). Bez commitu.
+    """
+    if HistoriaCelu.query.first() is None:
+        db.session.add(HistoriaCelu(dzien=POCZATEK_HISTORII_CELU,
+                                    wartosc=get_setting_int('target_szt_h', 0)))
 
 
 @app.route('/api/stats/target', methods=['PUT'])
@@ -2378,6 +2632,15 @@ def api_stats_target_update():
     if wartosc < 0:
         abort(400, 'Docelowa wydajność nie może być ujemna.')
 
+    # Historia celu: szkolenie liczy sie celem z dnia paczki, wiec stare dni
+    # musza zachowac stary cel. Najpierw (raz) zapisujemy dotychczasowa wartosc
+    # jako obowiazujaca „od zawsze", potem nowa od dzis.
+    zasiej_historie_celu()
+    dzis = db.session.get(HistoriaCelu, local_today())
+    if dzis is None:
+        db.session.add(HistoriaCelu(dzien=local_today(), wartosc=wartosc))
+    else:
+        dzis.wartosc = wartosc         # ostatni zapis danego dnia wygrywa
     set_setting('target_szt_h', wartosc)
     db.session.commit()
     return jsonify({
@@ -2410,6 +2673,9 @@ def przeglad_zespolu(date_from, date_to):
     konto z dwiema blyskawicznymi paczkami (26 038 szt./h na .31) nie wypacza
     wyniku, jak zrobilaby to zwykla srednia z wynikow osob (2 570 zamiast 292).
     Prog paczek nadal decyduje tylko o tym, kto jest w rankingu i dostaje ocene.
+
+    Paczki zakonczone w czasie szkolenia (osoba szkolaca) licza sie jej jako
+    100% celu dnia i nie wchodza do sredniej — patrz `policz_wydajnosc()`.
     """
     prog_dobry = get_setting_int('norm_good_pct', 110)
     prog_slaby = get_setting_int('norm_weak_pct', 90)
@@ -2417,6 +2683,9 @@ def przeglad_zespolu(date_from, date_to):
     cel = get_setting_int('target_szt_h', 0) or None      # 0 = nie ustawiono
 
     dane = wydajnosc_pracownikow(date_from, date_to)
+    szkolenia, szkoleni = okresy_szkolen(dane.keys(), date_from, date_to)
+    # Historia celu tylko gdy ktos szkolil — bez tego zadnego zapytania wiecej.
+    cel_dnia = cele_dzienne() if szkolenia else None
     # joinedload: rodzaj pracownika i nazwa zmiany ida do kazdego wiersza.
     uzytkownicy = {u.id: u for u in User.query.options(
         joinedload(User.worker_type), joinedload(User.shift_group)).filter(
@@ -2425,17 +2694,18 @@ def przeglad_zespolu(date_from, date_to):
     wiersze = []
     suma_sztuk_z_czasem = 0
     suma_godzin_z_czasem = 0.0
-    for uid, w in dane.items():
+    for uid, paczki in dane.items():
         user = uzytkownicy.get(uid)
         if not user:
             continue                   # konto skasowane twardo — pomijamy
-        sekundy = suma_zlaczonych_okresow(w['okresy'])
-        godziny = sekundy / 3600.0
-        if godziny > 0:
+        w = policz_wydajnosc(paczki, szkolenia.get(uid, ()), cel_dnia,
+                             szkoleni.get(uid, ()))
+        if w['sekundy_do_sredniej'] > 0:
             # Paczki bez zmierzonego czasu nie wchodza do sredniej — sztuki
-            # bez godzin zawyzylyby ja.
-            suma_sztuk_z_czasem += w['sztuk']
-            suma_godzin_z_czasem += godziny
+            # bez godzin zawyzylyby ja. Paczki ze szkolenia tez nie (sa
+            # z definicji rowno w celu).
+            suma_sztuk_z_czasem += w['sztuk_do_sredniej']
+            suma_godzin_z_czasem += w['sekundy_do_sredniej'] / 3600.0
         wiersze.append({
             'user_id': uid,
             'display_name': user.display_name,
@@ -2444,16 +2714,22 @@ def przeglad_zespolu(date_from, date_to):
             'shift_group': user.shift_group.name if user.shift_group else None,
             'paczek': w['paczek'],
             'sztuk': w['sztuk'],
-            'godzin': round(godziny, 2),
-            # Bez zmierzonego czasu szt./h nie istnieje — nie udajemy zera.
-            'szt_h': round(w['sztuk'] / godziny, 1) if godziny > 0 else None,
+            'godzin': round(w['sekundy'] / 3600.0, 2),
+            'szt_h': w['szt_h'],
+            # Paczki zrobione w czasie szkolenia (liczone jako 100% celu dnia).
+            'paczek_szkolenia': w['paczek_szkolenia'],
+            'godzin_szkolenia': round(w['sekundy_szkolenia'] / 3600.0, 2),
+            # Paczki zrobione jako osoba szkolona — wypadaja z oceny.
+            'paczek_jako_szkolony': w['paczek_jako_szkolony'],
+            'godzin_jako_szkolony': round(w['sekundy_jako_szkolony'] / 3600.0, 2),
+            'paczek_do_oceny': w['paczek_do_oceny'],
         })
 
     # Do rankingu wchodzi tylko ten, kto ma dosc paczek i zmierzony czas.
     # Reszta ladu je w osobnym koszyku — ukrycie jej sugerowaloby, ze nie
     # pracowala, a to nieprawda: po prostu nie ma z czego liczyc sredniej.
     def kwalifikuje(r):
-        return r['paczek'] >= min_paczek and r['szt_h'] is not None
+        return r['paczek_do_oceny'] >= min_paczek and r['szt_h'] is not None
 
     ranking = [r for r in wiersze if kwalifikuje(r)]
     za_malo = [r for r in wiersze if not kwalifikuje(r)]
@@ -2537,30 +2813,34 @@ def norma_pracownika(user_id, date_from, date_to):
     for r in p['za_malo_danych']:
         if r['user_id'] == user_id:
             wynik['wiersz'] = r
-            wynik['powod_braku_oceny'] = ('brak_czasu' if r['szt_h'] is None
-                                          else 'za_malo_paczek')
+            wynik['powod_braku_oceny'] = (
+                'szkolony' if r['paczek_do_oceny'] == 0 and r['paczek_jako_szkolony']
+                else 'brak_czasu' if r['szt_h'] is None
+                else 'za_malo_paczek')
             return wynik
     wynik['powod_braku_oceny'] = 'brak_paczek'
     return wynik
 
 
-def wykres_wydajnosci(okresy_per_klucz):
-    """`{klucz: {'cnt', 'pcs', 'okresy'}}` → lista punktow wykresu, rosnaco.
+def wykres_wydajnosci(paczki_per_klucz, szkolenia=(), cel_dnia=None, jako_szkolony=()):
+    """`{klucz: [(start, koniec, sztuk)]}` → lista punktow wykresu, rosnaco.
 
-    Godziny to suma ZLACZONYCH okresow skanowania w danym dniu/miesiacu —
-    ta sama miara co w przegladzie. Bez zmierzonego czasu `szt_h` = None, nie 0:
-    zero wygladaloby na fatalny dzien, a to po prostu brak skanu „Start".
+    Liczy `policz_wydajnosc()` — ta sama miara co w przegladzie, lacznie
+    z paczkami ze szkolenia (100% celu dnia). Slupki (`sztuk`) to prawdziwe
+    sztuki. Bez zmierzonego czasu `szt_h` = None, nie 0: zero wygladaloby na
+    fatalny dzien, a to po prostu brak skanu „Start".
     """
     punkty = []
-    for klucz in sorted(okresy_per_klucz):
-        a = okresy_per_klucz[klucz]
-        godziny = suma_zlaczonych_okresow(a['okresy']) / 3600.0
+    for klucz in sorted(paczki_per_klucz):
+        w = policz_wydajnosc(paczki_per_klucz[klucz], szkolenia, cel_dnia, jako_szkolony)
         punkty.append({
             'okres': klucz,
-            'paczek': a['cnt'],
-            'sztuk': a['pcs'],
-            'godzin': round(godziny, 2),
-            'szt_h': round(a['pcs'] / godziny, 1) if godziny > 0 else None,
+            'paczek': w['paczek'],
+            'sztuk': w['sztuk'],
+            'godzin': round(w['sekundy'] / 3600.0, 2),
+            'szt_h': w['szt_h'],
+            'paczek_szkolenia': w['paczek_szkolenia'],
+            'paczek_jako_szkolony': w['paczek_jako_szkolony'],
         })
     return punkty
 
@@ -2661,15 +2941,20 @@ def api_stats_user(user_id):
         pq = pq.filter(ImportedCarton.scan_end_at < local_day_bounds(date_to)[1])
 
     per_day = {}
-    per_month = {}
+    paczki_dnia = {}
+    paczki_miesiaca = {}
     for scan_start_at, scan_end_at, stueckzahl in pq.all():
         d = utc_to_local(scan_end_at).date().isoformat()
-        for klucz, slownik in ((d, per_day), (d[:7], per_month)):
-            agg = slownik.setdefault(klucz, {'cnt': 0, 'pcs': 0, 'okresy': []})
-            agg['cnt'] += 1
-            agg['pcs'] += stueckzahl or 0
-            if scan_start_at:          # bez startu nie da sie zmierzyc czasu
-                agg['okresy'].append((scan_start_at, scan_end_at))
+        agg = per_day.setdefault(d, {'cnt': 0, 'pcs': 0})
+        agg['cnt'] += 1
+        agg['pcs'] += stueckzahl or 0
+        paczka = (scan_start_at, scan_end_at, stueckzahl or 0)
+        paczki_dnia.setdefault(d, []).append(paczka)
+        paczki_miesiaca.setdefault(d[:7], []).append(paczka)
+    szkolenia, szkoleni = okresy_szkolen([user_id], date_from, date_to)
+    szkolenia = szkolenia.get(user_id, ())
+    szkoleni = szkoleni.get(user_id, ())
+    cel_dnia = cele_dzienne() if szkolenia else None
 
     paczki_podsumowanie = podsumuj_paczki_pracownika(per_day)
 
@@ -2723,8 +3008,8 @@ def api_stats_user(user_id):
         # Ocena i wykresy ida z paczek, wiec — jak podsumowanie — nie zaleza
         # od filtra czynnosci.
         'norma': norma_pracownika(user_id, date_from, date_to),
-        'wykres_dzienny': wykres_wydajnosci(per_day),
-        'wykres_miesieczny': wykres_wydajnosci(per_month),
+        'wykres_dzienny': wykres_wydajnosci(paczki_dnia, szkolenia, cel_dnia, szkoleni),
+        'wykres_miesieczny': wykres_wydajnosci(paczki_miesiaca, szkolenia, cel_dnia, szkoleni),
     }), 200
 
 
@@ -2841,6 +3126,7 @@ def api_user_create():
     )
     for kind, kolumna in USER_OPTION_KINDS.items():
         setattr(user, kolumna, resolve_user_option(data.get(kolumna), kind))
+    user.is_trainer = bool(data.get('is_trainer'))
     if role in ('leader', 'admin') and password:
         user.set_password(password)
 
@@ -2896,6 +3182,8 @@ def api_user_update(user_id):
     for kind, kolumna in USER_OPTION_KINDS.items():
         if kolumna in data:
             setattr(user, kolumna, resolve_user_option(data[kolumna], kind))
+    if 'is_trainer' in data:
+        user.is_trainer = bool(data['is_trainer'])
     if 'role' in data:
         user.role = data['role']
     if 'is_active_user' in data:
@@ -4297,11 +4585,17 @@ def _compute_worker_times(uid, shift, attendance_time):
 
     break_secs = 0
     other_secs = 0
+    training_secs = 0
+    trainee_secs = 0
     open_break = None
     open_other = None
+    open_training = None
+    open_trainee = None
     work_end_ts = None
     breaks = []
     others = []
+    trainings = []
+    trainee_periods = []
     okresy = []          # (start, koniec) wszystkich zamknietych przerw i „Innych"
 
     for e in events:
@@ -4323,6 +4617,25 @@ def _compute_worker_times(uid, shift, attendance_time):
             other_secs += secs
             okresy.append((open_other, e.timestamp))
             open_other = None
+        elif e.event_type == 'training_start':
+            open_training = e.timestamp
+        elif e.event_type == 'training_end' and open_training:
+            # Szkolenie to praca — NIE trafia do `okresy`, wiec nie pomniejsza
+            # czasu pracy; raportujemy je tylko osobno.
+            secs = (e.timestamp - open_training).total_seconds()
+            trainings.append({'start': iso_z(open_training), 'end': iso_z(e.timestamp),
+                              'minutes': int(secs / 60)})
+            training_secs += secs
+            open_training = None
+        elif e.event_type == 'trainee_start':
+            open_trainee = e.timestamp
+        elif e.event_type == 'trainee_end' and open_trainee:
+            # Bycie szkolonym to tez praca — nie pomniejsza czasu pracy.
+            secs = (e.timestamp - open_trainee).total_seconds()
+            trainee_periods.append({'start': iso_z(open_trainee), 'end': iso_z(e.timestamp),
+                                    'minutes': int(secs / 60)})
+            trainee_secs += secs
+            open_trainee = None
         elif e.event_type == 'work_end':
             work_end_ts = e.timestamp
 
@@ -4330,6 +4643,10 @@ def _compute_worker_times(uid, shift, attendance_time):
         breaks.append({'start': iso_z(open_break), 'end': None, 'minutes': None})
     if open_other:
         others.append({'start': iso_z(open_other), 'end': None, 'minutes': None})
+    if open_training:
+        trainings.append({'start': iso_z(open_training), 'end': None, 'minutes': None})
+    if open_trainee:
+        trainee_periods.append({'start': iso_z(open_trainee), 'end': None, 'minutes': None})
 
     end_ref = work_end_ts or datetime.utcnow()
     # „Inne" (np. wyjscie do HR) pomniejsza czas pracy tak samo jak przerwa,
@@ -4346,11 +4663,17 @@ def _compute_worker_times(uid, shift, attendance_time):
         'work_end':      iso_z(work_end_ts),
         'break_minutes': int(break_secs / 60),
         'other_minutes': int(other_secs / 60),
+        'training_minutes': int(training_secs / 60),
+        'trainee_minutes': int(trainee_secs / 60),
         'work_minutes':  int(work_secs / 60),
         'breaks':        breaks,
         'others':        others,
+        'trainings':     trainings,
+        'trainee_periods': trainee_periods,
         'on_break':      open_break is not None,
         'on_other':      open_other is not None,
+        'on_training':   open_training is not None,
+        'on_trainee':    open_trainee is not None,
         'work_ended':    work_end_ts is not None,
         'events':        [e.to_dict() for e in events],
     }
@@ -4371,12 +4694,78 @@ def worker_times():
                            min_break=get_setting_int('min_break_minutes', 15))
 
 
+def stan_czasu_dzis(user):
+    """Dzisiejsza zmiana osoby i jej zdarzenia czasu — albo abort().
+
+    Zwraca `{'shift', 'events', 'work_ended', 'trwajace'}`; `trwajace` to
+    otwarte stany z `TRYBY_CZASU` (wiecej `*_start` niz `*_end`, bez flagi na User).
+    """
+    attendance = ShiftAttendance.query.join(Shift).filter(
+        ShiftAttendance.user_id == user.id,
+        Shift.date == local_today()
+    ).order_by(ShiftAttendance.scanned_at.desc()).first()
+    if not attendance:
+        abort(400, f'{user.display_name} nie jest zeskanowany/a na zmianę dziś.')
+
+    shift = attendance.shift
+    events = WorkerTimeEvent.query.filter_by(
+        user_id=user.id, shift_id=shift.id
+    ).order_by(WorkerTimeEvent.timestamp, WorkerTimeEvent.id).all()
+
+    def otwarte(prefix):
+        return (sum(1 for e in events if e.event_type == f'{prefix}_start')
+                > sum(1 for e in events if e.event_type == f'{prefix}_end'))
+
+    return {
+        'shift': shift,
+        'events': events,
+        'work_ended': any(e.event_type == 'work_end' for e in events),
+        'trwajace': [m for m in TRYBY_CZASU if otwarte(m)],
+    }
+
+
+def otwarci_szkoleni(trener_id):
+    """`[(user, shift_id)]` osob szkolonych z otwartym szkoleniem u `trener_id`."""
+    od = datetime.utcnow() - timedelta(days=2)     # szkolenie nie trwa dluzej
+    pary = {(e.user_id, e.shift_id) for e in WorkerTimeEvent.query.filter(
+        WorkerTimeEvent.training_lead_id == trener_id,
+        WorkerTimeEvent.event_type == 'trainee_start',
+        WorkerTimeEvent.timestamp >= od)}
+    wynik = []
+    for uid, shift_id in sorted(pary):
+        typy = [e.event_type for e in WorkerTimeEvent.query.filter(
+            WorkerTimeEvent.user_id == uid, WorkerTimeEvent.shift_id == shift_id,
+            WorkerTimeEvent.event_type.in_(('trainee_start', 'trainee_end')))]
+        if typy.count('trainee_start') > typy.count('trainee_end'):
+            wynik.append((db.session.get(User, uid), shift_id))
+    return wynik
+
+
+def zakoncz_szkolenie(trener, shift, now, notatka=None):
+    """Koniec szkolenia `trener` + wszystkich jego szkolonych, ten sam `now`.
+
+    Jedyna droga zamykania szkolenia ze skanera (przycisk „Zakończ szkolenie"
+    i „Koniec pracy" szkolacego) — szkoleni koncza razem ze szkolacym.
+    Bez commitu.
+    """
+    kto = current_user.id if notatka else None
+    db.session.add(WorkerTimeEvent(
+        user_id=trener.id, shift_id=shift.id, event_type='training_end',
+        timestamp=now, recorded_by=kto, is_manual=False, note=notatka))
+    for szkolony, shift_id in otwarci_szkoleni(trener.id):
+        db.session.add(WorkerTimeEvent(
+            user_id=szkolony.id, shift_id=shift_id, event_type='trainee_end',
+            timestamp=now, recorded_by=current_user.id, is_manual=False,
+            training_lead_id=trener.id,
+            note=f'Koniec szkolenia prowadzonego przez {trener.display_name}'))
+
+
 @app.route('/api/time/scan', methods=['POST'])
 @leader_required
 def api_time_scan():
     data = json_body()
     barcode = (data.get('barcode') or '').strip()
-    mode    = data.get('mode', 'break')   # 'break' | 'work_end'
+    mode    = data.get('mode', 'break')   # 'break' | 'other' | 'work_end'
 
     if not barcode:
         return jsonify({'error': 'Brak kodu.'}), 400
@@ -4385,45 +4774,32 @@ def api_time_scan():
     if not user:
         return jsonify({'error': 'Nieznany kod pracownika.'}), 404
 
-    # Najnowsza obecność dziś
-    today = local_today()
-    attendance = ShiftAttendance.query.join(Shift).filter(
-        ShiftAttendance.user_id == user.id,
-        Shift.date == today
-    ).order_by(ShiftAttendance.scanned_at.desc()).first()
+    if mode not in TRYBY_SKANU and mode != 'work_end':
+        # Szkolenie ma wlasny przeplyw (szkolacy + min. 1 szkolony) — zwykly
+        # przelacznik ominalby ten wymog.
+        return jsonify({'error': 'Nieprawidłowy tryb skanowania.'}), 400
 
-    if not attendance:
-        return jsonify({'error': f'{user.display_name} nie jest zeskanowany/a na zmianę dziś.'}), 400
-
-    shift = attendance.shift
-    events = WorkerTimeEvent.query.filter_by(
-        user_id=user.id, shift_id=shift.id
-    ).order_by(WorkerTimeEvent.timestamp).all()
-
-    work_ended = any(e.event_type == 'work_end' for e in events)
+    stan = stan_czasu_dzis(user)
+    shift, trwajace = stan['shift'], stan['trwajace']
     now = datetime.utcnow()
 
-    def otwarte(prefix):
-        """True gdy jest wiecej '<prefix>_start' niz '<prefix>_end'."""
-        return (sum(1 for e in events if e.event_type == f'{prefix}_start')
-                > sum(1 for e in events if e.event_type == f'{prefix}_end'))
-
-    on_break = otwarte('break')
-    on_other = otwarte('other')
-
     if mode == 'work_end':
-        if work_ended:
+        if stan['work_ended']:
             return jsonify({'error': f'{user.display_name} już zakończył/a pracę na tej zmianie.'}), 409
 
-        # Niedomkniete przerwa/„Inne" zamykamy sami — inaczej wisialyby otwarte
-        # i zjadaly czas pracy az do konca swiata.
-        for prefix, opis in (('break', 'przerwy'), ('other', '„Innego"')):
-            if otwarte(prefix):
+        # Niedomkniete przerwa/„Inne"/szkolenie zamykamy sami — inaczej
+        # wisialyby otwarte i zjadaly czas pracy az do konca swiata.
+        for prefix, opis in (('break', 'przerwy'), ('other', '„Innego"'),
+                             ('trainee', 'szkolenia (szkolony)')):
+            if prefix in trwajace:
                 db.session.add(WorkerTimeEvent(
                     user_id=user.id, shift_id=shift.id, event_type=f'{prefix}_end',
                     timestamp=now, recorded_by=current_user.id, is_manual=False,
                     note=f'Auto-zamknięcie {opis} przy końcu pracy'
                 ))
+        if 'training' in trwajace:
+            # Szkolacy konczy prace → koncza tez jego szkoleni.
+            zakoncz_szkolenie(user, shift, now, 'Auto-zamknięcie szkolenia przy końcu pracy')
 
         db.session.add(WorkerTimeEvent(
             user_id=user.id, shift_id=shift.id, event_type='work_end',
@@ -4433,20 +4809,16 @@ def api_time_scan():
         return jsonify({'message': f'{user.display_name} — koniec pracy zarejestrowany.',
                         'event_type': 'work_end', 'user': user.to_dict()}), 200
 
-    if mode not in ('break', 'other'):
-        return jsonify({'error': 'Nieprawidłowy tryb skanowania.'}), 400
-
-    if work_ended:
+    if stan['work_ended']:
         return jsonify({'error': f'{user.display_name} już zakończył/a pracę.'}), 409
 
-    # Przerwa i „Inne" nie moga trwac jednoczesnie — inaczej ten sam czas
-    # zostalby odjety od pracy dwa razy.
-    if mode == 'break' and on_other and not on_break:
-        return jsonify({'error': f'{user.display_name} jest na „Inne" — najpierw zakończ „Inne".'}), 409
-    if mode == 'other' and on_break and not on_other:
-        return jsonify({'error': f'{user.display_name} jest na przerwie — najpierw zakończ przerwę.'}), 409
+    trwa = mode in trwajace
+    # Przerwa, „Inne" i szkolenie nie moga trwac jednoczesnie — przerwa
+    # i „Inne" odjelyby ten sam czas dwa razy, a paczka z przerwy liczylaby
+    # sie jako szkolenie.
+    if not trwa and trwajace:
+        return jsonify({'error': f'{user.display_name} {KOMUNIKATY_TRWANIA[trwajace[0]]}'}), 409
 
-    trwa = on_break if mode == 'break' else on_other
     event_type = f'{mode}_end' if trwa else f'{mode}_start'
 
     db.session.add(WorkerTimeEvent(
@@ -4463,6 +4835,161 @@ def api_time_scan():
     }
     return jsonify({'message': f'{user.display_name} — {etykiety[event_type]}',
                     'event_type': event_type, 'user': user.to_dict()}), 200
+
+
+# ── Szkolenie: szkolacy + osoby szkolone ─────────────────────────────────────
+#
+# Zakladka „🎓 Szkolenie" w Czasie pracy (decyzja operacji 2026-10-08):
+# 1. skan szkolacego — NIC nie zapisuje, tylko sprawdza i pokazuje stan,
+# 2. skan osob szkolonych — pierwsza zaczyna szkolenie (szkolacy i ona w tej
+#    samej chwili), kolejne dopisuja sie takze w trakcie,
+# 3. „Zakończ szkolenie" — koniec dla szkolacego i wszystkich szkolonych naraz.
+# Szkolenie bez ani jednej osoby szkolonej nie istnieje — inaczej sam skan
+# dawalby szkolacemu 100% celu.
+
+def _trener_z_zadania(data):
+    """Szkolacy z `trener_id` albo `barcode` — po sprawdzeniu znacznika."""
+    if data.get('trener_id') not in (None, ''):
+        trener = db.session.get(User, require_int(data.get('trener_id'), 'trener_id'))
+    else:
+        barcode = (data.get('barcode') or '').strip()
+        if not barcode:
+            abort(400, 'Brak kodu.')
+        trener = User.query.filter_by(barcode_id=barcode).first()
+    if trener is None or not trener.is_active_user:
+        abort(404, 'Nieznany kod pracownika.')
+    if not trener.is_trainer:
+        abort(403, f'{trener.display_name} nie jest osobą szkolącą — szkolenie prowadzą '
+                   'tylko osoby ze znacznikiem „Szkolący".')
+    return trener
+
+
+def opis_szkolenia(trener, stan=None):
+    """Stan szkolenia dla ekranu: czy trwa, od kiedy i kto jest szkolony."""
+    stan = stan or stan_czasu_dzis(trener)
+    trwa = 'training' in stan['trwajace']
+    od = None
+    if trwa:
+        od = [e.timestamp for e in stan['events'] if e.event_type == 'training_start'][-1]
+    return {
+        'trener': {'id': trener.id, 'display_name': trener.display_name,
+                   'barcode_id': trener.barcode_id},
+        'trwa': trwa,
+        'od': iso_z(od),
+        'szkoleni': ([{'id': u.id, 'display_name': u.display_name}
+                      for u, _ in otwarci_szkoleni(trener.id)] if trwa else []),
+    }
+
+
+@app.route('/api/time/training/aktywne', methods=['GET'])
+@leader_required
+def api_training_aktywne():
+    """Trwajace dzis szkolenia — druga stacja moze przejac dowolne z nich."""
+    starty = WorkerTimeEvent.query.join(Shift).filter(
+        Shift.date == local_today(),
+        WorkerTimeEvent.event_type.in_(('training_start', 'training_end'))).all()
+    licznik = {}
+    for e in starty:
+        licznik[e.user_id] = licznik.get(e.user_id, 0) + (
+            1 if e.event_type == 'training_start' else -1)
+    wynik = []
+    for uid in sorted(u for u, n in licznik.items() if n > 0):
+        trener = db.session.get(User, uid)
+        stan = stan_czasu_dzis(trener)
+        if 'training' in stan['trwajace']:
+            wynik.append(opis_szkolenia(trener, stan))
+    return jsonify({'szkolenia': wynik}), 200
+
+
+@app.route('/api/time/training/trener', methods=['POST'])
+@leader_required
+def api_training_trener():
+    """Krok 1: skan szkolacego. Niczego nie zapisuje."""
+    trener = _trener_z_zadania(json_body())
+    stan = stan_czasu_dzis(trener)
+    if stan['work_ended']:
+        abort(409, f'{trener.display_name} już zakończył/a pracę.')
+    inne = [m for m in stan['trwajace'] if m != 'training']
+    if inne:
+        abort(409, f'{trener.display_name} {KOMUNIKATY_TRWANIA[inne[0]]}')
+    return jsonify(opis_szkolenia(trener, stan)), 200
+
+
+@app.route('/api/time/training/szkolony', methods=['POST'])
+@leader_required
+def api_training_szkolony():
+    """Krok 2: skan osoby szkolonej. Pierwsza zaczyna szkolenie."""
+    data = json_body()
+    trener = _trener_z_zadania({'trener_id': data.get('trener_id')})
+    # Blokada wiersza szkolacego: podwojny Enter / dwie stacje przy pierwszym
+    # szkolonym dalyby dwa `training_start`.
+    db.session.query(User).filter_by(id=trener.id).with_for_update().one()
+
+    barcode = (data.get('barcode') or '').strip()
+    if not barcode:
+        abort(400, 'Brak kodu.')
+    szkolony = User.query.filter_by(barcode_id=barcode, is_active_user=True).first()
+    if szkolony is None:
+        abort(404, 'Nieznany kod pracownika.')
+    if szkolony.id == trener.id:
+        abort(400, f'To kod osoby szkolącej ({trener.display_name}) — zeskanuj osobę szkoloną. '
+                   'Szkolenie kończy przycisk „Zakończ szkolenie".')
+
+    stan_trenera = stan_czasu_dzis(trener)
+    if stan_trenera['work_ended']:
+        abort(409, f'{trener.display_name} już zakończył/a pracę.')
+    inne = [m for m in stan_trenera['trwajace'] if m != 'training']
+    if inne:
+        abort(409, f'{trener.display_name} {KOMUNIKATY_TRWANIA[inne[0]]}')
+
+    stan = stan_czasu_dzis(szkolony)
+    if stan['work_ended']:
+        abort(409, f'{szkolony.display_name} już zakończył/a pracę.')
+    if stan['trwajace']:
+        if 'trainee' in stan['trwajace'] and any(
+                u.id == szkolony.id for u, _ in otwarci_szkoleni(trener.id)):
+            abort(409, f'{szkolony.display_name} już jest na tym szkoleniu.')
+        abort(409, f'{szkolony.display_name} {KOMUNIKATY_TRWANIA[stan["trwajace"][0]]}')
+
+    now = datetime.utcnow()
+    rozpoczete = 'training' not in stan_trenera['trwajace']
+    if rozpoczete:
+        db.session.add(WorkerTimeEvent(
+            user_id=trener.id, shift_id=stan_trenera['shift'].id,
+            event_type='training_start', timestamp=now, is_manual=False))
+    db.session.add(WorkerTimeEvent(
+        user_id=szkolony.id, shift_id=stan['shift'].id, event_type='trainee_start',
+        timestamp=now, is_manual=False, training_lead_id=trener.id))
+    db.session.commit()
+
+    wynik = opis_szkolenia(trener)
+    wynik['message'] = (f'Szkolenie rozpoczęte — {trener.display_name} szkoli '
+                        f'{szkolony.display_name} 🎓' if rozpoczete else
+                        f'{szkolony.display_name} dołączył/a do szkolenia 🎓')
+    return jsonify(wynik), 200
+
+
+@app.route('/api/time/training/koniec', methods=['POST'])
+@leader_required
+def api_training_koniec():
+    """Krok 3: koniec szkolenia — szkolacy i wszyscy szkoleni naraz.
+
+    Szkolacy bez znacznika (zdjetego w trakcie) tez moze zakonczyc — inaczej
+    jego szkolenie wisialoby otwarte."""
+    data = json_body()
+    trener = db.get_or_404(User, require_int(data.get('trener_id'), 'trener_id'))
+    db.session.query(User).filter_by(id=trener.id).with_for_update().one()
+    stan = stan_czasu_dzis(trener)
+    if 'training' not in stan['trwajace']:
+        abort(409, f'{trener.display_name} nie prowadzi teraz szkolenia.')
+    szkoleni = [u.display_name for u, _ in otwarci_szkoleni(trener.id)]
+    zakoncz_szkolenie(trener, stan['shift'], datetime.utcnow())
+    db.session.commit()
+    return jsonify({
+        'message': f'Szkolenie zakończone — {trener.display_name}'
+                   + (f' i {len(szkoleni)} os. szkolonych' if szkoleni else '') + ' ✅',
+        'szkoleni': szkoleni,
+    }), 200
 
 
 @app.route('/api/worker-times')
@@ -4530,8 +5057,11 @@ def api_time_event_create():
     # (na Postgresie transakcja padala w commicie).
     user_id = require_int(user_id, 'user_id')
     shift_id = require_int(shift_id, 'shift_id')
-    if db.session.get(User, user_id) is None:
+    pracownik = db.session.get(User, user_id)
+    if pracownik is None:
         return jsonify({'error': f'Nieznany pracownik (id {user_id}).'}), 400
+    if event_type == 'training_start' and not pracownik.is_trainer:
+        return jsonify({'error': f'{pracownik.display_name} nie jest osobą szkolącą.'}), 400
     if db.session.get(Shift, shift_id) is None:
         return jsonify({'error': f'Nieznana zmiana (id {shift_id}).'}), 400
 
@@ -4552,6 +5082,9 @@ def api_time_event_update(event_id):
     if 'event_type' in data:
         if data['event_type'] not in EVENT_TYPES:
             return jsonify({'error': 'Nieprawidłowy typ.'}), 400
+        if (data['event_type'] == 'training_start'
+                and not db.session.get(User, event.user_id).is_trainer):
+            return jsonify({'error': 'Ta osoba nie jest osobą szkolącą.'}), 400
         event.event_type = data['event_type']
     if 'timestamp' in data:
         try:
@@ -4916,6 +5449,9 @@ def migrate_columns():
             ('"user"', "worker_type_id", "INTEGER REFERENCES user_option(id)"),
             ('"user"', "shift_group_id", "INTEGER REFERENCES user_option(id)"),
             ("imported_carton", "data_pliku",         "DATE"),
+            ('"user"', "is_trainer", "BOOLEAN NOT NULL DEFAULT FALSE"),
+            # "user" w REFERENCES tez musi byc w cudzyslowie.
+            ("worker_time_event", "training_lead_id", 'INTEGER REFERENCES "user"(id)'),
         ]
 
         for table, column, col_def in migrations:
@@ -5099,6 +5635,8 @@ def init_db():
             migrate_columns()
             migruj_date_pliku()
             seed_data()
+            zasiej_historie_celu()
+            db.session.commit()
         finally:
             conn.execute(db.text('SELECT pg_advisory_unlock(:id)'), {'id': lock_id})
             conn.commit()

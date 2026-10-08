@@ -1,6 +1,22 @@
 # LogiStat — Changelog
 
-## 2026-10-08 — Forecast: znak różnicy
+## 2026-10-08 — Osoba szkoląca i osoby szkolone, znak różnicy w Forecast (PR #22, #23)
+
+### Dodane
+- **🎓 Szkolący** — znacznik na koncie (Użytkownicy). Kolumna `user.is_trainer`.
+- **Zakładka „🎓 Szkolenie"** w Czasie pracy (prowadzą tylko osoby szkolące). Szkolenie to czas pracy —
+  nie pomniejsza go; osobna kolumna w Czasach pracowników. Nie nakłada się z przerwą ani „Inne".
+- **Normy:** czas paczek szkolącego przypadający na szkolenie liczy się jako 100% celu szt./h
+  z dnia paczki i nie wchodzi do średniej zespołu. Reszta — z prawdziwych sztuk; bez celu
+  (0) — wszystko z prawdziwych sztuk.
+- **Historia celu** (`historia_celu`): cel obowiązujący danego dnia; zmiana celu nie
+  przelicza starych dni.
+- **Osoby szkolone** (2026-10-08): w zakładce Szkolenie po szkolącym skanuje się osoby
+  szkolone; szkolenie zaczyna się od pierwszej z nich (bez szkolonych — brak szkolenia),
+  kolejne dołączają w trakcie. „Zakończ szkolenie" kończy wszystkich naraz (także „Koniec
+  pracy" szkolącego). Paczki osób szkolonych z czasu szkolenia nie wchodzą do norm ani
+  średniej. Trwające szkolenia widać na liście — druga stacja może je przejąć. Kolumna
+  `worker_time_event.training_lead_id`.
 
 ### Poprawione
 - **Forecast: różnica = Actual − Forecast.** Plan 90 000, przyjechało 20 000 pokazywało

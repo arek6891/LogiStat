@@ -65,6 +65,7 @@ Pracownicy systemu. Trzy role: `operator` (skanuje barcode, bez loginu), `leader
 | created_at | TIMESTAMP | NOT NULL DEFAULT NOW() | |
 | worker_type_id | INTEGER | FK → user_option.id, NULL | Rodzaj pracownika (Logwin / agencja) |
 | shift_group_id | INTEGER | FK → user_option.id, NULL | Nazwa zmiany (Zmiana A/B/C) — nie mylić z `shift` (zmiana 1/2 dnia) |
+| is_trainer | BOOLEAN | NOT NULL DEFAULT FALSE | „🎓 Szkolący" — może rejestrować szkolenie; paczki ze szkolenia = 100% celu w Normach (2026-10-06, `migrate_columns()`) |
 
 ---
 
@@ -312,6 +313,16 @@ Plan dzienny — jeden wpis na dzień, wpisywany ręcznie przez lidera. Porówny
 
 ---
 
+### `historia_celu`
+Cel szt./h (`target_szt_h`) obowiązujący od dnia `dzien` do następnego wpisu (2026-10-06, `create_all()`). Pierwszy wiersz `2000-01-01` = cel sprzed historii (`zasiej_historie_celu()`). Używany do liczenia paczek ze szkolenia celem z dnia paczki.
+
+| Kolumna | Typ | Ograniczenia | Opis |
+|---|---|---|---|
+| dzien | DATE | PK | Od kiedy obowiązuje |
+| wartosc | INTEGER | NOT NULL | Cel szt./h (0 = brak) |
+
+---
+
 ### `worker_time_event`
 Eventy czasu pracy pracownika: rozpoczęcie/zakończenie przerwy, koniec pracy. Stan przerwy = `count(break_start) − count(break_end)`.
 
@@ -320,11 +331,12 @@ Eventy czasu pracy pracownika: rozpoczęcie/zakończenie przerwy, koniec pracy. 
 | id | SERIAL | PK | |
 | user_id | INTEGER | FK → user.id NOT NULL | |
 | shift_id | INTEGER | FK → shift.id NOT NULL | |
-| event_type | VARCHAR(20) | NOT NULL | `break_start` / `break_end` / `work_end` |
+| event_type | VARCHAR(20) | NOT NULL | `break_start` / `break_end` / `other_start` / `other_end` / `training_start` / `training_end` / `trainee_start` / `trainee_end` / `work_end` |
 | timestamp | TIMESTAMP | NOT NULL DEFAULT NOW() | |
 | recorded_by | INTEGER | FK → user.id | |
 | is_manual | BOOLEAN | DEFAULT FALSE | Korekta ręczna przez lidera |
 | note | VARCHAR(300) | | |
+| training_lead_id | INTEGER | FK → user.id, NULL | Tylko `trainee_*`: kto prowadzi szkolenie (2026-10-08, `migrate_columns()`) |
 
 **Indeksy:** `(user_id, shift_id)`, `shift_id`
 
