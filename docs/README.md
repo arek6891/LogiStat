@@ -180,7 +180,7 @@ zalogowanego lidera, bo to ekran stanowiskowy).
 
 ### 🧑‍💼 Lider
 - 🏠 **Dashboard** (`/dashboard`) — **Dziś** (plan dzisiejszego pliku), **Wybrany dzień**, **Podsumowanie** (wszystkie niezrobione wg daty pliku), per pracownik, per zmiana; kliknięcie nazwiska otwiera Normy tej osoby
-- 📈 **Forecast** (`/forecast`) — prognoza ilości per dzień
+- 📈 **Forecast** (`/forecast`) — prognoza ilości per dzień; **Różnica = Actual − Forecast** (minus = przyjechało mniej niż plan)
 - 📋 **Przydzielanie** (`/assignment`) — drag & drop operatorów do czynności
 - ✏️ **Wpis ilości** (`/data-entry`) — ilości zrobione per osoba
 - 📊 **Normy** (`/stats`) — przegląd całego zespołu (ranking szt./h względem średniej zespołu, cel lidera, rodzaj pracownika i nazwa zmiany) + per pracownik: ocena na tle zespołu, średnie dzienne/miesięczne paczek i sztuk, wykres dzienny i miesięczny
