@@ -2,6 +2,11 @@
 
 ## 2026-10-08 — Osoba szkoląca i osoby szkolone, znak różnicy w Forecast (PR #22, #23)
 
+Wdrożone na `.31` 2026-10-08 (`main` `519f7d1`), backup przed:
+`backups/logistat-2026-10-08_1746.sql.gz`. Nowe kolumny `user.is_trainer`,
+`worker_time_event.training_lead_id`, tabela `historia_celu` (zasiana celem 300 szt./h).
+Po wdrożeniu: zaznaczyć **🎓 Szkolący** przy osobach szkolących (Użytkownicy).
+
 ### Dodane
 - **🎓 Szkolący** — znacznik na koncie (Użytkownicy). Kolumna `user.is_trainer`.
 - **Zakładka „🎓 Szkolenie"** w Czasie pracy (prowadzą tylko osoby szkolące). Szkolenie to czas pracy —
