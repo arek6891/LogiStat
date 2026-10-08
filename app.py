@@ -4631,7 +4631,9 @@ def api_forecast_chart_data():
             'date': current.isoformat(),
             'forecast': forecast_qty,
             'actual': actual_qty,
-            'diff': forecast_qty - actual_qty,
+            # Actual − Forecast: przyjechalo mniej niz plan → minus (operacje
+            # czytaly odwrotny znak jako nadwyzke).
+            'diff': actual_qty - forecast_qty,
             'notes': forecast_map.get(current, {}).get('notes', '')
         })
         current += timedelta(days=1)
@@ -4730,7 +4732,7 @@ def api_forecast_export():
         PatternFill('solid', fgColor='C0392B'),
         PatternFill('solid', fgColor='7D3C98'),
     ]
-    headers = ['Data', 'Forecast', 'Actual (Paczki)', 'Różnica (F-A)', 'Notatki']
+    headers = ['Data', 'Forecast', 'Actual (Paczki)', 'Różnica (A-F)', 'Notatki']
 
     for col, (h, fill) in enumerate(zip(headers, col_fills), start=1):
         cell = ws.cell(row=1, column=col, value=h)
@@ -4741,7 +4743,7 @@ def api_forecast_export():
     for row_idx, d in enumerate(days, start=2):
         forecast_qty = forecast_map.get(d, {}).get('quantity', 0)
         actual_qty = actual_map.get(d, 0)
-        diff = forecast_qty - actual_qty
+        diff = actual_qty - forecast_qty
 
         ws.cell(row=row_idx, column=1, value=d.strftime('%d.%m.%Y'))
         ws.cell(row=row_idx, column=2, value=forecast_qty)
