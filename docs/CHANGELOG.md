@@ -1,5 +1,24 @@
 # LogiStat — Changelog
 
+## 2026-10-12 — Statystyki ogólne dla lidera, „Loading date", Dashboard: zakresy
+
+PR #26. Wdrożone na `.31` 2026-10-12 (`1ab0a31`), backup przed:
+`backups/logistat-2026-10-12_1650.sql.gz`. Bez nowych kolumn i tabel.
+
+### Zmienione
+- **Statystyki ogólne dostępne dla lidera** (menu: grupa Lider) — tylko podgląd, bez kolumn
+  kosztów i bez stawek w źródle strony; eksport Excel lidera bez kolumn Cost / Total cost.
+  Edycja ilości i „→ użyj skanów" zostają u admina.
+- **„Data pliku" → „Loading date"** we wszystkich tekstach na ekranach (Import danych,
+  Paczki, Dashboard, Forecast, Statystyki ogólne, komunikaty błędów). W bazie i API bez zmian
+  (`data_pliku`).
+
+### Dodane
+- **Dashboard → Podsumowanie: zakres Loading date od–do** (puste = wszystkie dni). Dalej
+  tylko niezrobione paczki; zakres zostaje przy automatycznym odświeżaniu.
+- **Dashboard → nowa zakładka „Per Loading date"**: wiersz na każdą Loading date z zakresu
+  (domyślnie bieżący miesiąc) — wrzucone / zrobione / w toku / pozostało, postęp %, „Razem".
+
 ## 2026-10-08 — Osoba szkoląca i osoby szkolone, znak różnicy w Forecast (PR #22, #23)
 
 Wdrożone na `.31` 2026-10-08 (`main` `519f7d1`), backup przed:

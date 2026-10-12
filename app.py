@@ -1447,7 +1447,7 @@ def api_imports_zmien_date():
         recompute_general_stat(*k, actor_id=current_user.id)
     db.session.commit()
     return jsonify({**skutki, 'message':
-        f'Zmieniono datę pliku {len(do_zmiany)} paczek na {nowa.strftime("%d.%m.%Y")}.'}), 200
+        f'Zmieniono Loading date {len(do_zmiany)} paczek na {nowa.strftime("%d.%m.%Y")}.'}), 200
 
 
 @app.route('/import-csv')
@@ -1469,7 +1469,7 @@ TOLERANCJA_ILOSCI = 1.10
 #  local_day_bounds() — inaczej „dzien" na tym ekranie znaczylby co innego niz
 #  na dashboardzie i statystykach (patrz uwaga o strefach w CLAUDE.md).
 PACZKI_POLA_DAT = {
-    'plik':   ('Data pliku',     ImportedCarton.data_pliku,    False),
+    'plik':   ('Loading date',   ImportedCarton.data_pliku,    False),
     'ziel':   ('Ziel-Datum',     ImportedCarton.ziel_datum,    False),
     'import': ('Data importu',   ImportedCarton.imported_at,   True),
     'start':  ('Start paczki',   ImportedCarton.scan_start_at, True),
@@ -1662,8 +1662,10 @@ def paczki_view():
 
 
 @app.route('/general-stats/export')
-@admin_required
+@leader_required
 def general_stats_export():
+    # Lider dostaje ten sam plik bez kolumn kosztow — stawki widzi tylko admin.
+    koszty = acting_as_admin()
 
     date_from_str = request.args.get('date_from', '')
     date_to_str = request.args.get('date_to', '')
@@ -1683,8 +1685,9 @@ def general_stats_export():
 
     dr_amounts = double_rate_amount_map()
 
-    cost_mappings = CostMapping.query.all()
+    cost_mappings = CostMapping.query.all() if koszty else []
     rates_by_ym = {(cm.year, cm.month): cm.get_rates_data() for cm in cost_mappings}
+    kol_na_kat = 2 if koszty else 1
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -1719,27 +1722,29 @@ def general_stats_export():
         ws.merge_cells(start_row=1, start_column=ci, end_row=2, end_column=ci)
 
     for i, cat in enumerate(STAT_CATEGORIES):
-        col = cat_cols_start + i * 2
+        col = cat_cols_start + i * kol_na_kat
         label = STAT_CATEGORY_LABELS[cat]
         c = ws.cell(row=1, column=col, value=label)
         c.font = header_font
         c.fill = header_fill_cat
         c.alignment = center
         c.border = thin
-        ws.merge_cells(start_row=1, start_column=col, end_row=1, end_column=col + 1)
+        if kol_na_kat > 1:
+            ws.merge_cells(start_row=1, start_column=col, end_row=1, end_column=col + 1)
 
-    total_col = cat_cols_start + len(STAT_CATEGORIES) * 2
-    tc = ws.cell(row=1, column=total_col, value='Total cost (EUR)')
-    tc.font = header_font
-    tc.fill = header_fill_tot
-    tc.alignment = center
-    tc.border = thin
-    ws.merge_cells(start_row=1, start_column=total_col, end_row=2, end_column=total_col)
+    total_col = cat_cols_start + len(STAT_CATEGORIES) * kol_na_kat
+    if koszty:
+        tc = ws.cell(row=1, column=total_col, value='Total cost (EUR)')
+        tc.font = header_font
+        tc.fill = header_fill_tot
+        tc.alignment = center
+        tc.border = thin
+        ws.merge_cells(start_row=1, start_column=total_col, end_row=2, end_column=total_col)
 
     # Row 2: sub-headers for categories
     for i, cat in enumerate(STAT_CATEGORIES):
-        col = cat_cols_start + i * 2
-        for offset, sub in enumerate(['Amount', 'Cost (EUR)']):
+        col = cat_cols_start + i * kol_na_kat
+        for offset, sub in enumerate(['Amount', 'Cost (EUR)'][:kol_na_kat]):
             c = ws.cell(row=2, column=col + offset, value=sub)
             c.font = Font(bold=True, color='FFFFFF', size=9)
             c.fill = header_fill_cat
@@ -1785,16 +1790,18 @@ def general_stats_export():
                 c.font = Font(bold=True, color='C2410C')
 
         for i, cat in enumerate(STAT_CATEGORIES):
-            col = cat_cols_start + i * 2
+            col = cat_cols_start + i * kol_na_kat
             amt = cd.get(cat, {}).get('amount', 0)
             cost = amt * rates.get(cat, 0.0)
-            for offset, val in enumerate([amt, round(cost, 2)]):
+            for offset, val in enumerate([amt, round(cost, 2)][:kol_na_kat]):
                 c = ws.cell(row=ri, column=col + offset, value=val)
                 c.border = thin
                 c.alignment = Alignment(horizontal='right')
                 if row_fill:
                     c.fill = row_fill
 
+        if not koszty:
+            return
         tc = ws.cell(row=ri, column=total_col, value=round(total_cost, 2))
         tc.border = thin
         tc.alignment = Alignment(horizontal='right')
@@ -1820,9 +1827,10 @@ def general_stats_export():
     col_widths = [12, 10, 6, 14, 22, 18, 9, 12]
     for i, w in enumerate(col_widths, 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
-    for i in range(len(STAT_CATEGORIES) * 2):
+    for i in range(len(STAT_CATEGORIES) * kol_na_kat):
         ws.column_dimensions[openpyxl.utils.get_column_letter(cat_cols_start + i)].width = 9
-    ws.column_dimensions[openpyxl.utils.get_column_letter(total_col)].width = 14
+    if koszty:
+        ws.column_dimensions[openpyxl.utils.get_column_letter(total_col)].width = 14
 
     ws.freeze_panes = 'A3'
 
@@ -1917,8 +1925,11 @@ def scan_coverage_map():
 
 
 @app.route('/general-stats')
-@admin_required
+@leader_required
 def general_stats_page():
+    # Lider: podglad bez kosztow i bez edycji (API zapisu zostaje @admin_required).
+    # Stawek nie wysylamy mu nawet do JS — bylyby w zrodle strony.
+    admin = acting_as_admin()
     # If parameters not provided, use first and last day of current month
     today = local_today()
     default_from = today.replace(day=1).strftime('%Y-%m-%d')
@@ -1961,9 +1972,9 @@ def general_stats_page():
             (s.list_id, s.country_ledger, s.loading_date), (0, 0))
 
     # Przekazanie do szablonu wszystkich mapowań kosztów aby JS miał do nich dostęp przy edycji
-    cost_mappings = CostMapping.query.all()
+    cost_mappings = CostMapping.query.all() if admin else []
     rates_by_ym = {f"{cm.year}-{cm.month:02d}": cm.get_rates_data() for cm in cost_mappings}
-    
+
     return render_template('general_stats.html',
                            stats=stats,
                            category_labels=STAT_CATEGORY_LABELS,
@@ -1972,7 +1983,9 @@ def general_stats_page():
                            categories=STAT_CATEGORIES,
                            date_from=date_from_str,
                            date_to=date_to_str,
-                           rates_by_ym=rates_by_ym)
+                           rates_by_ym=rates_by_ym,
+                           pokaz_koszty=admin,
+                           edycja=admin)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -3455,11 +3468,11 @@ def wymagana_data_pliku(wartosc):
     chroni okno z data przy imporcie."""
     tekst = str(wartosc or '').strip()
     if not tekst:
-        abort(400, 'Podaj datę pliku (dzień, którego dotyczy plik).')
+        abort(400, 'Podaj Loading date (dzień, którego dotyczy plik).')
     try:
         return date.fromisoformat(tekst)
     except ValueError:
-        abort(400, 'Nieprawidłowa data pliku (oczekiwano YYYY-MM-DD).')
+        abort(400, 'Nieprawidłowa Loading date (oczekiwano YYYY-MM-DD).')
 
 
 def process_import_rows(rows, data_pliku):
@@ -3856,24 +3869,22 @@ def api_dashboard():
     })
 
 
-def plan_dnia_pliku(dzien):
-    """Paczki z plikow danego dnia (data pliku): wrzucone / zrobione / w toku /
-    pozostalo, w paczkach i sztukach.
-
-    „Zrobione" = karton tego pliku z `scan_end_at` — niezaleznie od tego, KIEDY
-    go skonczono. To co innego niz „zakonczone dzis" (po czasie skanu): plik z
-    poniedzialku konczony we wtorek liczy sie do poniedzialku.
-    """
+def _agregaty_planu():
+    """Kolumny planu pliku: paczek, sztuk, zrobione, zrobione szt., w toku.
+    Jedna definicja dla jednego dnia (Dzis / Wybrany dzien) i zakresu (Per Loading date)."""
     zrobiona = ImportedCarton.scan_end_at.isnot(None)
     w_toku = and_(ImportedCarton.scan_start_at.isnot(None), ImportedCarton.scan_end_at.is_(None))
-    w = db.session.query(
+    return (
         func.count(ImportedCarton.id),
         func.coalesce(func.sum(ImportedCarton.stueckzahl), 0),
         func.count(ImportedCarton.scan_end_at),
         func.coalesce(func.sum(case((zrobiona, ImportedCarton.stueckzahl), else_=0)), 0),
         func.coalesce(func.sum(case((w_toku, 1), else_=0)), 0),
-    ).filter(ImportedCarton.data_pliku == dzien).one()
-    paczek, sztuk, zrob, zrob_szt, toku = (int(x or 0) for x in w)
+    )
+
+
+def _wiersz_planu(dzien, wartosci):
+    paczek, sztuk, zrob, zrob_szt, toku = (int(x or 0) for x in wartosci)
     return {
         'data_pliku': dzien.isoformat(),
         'paczek': paczek, 'sztuk': sztuk,
@@ -3884,17 +3895,52 @@ def plan_dnia_pliku(dzien):
     }
 
 
-def zalegle_wg_daty_pliku():
+def plan_dnia_pliku(dzien):
+    """Paczki z plikow danego dnia (data pliku): wrzucone / zrobione / w toku /
+    pozostalo, w paczkach i sztukach.
+
+    „Zrobione" = karton tego pliku z `scan_end_at` — niezaleznie od tego, KIEDY
+    go skonczono. To co innego niz „zakonczone dzis" (po czasie skanu): plik z
+    poniedzialku konczony we wtorek liczy sie do poniedzialku.
+    """
+    w = db.session.query(*_agregaty_planu()).filter(ImportedCarton.data_pliku == dzien).one()
+    return _wiersz_planu(dzien, w)
+
+
+MAX_DNI_ZAKRESU_DASHBOARDU = 366
+
+
+def plany_dni_pliku(od, do):
+    """Plan pliku (jak `plan_dnia_pliku`) dla kazdej daty pliku z [od, do] —
+    zakladka „Per Loading date". Tylko dni, w ktorych cos wrzucono; najnowsze
+    najpierw. `suma` = te same pola dla calego zakresu."""
+    wiersze = db.session.query(ImportedCarton.data_pliku, *_agregaty_planu())\
+        .filter(ImportedCarton.data_pliku >= od, ImportedCarton.data_pliku <= do)\
+        .group_by(ImportedCarton.data_pliku)\
+        .order_by(ImportedCarton.data_pliku.desc()).all()
+    dni = [_wiersz_planu(w[0], w[1:]) for w in wiersze]
+    pola = ('paczek', 'sztuk', 'zrobione', 'zrobione_sztuk', 'w_toku')
+    suma = _wiersz_planu(od, [sum(d[p] for d in dni) for p in pola])
+    del suma['data_pliku']
+    return {'date_from': od.isoformat(), 'date_to': do.isoformat(), 'dni': dni, 'suma': suma}
+
+
+def zalegle_wg_daty_pliku(od=None, do=None):
     """Wszystkie niezrobione paczki (scan_end_at IS NULL) per data pliku,
-    najstarsze najpierw — Podsumowanie Dashboardu."""
-    wiersze = db.session.query(
+    najstarsze najpierw — Podsumowanie Dashboardu. `od`/`do` (opcjonalne)
+    zawezaja do dat pliku z zakresu; przy filtrze paczki bez daty pliku odpadaja."""
+    q = db.session.query(
         ImportedCarton.data_pliku,
         func.count(ImportedCarton.id),
         func.coalesce(func.sum(ImportedCarton.stueckzahl), 0),
         func.coalesce(func.sum(case((ImportedCarton.scan_start_at.isnot(None), 1), else_=0)), 0),
-    ).filter(ImportedCarton.scan_end_at.is_(None))\
-     .group_by(ImportedCarton.data_pliku)\
-     .order_by(ImportedCarton.data_pliku.asc().nullsfirst()).all()
+    ).filter(ImportedCarton.scan_end_at.is_(None))
+    if od:
+        q = q.filter(ImportedCarton.data_pliku >= od)
+    if do:
+        q = q.filter(ImportedCarton.data_pliku <= do)
+    wiersze = q.group_by(ImportedCarton.data_pliku)\
+               .order_by(ImportedCarton.data_pliku.asc().nullsfirst()).all()
     dni = [{'data_pliku': d.isoformat() if d else None, 'paczek': int(n), 'sztuk': int(szt or 0),
             'w_toku': int(t or 0)} for d, n, szt, t in wiersze]
     return {'paczek': sum(x['paczek'] for x in dni), 'sztuk': sum(x['sztuk'] for x in dni), 'dni': dni}
@@ -3905,6 +3951,35 @@ def zalegle_wg_daty_pliku():
 def api_dashboard_plik():
     """Plan dnia dla wybranej daty pliku (`?date=`, domyslnie dzis)."""
     return jsonify(plan_dnia_pliku(parse_date(request.args.get('date'))))
+
+
+@app.route('/api/dashboard/zalegle')
+@leader_required
+def api_dashboard_zalegle():
+    """Podsumowanie (niezrobione per data pliku) z opcjonalnym zakresem
+    `date_from` / `date_to` po dacie pliku. Puste = wszystkie dni."""
+    od_s, do_s = request.args.get('date_from', ''), request.args.get('date_to', '')
+    od = parse_date(od_s, 'date_from') if od_s else None
+    do = parse_date(do_s, 'date_to') if do_s else None
+    if od and do and od > do:
+        abort(400, 'Data „od" jest późniejsza niż „do".')
+    return jsonify(zalegle_wg_daty_pliku(od, do))
+
+
+@app.route('/api/dashboard/loading-dates')
+@leader_required
+def api_dashboard_loading_dates():
+    """Zakladka „Per Loading date": plan pliku per data pliku z zakresu.
+    Bez dat — biezacy miesiac do dzis."""
+    dzis = local_today()
+    od_s, do_s = request.args.get('date_from', ''), request.args.get('date_to', '')
+    od = parse_date(od_s, 'date_from') if od_s else dzis.replace(day=1)
+    do = parse_date(do_s, 'date_to') if do_s else dzis
+    if od > do:
+        abort(400, 'Data „od" jest późniejsza niż „do".')
+    if (do - od).days >= MAX_DNI_ZAKRESU_DASHBOARDU:
+        abort(400, f'Zakres może mieć najwyżej {MAX_DNI_ZAKRESU_DASHBOARDU} dni.')
+    return jsonify(plany_dni_pliku(od, do))
 
 
 @app.route('/api/dashboard/shifts')
@@ -4099,7 +4174,7 @@ def api_package_create():
     if not uebergabe_nr:
         missing.append('Übergabe Nr.')
     if not data_pliku_str:
-        missing.append('Data pliku')
+        missing.append('Loading date')
     if missing:
         return jsonify({'error': 'Brakuje wymaganych pól: ' + ', '.join(missing)}), 400
 
@@ -4245,7 +4320,7 @@ def api_package_update(carton_id):
     if not uebergabe_nr:
         missing.append('Übergabe Nr.')
     if not data_pliku_str:
-        missing.append('Data pliku')
+        missing.append('Loading date')
     if missing:
         return jsonify({'error': 'Brakuje wymaganych pól: ' + ', '.join(missing)}), 400
 

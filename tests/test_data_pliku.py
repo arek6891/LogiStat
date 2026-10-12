@@ -36,7 +36,7 @@ def test_import_bez_daty_pliku_daje_400_i_nic_nie_zapisuje(leader_client):
     for brak in (None, '', '   '):
         r = wyslij_csv(leader_client, brak)
         assert r.status_code == 400, repr(brak)
-        assert 'datę pliku' in r.get_json()['error']
+        assert 'Loading date' in r.get_json()['error']
     assert logistat.ImportedCarton.query.count() == 0
 
 

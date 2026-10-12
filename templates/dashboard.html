@@ -6,7 +6,10 @@
     .dash-label { font-size:.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem; }
     .dash-val { font-size:2.8rem;font-weight:800; }
     .dash-sub { font-size:.8rem;color:var(--text-muted); }
-    #pane-dzis a, #pane-dzien a, #pane-summary a { color: var(--info); }
+    #pane-dzis a, #pane-dzien a, #pane-summary a, #pane-dni a { color: var(--info); }
+    .zakres-dat { display:flex;align-items:center;gap:.5rem;margin-bottom:1.25rem;flex-wrap:wrap; }
+    .zakres-dat label { color:var(--text-muted);font-size:.9rem; }
+    .zakres-dat input { width:160px; }
 </style>
 {% endblock %}
 
@@ -25,6 +28,7 @@
     <button class="shift-tab active" id="tab-dzis" onclick="switchTab('dzis')">Dziś</button>
     <button class="shift-tab" id="tab-dzien" onclick="switchTab('dzien')">Wybrany dzień</button>
     <button class="shift-tab" id="tab-summary" onclick="switchTab('summary')">Podsumowanie</button>
+    <button class="shift-tab" id="tab-dni" onclick="switchTab('dni')">Per Loading date</button>
     <button class="shift-tab" id="tab-workers" onclick="switchTab('workers')">Per pracownik</button>
     <button class="shift-tab" id="tab-shifts" onclick="switchTab('shifts')">Per zmiana</button>
 </div>
@@ -66,7 +70,7 @@
 <!-- ═══ ZAKŁADKA: WYBRANY DZIEŃ ═══ -->
 <div id="pane-dzien" style="display:none;">
     <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1.5rem;flex-wrap:wrap;">
-        <label style="color:var(--text-muted);font-size:.9rem;" for="planDate">Data pliku:</label>
+        <label style="color:var(--text-muted);font-size:.9rem;" for="planDate">Loading date:</label>
         <input type="date" id="planDate" class="form-control" style="width:170px;" onchange="loadPlanDnia()">
         <button class="btn btn-ghost btn-sm" onclick="loadPlanDnia()">↻ Odśwież</button>
     </div>
@@ -75,7 +79,14 @@
 
 <!-- ═══ ZAKŁADKA: PODSUMOWANIE (wszystkie niezrobione) ═══ -->
 <div id="pane-summary" style="display:none;">
-    <p style="color:var(--text-muted);font-size:.88rem;margin-top:0;">
+    <div class="zakres-dat">
+        <label for="zalOd">Loading date od</label>
+        <input type="date" id="zalOd" class="form-control" onchange="loadZalegle()">
+        <label for="zalDo">do</label>
+        <input type="date" id="zalDo" class="form-control" onchange="loadZalegle()">
+        <button class="btn btn-ghost btn-sm" onclick="wyczyscZakresZaleglych()" title="Wszystkie dni">✖ Wszystkie dni</button>
+    </div>
+    <p style="color:var(--text-muted);font-size:.88rem;margin-top:0;" id="zalegleOpis">
         Wszystkie niezrobione paczki (bez zakończenia), z plików z każdego dnia.
     </p>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:2rem;">
@@ -96,8 +107,25 @@
         </div>
     </div>
     <div class="card" style="padding:0;overflow:hidden;">
-        <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-weight:600;">📅 Niezrobione wg daty pliku</div>
+        <div style="padding:16px 20px;border-bottom:1px solid var(--border);font-weight:600;">📅 Niezrobione wg Loading date</div>
         <div id="zalegleTable"><div style="padding:2rem;text-align:center;color:var(--text-muted);">Ładowanie…</div></div>
+    </div>
+</div>
+
+<!-- ═══ ZAKŁADKA: PER LOADING DATE ═══ -->
+<div id="pane-dni" style="display:none;">
+    <div class="zakres-dat">
+        <label for="dniOd">Loading date od</label>
+        <input type="date" id="dniOd" class="form-control" onchange="loadDni()">
+        <label for="dniDo">do</label>
+        <input type="date" id="dniDo" class="form-control" onchange="loadDni()">
+        <button class="btn btn-ghost btn-sm" onclick="loadDni()">↻ Odśwież</button>
+    </div>
+    <p style="color:var(--text-muted);font-size:.88rem;margin-top:0;">
+        Każda Loading date z zakresu: ile wrzucono, ile zrobiono (niezależnie od dnia zakończenia), ile zostało.
+    </p>
+    <div class="card" style="padding:0;overflow-x:auto;">
+        <div id="dniTable"><div style="padding:2rem;text-align:center;color:var(--text-muted);">Ładowanie…</div></div>
     </div>
 </div>
 
@@ -125,7 +153,7 @@
 
 {% block scripts %}
 <script>
-    const ZAKLADKI = ['dzis', 'dzien', 'summary', 'workers', 'shifts'];
+    const ZAKLADKI = ['dzis', 'dzien', 'summary', 'dni', 'workers', 'shifts'];
     function switchTab(name) {
         ZAKLADKI.forEach(t => {
             document.getElementById('pane-' + t).style.display = t === name ? '' : 'none';
@@ -133,6 +161,8 @@
         });
         if (name === 'shifts') loadShifts();
         if (name === 'dzien') loadPlanDnia();
+        if (name === 'summary' && zakresZaleglych()) loadZalegle();
+        if (name === 'dni') loadDni();
     }
 
     function fmtData(iso) {
@@ -148,7 +178,7 @@
         const link = `/paczki?date_typ=plik&date_from=${p.data_pliku}&date_to=${p.data_pliku}`;
         if (!p.paczek) {
             return `<div class="card" style="text-align:center;color:var(--text-muted);padding:2rem;">
-                Brak paczek z datą pliku ${fmtData(p.data_pliku)}.</div>`;
+                Brak paczek z Loading date ${fmtData(p.data_pliku)}.</div>`;
         }
         const kafel = (etykieta, paczek, sztuk, kolor) => `
             <div class="card" style="text-align:center;">
@@ -158,7 +188,7 @@
             </div>`;
         return `
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem;">
-            <h3 style="margin:0;">📦 Plik z ${fmtData(p.data_pliku)}</h3>
+            <h3 style="margin:0;">📦 Loading date ${fmtData(p.data_pliku)}</h3>
             <a href="${link}" style="font-size:.85rem;">Pokaż niezrobione paczki →</a>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:1rem;">
@@ -209,7 +239,7 @@
         const th = 'padding:10px 16px;font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;';
         box.innerHTML = `<table style="width:100%;border-collapse:collapse;">
             <thead style="background:var(--bg-secondary);"><tr>
-                <th style="${th}text-align:left;">Data pliku</th>
+                <th style="${th}text-align:left;">Loading date</th>
                 <th style="${th}text-align:right;">Paczek</th>
                 <th style="${th}text-align:right;">Sztuk</th>
                 <th style="${th}text-align:right;">W toku</th>
@@ -222,6 +252,98 @@
                 <td style="padding:10px 16px;text-align:right;">${num(d.sztuk)}</td>
                 <td style="padding:10px 16px;text-align:right;color:var(--info);">${num(d.w_toku)}</td>
             </tr>`).join('')}</tbody></table>`;
+    }
+
+    // ── Podsumowanie z zakresem ─────────────────────────────────────────────
+    // Bez zakresu Podsumowanie bierze dane z /api/dashboard (odswiezanie co 30 s);
+    // z zakresem — z /api/dashboard/zalegle, a zakres przezywa odswiezanie.
+    function zakresZaleglych() {
+        return document.getElementById('zalOd').value || document.getElementById('zalDo').value;
+    }
+
+    async function loadZalegle() {
+        const od = document.getElementById('zalOd').value;
+        const doo = document.getElementById('zalDo').value;
+        document.getElementById('zalegleOpis').textContent = (od || doo)
+            ? `Niezrobione paczki (bez zakończenia) z Loading date ${od ? 'od ' + fmtData(od) : ''} ${doo ? 'do ' + fmtData(doo) : ''}.`
+            : 'Wszystkie niezrobione paczki (bez zakończenia), z plików z każdego dnia.';
+        const params = new URLSearchParams();
+        if (od) params.set('date_from', od);
+        if (doo) params.set('date_to', doo);
+        try {
+            const res = await fetch('/api/dashboard/zalegle?' + params.toString());
+            const d = await res.json();
+            if (!res.ok) { showToast(d.error || 'Błąd ładowania.', 'error'); return; }
+            renderZalegle(d);
+        } catch {
+            document.getElementById('zalegleTable').innerHTML =
+                '<div style="padding:2rem;text-align:center;color:var(--danger);">Błąd ładowania.</div>';
+        }
+    }
+
+    function wyczyscZakresZaleglych() {
+        document.getElementById('zalOd').value = '';
+        document.getElementById('zalDo').value = '';
+        loadZalegle();
+    }
+
+    // ── Per Loading date ────────────────────────────────────────────────────
+    async function loadDni() {
+        const od = document.getElementById('dniOd');
+        const doo = document.getElementById('dniDo');
+        if (!doo.value) doo.value = localDateStr();
+        if (!od.value) od.value = doo.value.slice(0, 8) + '01';
+        const box = document.getElementById('dniTable');
+        try {
+            const res = await fetch('/api/dashboard/loading-dates?date_from=' + encodeURIComponent(od.value)
+                                    + '&date_to=' + encodeURIComponent(doo.value));
+            const d = await res.json();
+            if (!res.ok) {
+                box.innerHTML = `<div style="padding:2rem;text-align:center;color:var(--danger);">${escapeHtml(d.error || 'Błąd ładowania.')}</div>`;
+                return;
+            }
+            box.innerHTML = renderDni(d);
+        } catch {
+            box.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--danger);">Błąd ładowania.</div>';
+        }
+    }
+
+    function renderDni(d) {
+        if (!d.dni.length) {
+            return `<div style="padding:2rem;text-align:center;color:var(--text-muted);">
+                Brak paczek z Loading date ${fmtData(d.date_from)} – ${fmtData(d.date_to)}.</div>`;
+        }
+        const th = 'padding:10px 16px;font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;';
+        const td = 'padding:10px 16px;text-align:right;';
+        const para = (paczek, sztuk) => `<strong>${num(paczek)}</strong>
+            <div style="font-size:.75rem;color:var(--text-muted);">${num(sztuk)} szt.</div>`;
+        const pasek = p => `<div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;">
+                <div style="background:var(--bg-hover);border-radius:6px;height:8px;width:90px;overflow:hidden;">
+                    <div style="height:100%;background:linear-gradient(90deg,var(--accent),#a78bfa);width:${p}%;"></div>
+                </div><span style="font-weight:700;min-width:48px;">${p}%</span></div>`;
+        const wiersz = (r, etykieta, styl = '') => `<tr style="border-top:1px solid var(--border);${styl}">
+                <td style="padding:10px 16px;">${etykieta}</td>
+                <td style="${td}">${para(r.paczek, r.sztuk)}</td>
+                <td style="${td}color:var(--success);">${para(r.zrobione, r.zrobione_sztuk)}</td>
+                <td style="${td}color:var(--info);">${num(r.w_toku)}</td>
+                <td style="${td}color:var(--warning);">${para(r.pozostalo, r.pozostalo_sztuk)}</td>
+                <td style="${td}">${pasek(r.procent)}</td>
+            </tr>`;
+        const link = iso => `<a href="/paczki?date_typ=plik&status=wszystkie&date_from=${iso}&date_to=${iso}"
+                                title="Paczki tej Loading date">${fmtData(iso)}</a>`;
+        return `<table style="width:100%;border-collapse:collapse;">
+            <thead style="background:var(--bg-secondary);"><tr>
+                <th style="${th}text-align:left;">Loading date</th>
+                <th style="${th}text-align:right;">Wrzucone</th>
+                <th style="${th}text-align:right;">Zrobione</th>
+                <th style="${th}text-align:right;">W toku</th>
+                <th style="${th}text-align:right;">Pozostało</th>
+                <th style="${th}text-align:right;">Postęp</th>
+            </tr></thead>
+            <tbody>
+                ${wiersz(d.suma, `<strong>Razem (${d.dni.length} dni)</strong>`, 'background:var(--bg-secondary);')}
+                ${d.dni.map(r => wiersz(r, link(r.data_pliku))).join('')}
+            </tbody></table>`;
     }
 
     // ── Per zmiana ──────────────────────────────────────────────────────────
@@ -303,8 +425,11 @@
             document.getElementById('piecesTodayVal').textContent = num(d.pieces_today);
             document.getElementById('presentVal').textContent = d.present_count;
 
-            // — Podsumowanie: wszystkie niezrobione —
-            renderZalegle(d.zalegle);
+            // — Podsumowanie: wszystkie niezrobione, albo zakres wybrany przez lidera —
+            if (zakresZaleglych()) loadZalegle(); else renderZalegle(d.zalegle);
+
+            // — Per Loading date: odświeżana razem z resztą, zakres zostaje —
+            if (document.getElementById('pane-dni').style.display !== 'none') loadDni();
 
             // — Wybrany dzień: odświeżany razem z resztą, data zostaje —
             if (document.getElementById('pane-dzien').style.display !== 'none') loadPlanDnia();

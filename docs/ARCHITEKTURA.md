@@ -119,6 +119,24 @@ Quantities entered at package end are the **source of truth for `category_data`*
 - **Static assets:** `{{ static_v('style.css') }}` appends the file's mtime — no manual `?v=` bump.
 - **`escapeHtml()` in `base.html`** — everything interpolated into `innerHTML` from the DB (display names, activity names, barcodes, countries) goes through it. Barcodes arrive from CSV imports, so the risk is *stored* XSS.
 
+## Statystyki ogolne dla lidera, nazwa „Loading date" (2026-10-12)
+
+**Zgloszenie.** Liderzy maja widziec Statystyki ogolne, ale bez kosztow. Data pliku ma sie nazywac „Loading date".
+
+**Decyzje uzytkownika (2026-10-12):**
+- Lider: **tylko podglad** — bez edycji ilosci i bez „→ uzyj skanow". Eksport Excel tak, **bez kolumn kosztow** (Cost per kategoria i Total cost); admin dostaje plik jak dotad.
+- Stawki nie ida liderowi nawet do JS (`rates_by_ym` puste) — „bez kosztow" musi obejmowac zrodlo strony, nie tylko widok.
+- API `/api/general-stats*` zostaje admin-only: strona renderuje sie po stronie serwera, a `to_dict()` zwraca `total_cost`.
+- W menu pozycja przeszla do grupy Lider (menu grupuje wg tego, kto uzywa ekranu).
+- „Loading date" zastepuje „Data pliku" **tylko w tekstach dla uzytkownika** (wszedzie, takze w polskich zdaniach: „Popraw Loading date", „Podaj Loading date."). Kolumna `data_pliku`, pola API i `date_typ=plik` bez zmian — zmiana nazwy w bazie wymagalaby migracji i zmiany API, a uzytkownikowi nic by nie dala. W kodzie i w tym dokumencie pojecie dalej nazywa sie „data pliku".
+
+## Dashboard: zakres w Podsumowaniu, zakladka „Per Loading date" (2026-10-12)
+
+**Decyzje uzytkownika:** zakres w Podsumowaniu filtruje po **Loading date** (dacie pliku), nie po dacie zakonczenia — niezrobione paczki zakonczenia nie maja. Podsumowanie **dalej pokazuje tylko niezrobione**; zakres tylko zaweza liste. Nowa zakladka to **tabela dni z zakresu** (nie zastepuje „Wybranego dnia").
+
+- Bez zakresu Podsumowanie zostaje na danych z `/api/dashboard` (zero dodatkowych zapytan przy odswiezaniu); z zakresem odswieza sie z `/api/dashboard/zalegle`, wiec wybrany zakres nie znika po 30 s.
+- „Per Loading date" liczy wiersze tym samym zestawem agregatow co plan jednego dnia (`_agregaty_planu()`), jednym `GROUP BY data_pliku` — test pilnuje, ze wiersz = `/api/dashboard/plik` tego dnia. Limit 366 dni chroni przed przypadkowym „od 2000 roku".
+
 ## Data pliku jako glowna data pracy (2026-10-05)
 
 **Zgloszenie.** Przy wrzucaniu pliku ma byc okno z data, ktorej plik dotyczy (zwykle dzis — aplikacja podpowiada), a ta data ma byc glowna data pracy: w statystykach, filtrach, na Dashboardzie. Plik moze dostac zla date, wiec potrzebna jest grupowa poprawa po dacie, godzinie i osobie wrzucajacej.
