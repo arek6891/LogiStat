@@ -160,8 +160,8 @@ LogiStat/
 | Rola | Uprawnienia |
 |------|-------------|
 | **operator** | Skanuje się na zmianę. **Nie loguje się.** |
-| **leader** | Loguje się hasłem. Skaner zmian, przydzielanie, wpis ilości, czasy paczek, czasy pracowników, **import CSV/Excel**, zakładanie operatorów. |
-| **admin** | Wszystko + Statystyki ogólne, czynności, Panel Admina (mapowanie krajów, stawki kosztów, ustawienia), zakładanie i edycja kont lidera/admina. |
+| **leader** | Loguje się hasłem. Skaner zmian, przydzielanie, wpis ilości, czasy paczek, czasy pracowników, **import CSV/Excel**, zakładanie operatorów, **podgląd Statystyk ogólnych bez kosztów**. |
+| **admin** | Wszystko + koszty i edycja w Statystykach ogólnych, czynności, Panel Admina (mapowanie krajów, stawki kosztów, ustawienia), zakładanie i edycja kont lidera/admina. |
 
 > Konto lidera lub admina może założyć, edytować, zdezaktywować albo zmienić mu rolę
 > **wyłącznie admin** — lider dostanie `403`. Zdegradowanie lub dezaktywacja
@@ -180,18 +180,18 @@ zalogowanego lidera, bo to ekran stanowiskowy).
 - 🔎 **Paczki inspektor** (`/scan-package`) — podgląd statusu paczki, **tylko do odczytu**
 
 ### 🧑‍💼 Lider
-- 🏠 **Dashboard** (`/dashboard`) — **Dziś** (plan dzisiejszego pliku), **Wybrany dzień**, **Podsumowanie** (wszystkie niezrobione wg daty pliku), per pracownik, per zmiana; kliknięcie nazwiska otwiera Normy tej osoby
+- 🏠 **Dashboard** (`/dashboard`) — **Dziś** (plan dzisiejszego pliku), **Wybrany dzień**, **Podsumowanie** (niezrobione wg Loading date, z filtrem zakresu), **Per Loading date** (tabela dni z zakresu), per pracownik, per zmiana; kliknięcie nazwiska otwiera Normy tej osoby
 - 📈 **Forecast** (`/forecast`) — prognoza ilości per dzień; **Różnica = Actual − Forecast** (minus = przyjechało mniej niż plan)
 - 📋 **Przydzielanie** (`/assignment`) — drag & drop operatorów do czynności
 - ✏️ **Wpis ilości** (`/data-entry`) — ilości zrobione per osoba
 - 📊 **Normy** (`/stats`) — przegląd całego zespołu (ranking szt./h względem średniej zespołu, cel lidera, rodzaj pracownika i nazwa zmiany) + per pracownik: ocena na tle zespołu, średnie dzienne/miesięczne paczek i sztuk, wykres dzienny i miesięczny
 - 📦 **Paczki (dane)** (`/paczki`) — surowe dane paczek z filtrami (patrz niżej)
 - 👥 **Czasy pracowników** (`/worker-times`) — przegląd i korekta czasów + filtry
-- 📥 **Import danych** (`/import-csv`) — CSV (`;`) lub Excel (`.xlsx`), dedup po barcode; przed importem **okno z datą pliku**; niżej **📅 Popraw datę pliku** (grupowo)
+- 📥 **Import danych** (`/import-csv`) — CSV (`;`) lub Excel (`.xlsx`), dedup po barcode; przed importem **okno z datą pliku**; niżej **📅 Popraw Loading date** (grupowo)
+- 💶 **Statystyki ogólne** (`/general-stats`) — rozliczenie wg list i dat + eksport Excel. **Lider: tylko podgląd, bez kolumn kosztów** (ekran i Excel); koszty i edycja ilości — admin
 - 👤 **Użytkownicy** (`/admin/users`) — zakładanie i edycja kont, w tym **rodzaj pracownika** i **nazwa zmiany** (listy rozwijane)
 
 ### 🛡️ Admin
-- 💶 **Statystyki ogólne** (`/general-stats`) — rozliczenie wg list i dat + eksport Excel
 - ⚙️ **Czynności** (`/admin/activities`) — zarządzanie czynnościami
 - 🛡️ **Panel Admina** (`/admin/panel`) — hub: mapowanie krajów (`/admin/country-mapping`),
   stawki kosztów (`/admin/cost-mapping`), ustawienia (`/admin/settings`),
@@ -205,7 +205,10 @@ zalogowanego lidera, bo to ekran stanowiskowy).
 
 ## Jak działają kluczowe ekrany
 
-### Data pliku — główna data pracy
+### Loading date (data pliku) — główna data pracy
+> Od 2026-10-12 na ekranach nazywa się **„Loading date”** (wcześniej „Data pliku”). W kodzie
+> i bazie pole dalej to `data_pliku` — zmieniła się tylko nazwa widoczna dla użytkownika.
+
 Każda paczka ma **datę pliku**: dzień pracy, którego dotyczy wrzucony plik. Podaje się ją
 **przy imporcie** — po wybraniu pliku pojawia się okno z podpowiedzianą dzisiejszą datą
 (przy innej dacie wyświetla ostrzeżenie). Bez daty import nie ruszy.
@@ -239,8 +242,12 @@ tylko część paczek takiej linii) albo połączyć ręczne ilości z ilościam
   i sztukach, z paskiem postępu; pod nim „Zakończone dziś" (wg czasu skanu, z plików
   z każdego dnia), obecni, tabele pracowników i czynności.
 - **Wybrany dzień** — ten sam plan dla dowolnej daty pliku (data zostaje przy odświeżaniu).
-- **Podsumowanie** — **tylko niezrobione paczki**: łącznie i w podziale na daty pliku
-  (od najstarszych), każda data to link do listy paczek.
+- **Podsumowanie** — **tylko niezrobione paczki**: łącznie i w podziale na Loading date
+  (od najstarszych), każda data to link do listy paczek. Pola **od–do** zawężają listę
+  do wybranych Loading date (puste = wszystkie dni); zakres zostaje przy odświeżaniu.
+- **Per Loading date** — tabela: wiersz na każdą Loading date z zakresu (domyślnie bieżący
+  miesiąc) — wrzucone / zrobione / w toku / pozostało w paczkach i sztukach, postęp %
+  i wiersz „Razem". Data to link do wszystkich paczek tej Loading date.
 
 „Zrobione" w planie pliku znaczy *ma zakończenie*, niezależnie od dnia, w którym je
 skończono — plik z poniedziałku dokończony we wtorek liczy się do poniedziałku.
@@ -328,7 +335,7 @@ Pusty filtr pracownika znaczy **wszyscy** — nigdy nie zawęża wyników.
 
 | Opcja | Pole | Uwagi |
 |---|---|---|
-| **Data pliku** (domyślnie) | `data_pliku` | dzień pracy podany przy imporcie |
+| **Loading date** (domyślnie) | `data_pliku` | dzień pracy podany przy imporcie |
 | **Ziel-Datum** | `ziel_datum` | data z kolumny pliku (tylko informacyjnie) |
 | **Data importu** | `imported_at` | kiedy paczka trafiła do systemu |
 | **Start paczki** | `scan_start_at` | kiedy pracownik zaczął |

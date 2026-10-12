@@ -69,6 +69,10 @@
                         class="{% if request.endpoint == 'import_csv_page' %}active{% endif %}">
                         <span class="icon">📥</span> Import danych
                     </a></li>
+                <li><a href="{{ url_for('general_stats_page') }}"
+                        class="{% if request.endpoint == 'general_stats_page' %}active{% endif %}">
+                        <span class="icon">💶</span> Statystyki ogólne
+                    </a></li>
                 <li><a href="{{ url_for('admin_users') }}"
                         class="{% if request.endpoint == 'admin_users' %}active{% endif %}">
                         <span class="icon">👤</span> Użytkownicy
@@ -76,10 +80,6 @@
 
                 {% if current_user.role == 'admin' %}
                 <li class="nav-section">🛡️ Admin</li>
-                <li><a href="{{ url_for('general_stats_page') }}"
-                        class="{% if request.endpoint == 'general_stats_page' %}active{% endif %}">
-                        <span class="icon">💶</span> Statystyki ogólne
-                    </a></li>
                 <li><a href="{{ url_for('admin_activities') }}"
                         class="{% if request.endpoint == 'admin_activities' %}active{% endif %}">
                         <span class="icon">⚙️</span> Czynności

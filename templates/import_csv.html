@@ -5,7 +5,7 @@
     <h1>📥 Import danych</h1>
     <p style="color:var(--text-muted);">Wrzuć plik <strong>CSV</strong> lub <strong>Excel (.xlsx)</strong> z danymi
         kartonów. Dane zostaną zparsowane i zagregowane do Statystyk ogólnych.
-        Przed importem podajesz <strong>datę pliku</strong> — dzień pracy, którego plik dotyczy
+        Przed importem podajesz <strong>Loading date</strong> — dzień pracy, którego plik dotyczy
         (po niej liczą się Statystyki ogólne, Dashboard i Forecast).<br>
         Oczekiwane kolumny: <code>Barcode</code>, <code>Land</code>, <code>Stückzahl</code>, <code>Kategorie</code>,
         <code>Ziel-Datum</code>, <code>Übergabe Nr.</code><br>
@@ -39,14 +39,14 @@
 <!-- Okno: data pliku przed importem -->
 <div id="dataPlikuModal" class="modal-overlay" data-modal-guard style="display:none;">
     <div class="modal" style="max-width:440px;">
-        <h3>📅 Data pliku</h3>
+        <h3>📅 Loading date</h3>
         <p style="color:var(--text-muted);font-size:.9rem;margin-top:0;">
             Którego dnia pracy dotyczy plik <strong id="dpNazwa"></strong>?
             Zwykle to dzisiaj. Ta data trafia do Statystyk ogólnych (Loading date),
             na Dashboard i do Forecastu.
         </p>
         <div class="form-group">
-            <label for="dpData">Data pliku</label>
+            <label for="dpData">Loading date</label>
             <input type="date" id="dpData" class="form-control" required>
             <div id="dpOstrzezenie" style="display:none;color:var(--warning);font-size:.85rem;margin-top:.4rem;"></div>
         </div>
@@ -65,15 +65,15 @@
 
 <!-- Grupowa poprawa daty pliku -->
 <div class="card" style="margin-top:2rem;">
-    <h3 style="margin-top:0;">📅 Popraw datę pliku</h3>
+    <h3 style="margin-top:0;">📅 Popraw Loading date</h3>
     <p style="color:var(--text-muted);font-size:.88rem;margin-top:0;">
-        Plik wrzucony z błędną datą? Odfiltruj importy po dacie pliku, dniu i godzinie wrzucenia
+        Plik wrzucony z błędną datą? Odfiltruj importy po Loading date, dniu i godzinie wrzucenia
         oraz osobie, zaznacz błędne i przypisz im prawidłową datę. Zmiana przesuwa paczki
         w Statystykach ogólnych na linię z nową datą.
     </p>
     <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:1rem;">
         <div class="form-group" style="margin:0;">
-            <label for="fDataPliku">Data pliku</label>
+            <label for="fDataPliku">Loading date</label>
             <input type="date" id="fDataPliku" class="form-control" style="width:160px;">
         </div>
         <div class="form-group" style="margin:0;">
@@ -102,7 +102,7 @@
                     <th style="width:36px;"><input type="checkbox" id="zaznaczWszystkie" title="Zaznacz wszystkie"></th>
                     <th>Wrzucono</th>
                     <th>Kto</th>
-                    <th>Data pliku</th>
+                    <th>Loading date</th>
                     <th style="text-align:right;">Paczek</th>
                     <th style="text-align:right;">Sztuk</th>
                     <th style="text-align:right;">Zrobionych</th>
@@ -116,7 +116,7 @@
 
     <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end;margin-top:1rem;">
         <div class="form-group" style="margin:0;">
-            <label for="nowaData">Nowa data pliku</label>
+            <label for="nowaData">Nowa Loading date</label>
             <input type="date" id="nowaData" class="form-control" style="width:160px;">
         </div>
         <button class="btn btn-primary" id="podgladBtn" onclick="podgladZmiany()" disabled>Pokaż skutki zmiany</button>
@@ -178,7 +178,7 @@
 
     function potwierdzImport() {
         const data = document.getElementById('dpData').value;
-        if (!data) { showToast('Podaj datę pliku.', 'error'); return; }
+        if (!data) { showToast('Podaj Loading date.', 'error'); return; }
         if (!plikDoImportu) return;
         const plik = plikDoImportu;
         plikDoImportu = null;
@@ -323,7 +323,7 @@
 
     async function wyslijZmiane(podglad) {
         const nowa = document.getElementById('nowaData').value;
-        if (!nowa) { showToast('Podaj nową datę pliku.', 'error'); return null; }
+        if (!nowa) { showToast('Podaj nową Loading date.', 'error'); return null; }
         const res = await fetch('/api/imports/zmien-date', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({importy: zaznaczone(), nowa_data: nowa, podglad})
@@ -345,7 +345,7 @@
         }
         box.innerHTML = `
             <div style="border:1px solid var(--warning);background:var(--warning-bg);padding:1rem;border-radius:8px;">
-                <div style="font-weight:600;margin-bottom:.5rem;">Zmiana daty pliku na ${fmtData(w.nowa)}:</div>
+                <div style="font-weight:600;margin-bottom:.5rem;">Zmiana Loading date na ${fmtData(w.nowa)}:</div>
                 <ul style="margin:.25rem 0 .75rem 1.2rem;line-height:1.6;">
                     <li><strong>${num(d.paczek)}</strong> paczek (${num(d.sztuk)} szt., w tym ${num(d.zrobionych)} zrobionych)${d.juz_z_ta_data ? ` · ${num(d.juz_z_ta_data)} już ma tę datę` : ''}</li>
                     <li>Statystyki ogólne: ${num(d.linii_przenoszonych)} linii przechodzi w całości${d.linii_dzielonych ? `, ${num(d.linii_dzielonych)} linii traci część paczek` : ''}${d.linii_docelowych_istniejacych ? `, ${num(d.linii_docelowych_istniejacych)} łączy się z istniejącymi liniami z ${fmtData(w.nowa)}` : ''}</li>

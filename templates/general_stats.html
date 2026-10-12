@@ -20,8 +20,10 @@
         <div style="width:1px;height:30px;background:var(--border);margin:0 .5rem;"></div>
         <a id="exportBtn" href="{{ url_for('general_stats_export', date_from=date_from, date_to=date_to) }}"
            class="btn btn-secondary">⬇ Excel</a>
+        {% if edycja %}
         <span class="autozapis-status" id="autoZapisStatus"
               title="Ilości zapisują się same chwilę po wpisaniu"></span>
+        {% endif %}
     </div>
 </div>
 
@@ -29,7 +31,7 @@
     <table class="data-table" id="statsTable">
         <thead>
             <tr>
-                <th rowspan="2" style="min-width:100px;" title="Od 2026-10 = data pliku podana przy imporcie (nie Ziel-Datum)">Loading date<br><span style="font-weight:400;font-size:.72rem;color:var(--text-muted);">data pliku</span></th>
+                <th rowspan="2" style="min-width:100px;" title="Data podana przy imporcie pliku (nie Ziel-Datum)">Loading date</th>
                 <th rowspan="2" style="min-width:50px;">Week</th>
                 <th rowspan="2" style="min-width:80px;">List-ID</th>
                 <th rowspan="2" style="min-width:120px;">Country of destination</th>
@@ -39,7 +41,7 @@
                     <span class="podpowiedz" tabindex="0" aria-label="Skąd się bierze Amounts">ⓘ
                         <span class="podpowiedz-tresc">
                             <strong>Amounts</strong> — suma <em>Stückzahl</em> wszystkich paczek
-                            tej linii (List-ID + Country ledger + Loading date = data pliku), prosto z importu
+                            tej linii (List-ID + Country ledger + Loading date podana przy imporcie), prosto z importu
                             CSV/Excel. Mówi, ile sztuk <u>przyjechało</u>. Liczona automatycznie,
                             nie da się jej wpisać ręcznie.
                         </span>
@@ -65,7 +67,7 @@
                     </span>
                 </th>
                 {% for cat in categories %}
-                <th colspan="2"
+                <th colspan="{{ 2 if pokaz_koszty else 1 }}"
                     style="text-align:center;background:rgba(99,102,241,.08);border-bottom:2px solid var(--accent);min-width:160px;">
                     {{ category_labels[cat] }}
                     <span style="display:block;font-weight:400;font-size:.72rem;color:var(--text-muted);">
@@ -73,12 +75,16 @@
                     </span>
                 </th>
                 {% endfor %}
+                {% if pokaz_koszty %}
                 <th rowspan="2" style="min-width:100px;background:rgba(34,197,94,.08);">Total cost (EUR)</th>
+                {% endif %}
             </tr>
             <tr>
                 {% for cat in categories %}
                 <th style="font-size:.75rem;min-width:70px;">Amount</th>
+                {% if pokaz_koszty %}
                 <th style="font-size:.75rem;min-width:80px;">Cost (EUR)</th>
+                {% endif %}
                 {% endfor %}
             </tr>
             </tr>
@@ -91,10 +97,14 @@
                 <td id="sumTotalAmounts" style="color:#60a5fa; font-weight:bold;">0</td>
                 {% for cat in categories %}
                 <td id="sum-{{ cat }}-amount" style="text-align:right; font-size:.85rem; color:#60a5fa;">0</td>
+                {% if pokaz_koszty %}
                 <td id="sum-{{ cat }}-cost" style="text-align:right; font-size:.85rem; color:#4ade80;">0.00 €
                 </td>
+                {% endif %}
                 {% endfor %}
+                {% if pokaz_koszty %}
                 <td id="sumTotalCost" style="color:var(--success,#22c55e);">0.00 €</td>
+                {% endif %}
             </tr>
             {% for s in stats %}
             {% set row_ym = '%d-%02d'|format(s.loading_date.year, s.loading_date.month) %}
@@ -119,9 +129,11 @@
                         title="Ta linia ma ilości wpisane ręcznie, ale {{ s.scanned_cartons }} z {{ s.total_cartons }} jej paczek ma już ilości ze skanów. Przełączenie zastąpi ręczne wartości sumą skanów.">
                         ⚠ ręczne · skany {{ s.scanned_cartons }}/{{ s.total_cartons }}
                     </div>
+                    {% if edycja %}
                     <button class="btn btn-ghost btn-sm" style="padding:1px 5px;font-size:.65rem;margin-top:2px;"
                         data-id="{{ s.id }}" onclick="przelaczNaSkany(this)"
                         title="Zastąp ręczne ilości sumą skanów">→ użyj skanów</button>
+                    {% endif %}
                     {% endif %}
                 </td>
                 {% set cd = s.get_category_data() %}
@@ -145,20 +157,25 @@
                     {# Linia zasilana skanami: pole bez klasy `inline-input`, wiec saveAll
                        jej nie zbiera — backend i tak odrzucilby taki zapis (400). #}
                     <input type="number" data-cat="{{ cat }}" data-field="amount"
-                        class="cat-amount {% if ze_skanu %}locked{% else %}inline-input{% endif %}"
+                        class="cat-amount {% if ze_skanu or not edycja %}locked{% else %}inline-input{% endif %}"
                         value="{{ amt }}" min="0" step="1" style="width:65px;"
                         {% if ze_skanu %}readonly tabindex="-1"
-                        title="Ilość ze skanów paczek — popraw w Paczki → ✎ Ilości"{% endif %}>
+                        title="Ilość ze skanów paczek — popraw w Paczki → ✎ Ilości"
+                        {% elif not edycja %}readonly tabindex="-1"{% endif %}>
                 </td>
+                {% if pokaz_koszty %}
                 <td>
                     <input type="text" class="inline-input cat-cost" data-cat="{{ cat }}" data-field="cost"
                         value="{{ '%.2f'|format(computed_cost) }}" readonly tabindex="-1"
                         style="width:75px; background:rgba(255,255,255,0.08); border-color:transparent; color:#cbd5e1; border-radius:4px;">
                 </td>
+                {% endif %}
                 {% endfor %}
+                {% if pokaz_koszty %}
                 <td class="total-cost" style="font-weight:700;color:var(--success,#22c55e);">
                     {{ '%.2f'|format(row_total.val) }} €
                 </td>
+                {% endif %}
             </tr>
             {% if s.dr_amount and s.dr_amount > 0 %}
             {% set dcd = s.get_double_rate_category_data() %}
@@ -184,24 +201,29 @@
                 {% set rate = rates.get(cat, 0.0) %}
                 {% set computed_cost = amt * rate %}
                 <td>
-                    <input type="number" class="inline-input cat-amount" data-cat="{{ cat }}" data-field="amount"
-                        value="{{ amt }}" min="0" step="1" style="width:65px;">
+                    <input type="number" class="{% if edycja %}inline-input{% else %}locked{% endif %} cat-amount" data-cat="{{ cat }}" data-field="amount"
+                        value="{{ amt }}" min="0" step="1" style="width:65px;"
+                        {% if not edycja %}readonly tabindex="-1"{% endif %}>
                 </td>
+                {% if pokaz_koszty %}
                 <td>
                     <input type="text" class="inline-input cat-cost" data-cat="{{ cat }}" data-field="cost"
                         value="{{ '%.2f'|format(computed_cost) }}" readonly tabindex="-1"
                         style="width:75px; background:rgba(255,255,255,0.08); border-color:transparent; color:#cbd5e1; border-radius:4px;">
                 </td>
+                {% endif %}
                 {% endfor %}
+                {% if pokaz_koszty %}
                 <td class="total-cost" style="font-weight:700;color:var(--success,#22c55e);">
                     {{ '%.2f'|format(dr_total.val) }} €
                 </td>
+                {% endif %}
             </tr>
             {% endif %}
             {% endfor %}
             {% if not stats %}
             <tr>
-                <td colspan="{{ 8 + categories|length * 2 + 1 }}"
+                <td colspan="{{ 7 + categories|length * (2 if pokaz_koszty else 1) + (1 if pokaz_koszty else 0) }}"
                     style="text-align:center;padding:3rem;color:var(--text-muted);">
                     Brak danych. Wrzuć plik CSV aby wygenerować statystyki.
                 </td>
@@ -391,7 +413,9 @@
             }
             sumTotalCost += rowVal;
         });
-        document.getElementById('sumTotalCost').textContent = sumTotalCost.toFixed(2) + ' €';
+        // Lider nie widzi kosztow — komorki sumy kosztu nie ma w DOM.
+        const sumTotalCostEl = document.getElementById('sumTotalCost');
+        if (sumTotalCostEl) sumTotalCostEl.textContent = sumTotalCost.toFixed(2) + ' €';
     }
 
     // Keep export link in sync with filter inputs

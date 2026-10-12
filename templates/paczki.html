@@ -84,7 +84,7 @@
             {% endfor %}
         </select>
 
-        <label style="display:block;margin:.75rem 0 .25rem;font-weight:600;">Data pliku <span style="color:var(--danger);">*</span></label>
+        <label style="display:block;margin:.75rem 0 .25rem;font-weight:600;">Loading date <span style="color:var(--danger);">*</span></label>
         <input type="date" id="apDataPliku" class="form-control" style="width:100%;">
         <div style="color:var(--text-muted);font-size:.78rem;margin-top:.2rem;">Dzień pracy — po nim liczy się linia w Statystykach ogólnych.</div>
 
@@ -149,7 +149,7 @@
                 <th>Land</th>
                 <th style="text-align:right;">Stückzahl</th>
                 <th>Kategorie</th>
-                <th>Data pliku</th>
+                <th>Loading date</th>
                 <th>Ziel-Datum</th>
                 <th>Übergabe Nr.</th>
                 <th style="text-align:center;background:rgba(251,146,60,.10);color:#fb923c;">Double rate</th>
@@ -409,7 +409,7 @@ async function submitAddPackage() {
     if (!payload.barcode) { showToast('Podaj barcode.', 'error'); return; }
     if (!payload.stueckzahl || payload.stueckzahl <= 0) { showToast('Podaj ilość (Stückzahl) > 0.', 'error'); return; }
     if (!payload.land) { showToast('Wybierz kraj (Land).', 'error'); return; }
-    if (!payload.data_pliku) { showToast('Podaj datę pliku.', 'error'); return; }
+    if (!payload.data_pliku) { showToast('Podaj Loading date.', 'error'); return; }
     if (!payload.uebergabe_nr) { showToast('Podaj Übergabe Nr.', 'error'); return; }
 
     // Ostrzeżenie przy edycji paczki z zarejestrowanymi czasami skanowania
