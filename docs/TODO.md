@@ -118,6 +118,9 @@
 - [x] **Szkolący i osoby szkolone** (2026-10-08) — zakładka 🎓 Szkolenie (szkolący + min. 1 szkolony, koniec wszystkich naraz); szkolący 100% celu dnia za czas szkolenia, szkoleni poza normami i średnią; historia celu
 - [x] **Forecast: różnica = Actual − Forecast** (2026-10-08) — minus = przyjechało mniej niż plan
 - [x] **Data pliku** (2026-10-05) — okno daty przy imporcie, główna data pracy i klucz rozliczenia, grupowa poprawa daty, Dashboard Dziś / Wybrany dzień / Podsumowanie niezrobionych; migracja `.31` zweryfikowana
+- [x] **Statystyki ogólne dla lidera** (2026-10-12) — podgląd bez kosztów (ekran i Excel), edycja zostaje u admina
+- [x] **„Loading date”** (2026-10-12) — nowa nazwa „Data pliku” we wszystkich tekstach UI (baza/API bez zmian)
+- [x] **Dashboard: zakresy** (2026-10-12) — Podsumowanie z filtrem Loading date od–do, zakładka „Per Loading date”
 
 ---
 

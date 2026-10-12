@@ -2,6 +2,9 @@
 
 ## 2026-10-12 — Statystyki ogólne dla lidera, „Loading date", Dashboard: zakresy
 
+PR #26. Wdrożone na `.31` 2026-10-12 (`1ab0a31`), backup przed:
+`backups/logistat-2026-10-12_1650.sql.gz`. Bez nowych kolumn i tabel.
+
 ### Zmienione
 - **Statystyki ogólne dostępne dla lidera** (menu: grupa Lider) — tylko podgląd, bez kolumn
   kosztów i bez stawek w źródle strony; eksport Excel lidera bez kolumn Cost / Total cost.
