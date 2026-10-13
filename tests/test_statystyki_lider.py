@@ -114,3 +114,11 @@ def test_eksport_admina_z_kosztami(admin_client):
     h = naglowki(ws)
     assert 'Cost (EUR)' in h and 'Total cost (EUR)' in h
     assert ws.max_column == 8 + 2 * len(logistat.STAT_CATEGORIES) + 1
+
+
+def test_filtr_po_lewej_nad_tabela(leader_client):
+    """Filtr byl po prawej obok Excela i nikt go nie widzial — teraz pod tytulem."""
+    html = leader_client.get('/general-stats').get_data(as_text=True)
+
+    assert 'Loading date od' in html and 'Loading date do' in html
+    assert html.index('id="filtrForm"') < html.index('id="exportBtn"') < html.index('id="statsTable"')

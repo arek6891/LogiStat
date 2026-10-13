@@ -3,6 +3,11 @@
 
 {% block head %}
 <style>
+    /* Stanowisko skanu: operatorzy zglosili za mala czcionke (2026-10-13).
+       Najmniejszy tekst mial ~11 px — zoom 14/11 powieksza caly ekran
+       proporcjonalnie (tekst, pola, odstepy, karta), bez ruszania menu. */
+    .stanowisko-skanu { zoom: 1.27; }
+
     .scan-tabs {
         display: flex;
         gap: 0;
@@ -188,10 +193,27 @@
     .qty-sum { font-size: .95rem; color: var(--text-muted); }
     .qty-sum strong { color: var(--text-primary); font-size: 1.1rem; }
     .recent-item .time { color: var(--text-muted); font-size: .78rem; }
+
+    /* Nadwyzka: wpisano wiecej niz w paczce. Okna sa POZA .stanowisko-skanu
+       (zoom na przodku psuje position:fixed), wiec maja wlasne, duze rozmiary. */
+    .nadwyzka-okno { max-width: 620px; font-size: 1.25rem; }
+    .nadwyzka-okno h3 { font-size: 1.6rem; color: #f59e0b; }
+    .nadwyzka-okno .liczby { font-size: 1.4rem; margin: 14px 0; }
+    .nadwyzka-okno .btn { font-size: 1.15rem; padding: 14px 22px; }
+    .poinformuj-lidera {
+        max-width: 640px;
+        text-align: center;
+        border: 3px solid #f59e0b;
+        font-size: 1.4rem;
+    }
+    .poinformuj-lidera .ikona { font-size: 4rem; line-height: 1; }
+    .poinformuj-lidera h3 { font-size: 2rem; color: #f59e0b; margin: 12px 0; }
+    .poinformuj-lidera .odliczanie { margin-top: 16px; font-size: 1rem; color: var(--text-muted); }
 </style>
 {% endblock %}
 
 {% block content %}
+<div class="stanowisko-skanu">
 <div class="page-header">
     <div>
         <h1 class="page-title">⏱ Czasy paczek</h1>
@@ -303,6 +325,35 @@
         </div>
     </div>
 </div>
+</div>
+
+<!-- Nadwyzka: wpisano wiecej sztuk niz jest w paczce -->
+<div class="modal-overlay" id="nadwyzkaModal" style="display:none;">
+    <div class="modal nadwyzka-okno">
+        <h3>⚠️ Ilość większa niż w paczce</h3>
+        <div class="liczby">
+            Wpisano <strong id="nadwyzka-wpisano"></strong> szt.,
+            w paczce jest <strong id="nadwyzka-w-paczce"></strong> szt.
+            (nadwyżka <strong id="nadwyzka-roznica"></strong> szt.)
+        </div>
+        <div>Czy na pewno są takie ilości? Czy akceptujesz nadwyżkę?</div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" id="nadwyzka-nie">✏️ Nie, poprawię ilości</button>
+            <button class="btn btn-primary" id="nadwyzka-tak">✅ Tak, akceptuję nadwyżkę</button>
+        </div>
+    </div>
+</div>
+
+<!-- Po zaakceptowaniu nadwyzki: 5 s, znika sam -->
+<div class="modal-overlay" id="liderModal" style="display:none;">
+    <div class="modal poinformuj-lidera">
+        <div class="ikona">📣</div>
+        <h3>Poinformuj lidera</h3>
+        <div>o nadwyżce <strong id="lider-roznica"></strong> szt. w paczce
+            <strong id="lider-paczka"></strong></div>
+        <div class="odliczanie">Okno zamknie się samo za <span id="lider-sekundy">5</span> s</div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -319,6 +370,11 @@ const pracownik = { start: null, end: null };
 // Ilosc od tej wartosci to prawie na pewno kod kreskowy zeskanowany w pole
 // ilosci (najwieksza paczka na .31 ma 708 szt., kody paczek maja 10 cyfr).
 const ILOSC_WYGLADA_NA_KOD = 100000;
+// Ilosc sztuk z importu otwartej paczki (null = nieznana → bez pytania o nadwyzke).
+let sztukWPaczce = null;
+// Wpisana suma > ilosc w paczce: pytanie, a po „Tak" 5 s „Poinformuj lidera".
+const CZAS_INFO_LIDERA_MS = 5000;
+let pytanieONadwyzce = false;
 
 function panelOtwarty() {
     const panel = document.getElementById('end-qty-panel');
@@ -454,8 +510,10 @@ async function otworzPanelIlosci() {
     }
 
     document.getElementById('end-qty-barcode').textContent = pkg;
+    sztukWPaczce = (carton.stueckzahl === null || carton.stueckzahl === undefined)
+        ? null : carton.stueckzahl;
     document.getElementById('end-qty-stueckzahl').textContent =
-        (carton.stueckzahl === null || carton.stueckzahl === undefined) ? '?' : carton.stueckzahl;
+        sztukWPaczce === null ? '?' : sztukWPaczce;
     poleIlosci().forEach(i => { i.value = ''; });
     document.getElementById('end-qty-sum').textContent = '0';
     document.getElementById('end-qty-panel').style.display = 'block';
@@ -574,8 +632,55 @@ async function submitStart() {
     document.getElementById('start-emp').focus();
 }
 
+// Pytanie o nadwyzke → Promise<bool>. Fokus na „Nie, poprawie": Enter ze
+// skanera albo podwojny Enter nie zaakceptuje nadwyzki przez przypadek.
+function zapytajONadwyzke(wpisano, wPaczce) {
+    const modal = document.getElementById('nadwyzkaModal');
+    const tak = document.getElementById('nadwyzka-tak');
+    const nie = document.getElementById('nadwyzka-nie');
+    document.getElementById('nadwyzka-wpisano').textContent = wpisano;
+    document.getElementById('nadwyzka-w-paczce').textContent = wPaczce;
+    document.getElementById('nadwyzka-roznica').textContent = wpisano - wPaczce;
+    pytanieONadwyzce = true;
+    modal.style.display = 'flex';
+    nie.focus();
+    return new Promise(resolve => {
+        const koniec = (wynik) => {
+            modal.style.display = 'none';
+            tak.onclick = nie.onclick = modal.onclick = modal.onkeydown = null;
+            pytanieONadwyzce = false;
+            resolve(wynik);
+        };
+        tak.onclick = () => koniec(true);
+        nie.onclick = () => koniec(false);
+        modal.onclick = (e) => { if (e.target === modal) koniec(false); };
+        modal.onkeydown = (e) => { if (e.key === 'Escape') koniec(false); };
+    });
+}
+
+// Informacja po zaakceptowaniu nadwyzki: znika sama po 5 s, nic nie trzeba
+// klikac (klik zamyka wczesniej). Fokus zostaje w polu skanu pod spodem.
+let liderTimer = null;
+function pokazPoinformujLidera(roznica, paczka) {
+    const modal = document.getElementById('liderModal');
+    const sek = document.getElementById('lider-sekundy');
+    document.getElementById('lider-roznica').textContent = roznica;
+    document.getElementById('lider-paczka').textContent = paczka;
+    clearInterval(liderTimer);
+    let zostalo = CZAS_INFO_LIDERA_MS / 1000;
+    sek.textContent = zostalo;
+    modal.style.display = 'flex';
+    const zamknij = () => { clearInterval(liderTimer); modal.style.display = 'none'; };
+    modal.onclick = zamknij;
+    liderTimer = setInterval(() => {
+        zostalo -= 1;
+        sek.textContent = zostalo;
+        if (zostalo <= 0) zamknij();
+    }, 1000);
+}
+
 async function submitEnd() {
-    if (zajete.end) return;
+    if (zajete.end || pytanieONadwyzce) return;
     const emp = document.getElementById('end-emp').value.trim();
     const pkg = document.getElementById('end-pkg').value.trim();
     if (!emp || !pkg) return;
@@ -590,6 +695,16 @@ async function submitEnd() {
             return;
         }
         if (n > 0) kategorie[i.dataset.kategoria] = n;
+    }
+
+    // Wiecej niz w paczce: operator potwierdza, a lider ma sie dowiedziec.
+    // Serwer nadal nie waliduje sumy (rozbieznosc bywa prawdziwa).
+    const wpisano = Object.values(kategorie).reduce((a, b) => a + b, 0);
+    const nadwyzka = sztukWPaczce !== null && wpisano > sztukWPaczce;
+    if (nadwyzka && !await zapytajONadwyzke(wpisano, sztukWPaczce)) {
+        const pierwsze = poleIlosci()[0];
+        if (pierwsze) pierwsze.focus();
+        return;
     }
 
     zajete.end = true;
@@ -625,6 +740,8 @@ async function submitEnd() {
                       wpisane ? `${wpisane} szt.` : null].filter(Boolean).join(' · ');
         showResult('end', '✅ ' + data.message, 'success');
         addRecent('end', pkg, data.carton?.scan_end_by_name || emp, opis || null);
+        // Dopiero po udanym zapisie — blad ma byc widoczny, nie pod oknem.
+        if (nadwyzka) pokazPoinformujLidera(wpisano - sztukWPaczce, pkg);
     } else {
         showResult('end', '❌ ' + data.error, 'error');
     }

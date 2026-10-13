@@ -2090,6 +2090,7 @@ def api_assignment_data():
             'attendees': [],
             'assignments': [],
             'activities': [a.to_dict() for a in activities],
+            'wydajnosc': wydajnosc_czynnosci(parse_date(shift_date)),
             'wersja': wersja_przydzialu([])
         }), 200
 
@@ -2105,6 +2106,7 @@ def api_assignment_data():
     assigned_user_ids = {a.user_id for a in assignments}
 
     return jsonify({
+        'wydajnosc': wydajnosc_czynnosci(shift.date),
         'shift': shift.to_dict(),
         'attendees': [a.user.to_dict() for a in attendances],
         'assignments': [a.to_dict() for a in assignments],
@@ -2202,6 +2204,53 @@ def api_assignment_suggestions():
             assigned.add(uid)
 
     return jsonify({'suggestions': suggestions}), 200
+
+
+# Estymacja na tablicy Przydzielania (2026-10-13, operacje): ile zrobia osoby
+# przydzielone do czynnosci = liczba osob × srednia NA OSOBE wszystkich
+# pracownikow (nie tylko przydzielonych) z ostatnich 30 dni.
+CZYNNOSC_SKANOW_PACZEK = 'Post Processing'   # ta czynnosc = skany paczek
+GODZIN_ZMIANY = 7.5                          # 8 h minus 30 min przerwy
+DNI_SREDNIEJ_PRZYDZIALU = 30
+
+
+def wydajnosc_czynnosci(dzien):
+    """Srednia wydajnosc jednej osoby per czynnosc: {activity_id: {...}}.
+
+    `Post Processing` bierze srednia zespolu szt./h ze skanow paczek — ta sama
+    liczba co w Normach (`przeglad_zespolu()`), bez fragmentow szkolen. Pozostale
+    czynnosci: srednia `DailyStat.quantity` na wpis (osoba × zmiana). Czynnosc
+    bez danych nie ma klucza — ekran pokazuje „brak danych", nie zero.
+    """
+    od = dzien - timedelta(days=DNI_SREDNIEJ_PRZYDZIALU)
+    wynik = {}
+
+    for s in db.session.query(
+        DailyStat.activity_id,
+        func.avg(DailyStat.quantity).label('srednia'),
+        func.count(DailyStat.id).label('wpisow')
+    ).join(Shift).filter(
+        Shift.date >= od, Shift.date <= dzien
+    ).group_by(DailyStat.activity_id).all():
+        na_zmiane = float(s.srednia or 0)
+        wynik[s.activity_id] = {
+            'szt_zmiana_os': round(na_zmiane, 1),
+            'szt_h_os': round(na_zmiane / GODZIN_ZMIANY, 1),
+            'zrodlo': 'wpis',
+            'probek': s.wpisow,
+        }
+
+    skany = Activity.query.filter_by(name=CZYNNOSC_SKANOW_PACZEK).first()
+    if skany:
+        szt_h = przeglad_zespolu(od, dzien)['srednia_szt_h']
+        if szt_h:
+            wynik[skany.id] = {
+                'szt_zmiana_os': round(szt_h * GODZIN_ZMIANY, 1),
+                'szt_h_os': szt_h,
+                'zrodlo': 'skany',
+                'probek': None,
+            }
+    return wynik
 
 
 def wersja_przydzialu(przydzialy):
@@ -5340,7 +5389,7 @@ def api_forecast_export():
         PatternFill('solid', fgColor='C0392B'),
         PatternFill('solid', fgColor='7D3C98'),
     ]
-    headers = ['Data', 'Forecast', 'Actual (Paczki)', 'Różnica (A-F)', 'Notatki']
+    headers = ['Data', 'Forecast', 'Actual (Sztuki)', 'Różnica (A-F)', 'Notatki']
 
     for col, (h, fill) in enumerate(zip(headers, col_fills), start=1):
         cell = ws.cell(row=1, column=col, value=h)

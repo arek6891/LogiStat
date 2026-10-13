@@ -203,3 +203,15 @@ def test_panel_ilosci_mowi_ze_paczka_nie_jest_zakonczona(leader_client):
 
     assert 'Paczka NIE jest jeszcze zakończona' in html
     assert '/api/employee-lookup' in html
+
+
+def test_nadwyzka_pyta_i_informuje_lidera(leader_client):
+    """Suma > ilosc w paczce: pytanie (fokus na „Nie”), po „Tak” 5 s „Poinformuj
+    lidera”, ktore znika samo. Serwer sumy nadal nie waliduje."""
+    html = leader_client.get('/scan-paczki').get_data(as_text=True)
+
+    assert 'id="nadwyzkaModal"' in html
+    assert 'Czy akceptujesz nadwyżkę?' in html
+    assert 'Poinformuj lidera' in html
+    assert 'CZAS_INFO_LIDERA_MS = 5000' in html
+    assert 'nie.focus()' in html

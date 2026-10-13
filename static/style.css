@@ -655,6 +655,15 @@ tr:last-child td {
     font-weight: 700;
 }
 
+/* Estymacja pod nazwa czynnosci (Przydzielanie): przydzieleni × srednia osoby */
+.assignment-column-header .estymacja {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+.assignment-column-header .estymacja.pusta { opacity: .6; font-style: italic; }
+
 .assignment-drop-zone {
     flex: 1;
     padding: 10px;

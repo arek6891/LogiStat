@@ -119,6 +119,22 @@ Quantities entered at package end are the **source of truth for `category_data`*
 - **Static assets:** `{{ static_v('style.css') }}` appends the file's mtime — no manual `?v=` bump.
 - **`escapeHtml()` in `base.html`** — everything interpolated into `innerHTML` from the DB (display names, activity names, barcodes, countries) goes through it. Barcodes arrive from CSV imports, so the risk is *stored* XSS.
 
+## Estymacja na Przydzielaniu, Forecast w sztukach, nadwyzka paczki, filtr Stat. ogolnych (2026-10-13)
+
+**Zgloszenie.** Po przydzieleniu ludzi do czynnosci lider ma widziec, ile zrobia na zmiane i na godzine — wg sredniej zrobionej przez pracownikow. Osobno: Forecast/Actual sa w sztukach, a opisy mowily o paczkach.
+
+**Decyzje (operacje).** Srednia per czynnosc **ze wszystkich pracownikow**, nie z przydzielonych — przydzieleni tylko mnoza (`osob × srednia osoby`); kto nie ma historii w czynnosci, i tak dostaje srednia zespolu. Zmiana = **7,5 h** (8 h minus przerwa). Na `.31` Wpis ilosci ma 4 wiersze, a realne dane sa w skanach paczek — skany odpowiadaja czynnosci **`Post Processing`** (`CZYNNOSC_SKANOW_PACZEK`, po nazwie: zmiana nazwy czynnosci = estymacja z Wpisu ilosci). Pozostale czynnosci licza sie z `DailyStat`, „dopiero jak bedziemy wbijac ludzi na te czynnosci i wprowadzac ilosci" — do tego czasu ekran pokazuje „brak danych do estymacji", nie zero.
+
+**Dlaczego `przeglad_zespolu()`.** Srednia szt./h jest ta sama co w Normach (wszystkie sztuki / wszystkie godziny skanowania, bez fragmentow szkolen) — dwa ekrany nie podaja dwoch roznych „srednich". `DailyStat` to ilosc na wpis (osoba × zmiana), wiec szt./h = srednia / 7,5.
+
+**Koszt.** Estymacja to stala liczba zapytan na odczyt tablicy; test N+1 Przydzielania porownuje teraz 2 vs 20 przydzielen zamiast sztywnego limitu.
+
+**Nadwyzka na „Czasy paczek".** Wpisana suma > `stueckzahl` → pytanie „Czy akceptujesz nadwyzke?", po „Tak" 5 s „Poinformuj lidera", ktore znika samo (operacje: nic nie trzeba naciskac). Fokus na „Nie, poprawie", bo skaner konczy kod Enterem — przypadkowy Enter ma wracac do pol, nie akceptowac. Informacja dopiero po udanym zapisie: blad zapisu zniknalby pod oknem (`showResult` gasnie po 4 s). Serwer dalej sumy nie waliduje — rozbieznosc bywa prawdziwa, chodzi o to, zeby lider sie o niej dowiedzial. Ten sam dzien: caly ekran powiekszony `zoom: 1.27` (najmniejszy tekst 11 → 14 px); okna poza powiekszonym kontenerem, bo `zoom` na przodku psuje `position: fixed`.
+
+**Statystyki ogolne — filtr.** Przeniesiony z prawej (obok Excela) pod tytul, z etykietami „Loading date od/do". Przy okazji: `btn-secondary` nie ma w CSS (renderuje sie jak link) — tutaj `btn-ghost`; inne ekrany (`paczki`, `stats`, `import_csv`, `admin_cost_mapping`) maja to samo, nie ruszane.
+
+**Forecast.** Zmienione tylko opisy (podtytul, naglowek wykresu, kolumny tabeli, Excel „Actual (Sztuki)"); liczby od zawsze byly `SUM(stueckzahl)`.
+
 ## Statystyki ogolne dla lidera, nazwa „Loading date" (2026-10-12)
 
 **Zgloszenie.** Liderzy maja widziec Statystyki ogolne, ale bez kosztow. Data pliku ma sie nazywac „Loading date".

@@ -176,19 +176,19 @@ zalogowanego lidera, bo to ekran stanowiskowy).
 ### 👷 Pracownik
 - 📷 **Skaner zmian** (`/scanner/1`, `/scanner/2`) — rejestracja obecności, EAN-128
 - 🕐 **Czas pracy** (`/time-tracking`) — skan kodu pracownika: ☕ przerwa · 🚪 **Inne** · 🎓 **Szkolenie** · 🏁 koniec pracy
-- ⏱ **Czasy paczek** (`/scan-paczki`) — Start/Koniec procesowania + ilości per kategoria przy końcu
+- ⏱ **Czasy paczek** (`/scan-paczki`) — Start/Koniec procesowania + ilości per kategoria przy końcu; ekran powiększony dla stanowiska; **nadwyżka** (suma > ilość w paczce) → pytanie „Czy akceptujesz nadwyżkę?”, po „Tak” 5 s „Poinformuj lidera”
 - 🔎 **Paczki inspektor** (`/scan-package`) — podgląd statusu paczki, **tylko do odczytu**
 
 ### 🧑‍💼 Lider
 - 🏠 **Dashboard** (`/dashboard`) — **Dziś** (plan dzisiejszego pliku), **Wybrany dzień**, **Podsumowanie** (niezrobione wg Loading date, z filtrem zakresu), **Per Loading date** (tabela dni z zakresu), per pracownik, per zmiana; kliknięcie nazwiska otwiera Normy tej osoby
-- 📈 **Forecast** (`/forecast`) — prognoza ilości per dzień; **Różnica = Actual − Forecast** (minus = przyjechało mniej niż plan)
-- 📋 **Przydzielanie** (`/assignment`) — drag & drop operatorów do czynności
+- 📈 **Forecast** (`/forecast`) — prognoza ilości **sztuk** per dzień (Actual = suma sztuk wg Loading date); **Różnica = Actual − Forecast** (minus = przyjechało mniej niż plan)
+- 📋 **Przydzielanie** (`/assignment`) — drag & drop operatorów do czynności; pod każdą czynnością **estymacja** „≈ X szt./zmianę · Y szt./h” = przydzieleni × średnia osoby (30 dni, wszyscy pracownicy; Post Processing ze skanów paczek, reszta z Wpisu ilości; zmiana 7,5 h)
 - ✏️ **Wpis ilości** (`/data-entry`) — ilości zrobione per osoba
 - 📊 **Normy** (`/stats`) — przegląd całego zespołu (ranking szt./h względem średniej zespołu, cel lidera, rodzaj pracownika i nazwa zmiany) + per pracownik: ocena na tle zespołu, średnie dzienne/miesięczne paczek i sztuk, wykres dzienny i miesięczny
 - 📦 **Paczki (dane)** (`/paczki`) — surowe dane paczek z filtrami (patrz niżej)
 - 👥 **Czasy pracowników** (`/worker-times`) — przegląd i korekta czasów + filtry
 - 📥 **Import danych** (`/import-csv`) — CSV (`;`) lub Excel (`.xlsx`), dedup po barcode; przed importem **okno z datą pliku**; niżej **📅 Popraw Loading date** (grupowo)
-- 💶 **Statystyki ogólne** (`/general-stats`) — rozliczenie wg list i dat + eksport Excel. **Lider: tylko podgląd, bez kolumn kosztów** (ekran i Excel); koszty i edycja ilości — admin
+- 💶 **Statystyki ogólne** (`/general-stats`) — rozliczenie wg list i dat (filtr Loading date od–do po lewej, pod tytułem) + eksport Excel. **Lider: tylko podgląd, bez kolumn kosztów** (ekran i Excel); koszty i edycja ilości — admin
 - 👤 **Użytkownicy** (`/admin/users`) — zakładanie i edycja kont, w tym **rodzaj pracownika** i **nazwa zmiany** (listy rozwijane)
 
 ### 🛡️ Admin

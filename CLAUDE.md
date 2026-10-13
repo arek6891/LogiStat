@@ -15,7 +15,7 @@ docker compose down
 # Tests — need a Postgres; the compose file below provides one (port 55432, tmpfs)
 docker compose -f docker-compose.test.yml up -d
 pip install -r requirements-dev.txt
-pytest                               # 540 tests
+pytest                               # 566 tests
 docker compose -f docker-compose.test.yml down
 LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://u:p@host:5432/db pytest   # another DB
 # On .32 there is no pytest/venv — use the prebuilt runner image instead:
@@ -64,12 +64,15 @@ Default admin after seed: `admin` / `admin123` — override with `ADMIN_PASSWORD
 - **Shift attendance:** leader scans badges → `ShiftAttendance` per `Shift`.
 - **Activity assignment:** drag operators to activities → `ActivityAssignment`. `POST /api/assignment/save` **replaces the whole shift** (delete + insert), so: it locks the `Shift` row (`with_for_update()`), and `GET /api/assignment/data` returns `wersja` (`wersja_przydzialu()` — hash of the sorted `(user_id, activity_id)` pairs, no column) which the client sends back; a stale one → **409 + `konflikt: true`**, nothing overwritten (two leaders on one shift). No `wersja` in the body = old behaviour (`tests/test_przydzielanie_wersja.py`). AI suggestions save immediately too, so applying them over a non-empty board asks first.
 - **Daily stats:** leader enters quantities → `DailyStat` (audit trail).
-- **Forecast:** `diff` = **Actual − Forecast** everywhere (API `/api/forecast/chart-data`, table, summary, chart, Excel „Różnica (A-F)") — minus = arrived less than planned. It was F−A until 2026-10-08 and operations read +70 000 as a surplus.
+- **Forecast:** Forecast and Actual are **pieces** (`SUM(stueckzahl)` by data pliku), never packages — labels say „sztuki”. `diff` = **Actual − Forecast** everywhere (API `/api/forecast/chart-data`, table, summary, chart, Excel „Różnica (A-F)") — minus = arrived less than planned. It was F−A until 2026-10-08 and operations read +70 000 as a surplus.
 - **AI suggestions** (`/api/assignment/suggestions`): greedy, 30-day average `DailyStat.quantity` per user × activity.
+- **Assignment estimate** (2026-10-13): `/api/assignment/data` → `wydajnosc` = `wydajnosc_czynnosci(shift date)` — per activity, the average **of one person, over all workers** (not only those on the shift), last `DNI_SREDNIEJ_PRZYDZIALU` (30) days: `{szt_zmiana_os, szt_h_os, zrodlo, probek}`. Board header shows `osób × average` per shift and per hour, recomputed on every drag. `CZYNNOSC_SKANOW_PACZEK` (`Post Processing`, by name) = team `srednia_szt_h` from `przeglad_zespolu()` (scans, same as Normy); every other activity = mean `DailyStat.quantity` per entry. Shift = `GODZIN_ZMIANY` 7.5 h (8 h − break). No data → no key, UI says „brak danych” (never 0). `tests/test_przydzielanie_estymacja.py`.
 
 **Package scanning — two modules:**
 - `/scan-package` („Skan paczek"): **read-only** `GET /api/package-lookup`. `scanned = processed_by OR scan_start_at`; `finished = scan_end_at`; "kto" = `processed_by_name` else `scan_start_by_name`.
-- `/scan-paczki` („Czasy paczek"): tabs Start / Koniec → `POST /api/package-time/start|end` (`scan_start_at`/`scan_end_at` + `_by`). Steps: badge scan → package scan; on Koniec a third step takes quantities per category → `categories` → `scan_category_data`. Sum is **not** validated against `stueckzahl` (discrepancy is normal). No `categories` = time only.
+- `/scan-paczki` („Czasy paczek"): tabs Start / Koniec → `POST /api/package-time/start|end` (`scan_start_at`/`scan_end_at` + `_by`). Steps: badge scan → package scan; on Koniec a third step takes quantities per category → `categories` → `scan_category_data`. Sum is **not** validated against `stueckzahl` on the server (discrepancy is normal). No `categories` = time only.
+  - **Surplus (2026-10-13, client-side only):** entered sum > `stueckzahl` → modal „Czy akceptujesz nadwyżkę?” (focus on **„Nie, poprawię”** — a scanner Enter must not accept); „Tak” saves, and **only after a successful save** shows „📣 Poinformuj lidera” for `CZAS_INFO_LIDERA_MS` (5 s), closing by itself. Unknown `stueckzahl` → no question. Not the same rule as `bledy_paczki()` (per category, +10 %).
+  - Screen is enlarged with `.stanowisko-skanu { zoom: 1.27 }` (operators: text too small). Modals sit **outside** that wrapper (zoom on an ancestor breaks `position: fixed`) and carry their own large sizes.
   - **Ownership lock:** in-progress package belongs to its starter — other worker start → 409, end → 403; same worker re-start keeps the original timestamp. Finished → re-start/re-end 409.
   - Start/end read the carton **`with_for_update()`** (double Enter / two stations raced; `tests/test_skan_paczek_stanowisko.py`).
   - **Station guards:** step 1 validates the badge at once via `GET /api/employee-lookup`. A badge scanned into the package field → **400 + `kod_pracownika: true`** (`blad_nieznanej_paczki()`, checked only after the carton misses) from lookup/start/end; UI keeps step 1. JS in-flight guard per tab (`zajete`) + disabled field during a request; open quantity panel shows „Paczka NIE jest jeszcze zakończona" and confirms tab switch / leave; quantity ≥ `ILOSC_WYGLADA_NA_KOD` (100 000) refused client-side.
@@ -116,6 +119,7 @@ Default admin after seed: `admin` / `admin123` — override with `ADMIN_PASSWORD
 - Typo fix: `PUT /api/packages/<id>/categories` (leader+, „✎ Ilości") works on **any** carton; sets `modified_*`, recomputes.
 - Coverage `scan_coverage_map()` → `🔒 scanned/total` in General Stats and `GET /api/general-stats`.
 - Yellow double-rate row stays **manual**.
+- Date filter (Loading date od/do) sits **left, under the title** (2026-10-13 — on the right next to Excel nobody saw it). `btn-secondary` has no CSS anywhere (renders as a link) — use `btn-ghost`.
 - **Leader access (2026-10-12):** `/general-stats` and `/general-stats/export` are `@leader_required`; `acting_as_admin()` → `pokaz_koszty`/`edycja`. Leader gets no cost columns (screen + Excel: one column per category, no Total cost), **no rates in the page source** (`rates_by_ym` empty), locked inputs, no autosave/„→ użyj skanów”. All `/api/general-stats*` stay `@admin_required` (`to_dict()` carries `total_cost`). `tests/test_statystyki_lider.py`.
 - `GeneralStat.to_dict()` iterates `STAT_CATEGORIES`, not stored keys (`carton_labeling` was removed).
 - **`Total Amount` = `TOTAL_AMOUNT_CATEGORY` (`labelling_on`) only**, never the sum. Three places must agree: Jinja row in `general_stats.html`, JS recompute after inline edit, `write_data_row()` in Excel export. The **yellow row still sums everything** (`is_double_rate=True`) — pending, `docs/TODO.md`.
