@@ -1,5 +1,16 @@
 # LogiStat — Changelog
 
+## 2026-10-13 (2) — Paczki: ilości wpisane przez pracownika
+
+### Naprawione
+- **Okno „✎ Ilości" na Paczki (dane) pokazywało same zera**, choć pracownik wpisał ilości
+  (JSON w atrybucie HTML ucinał się na cudzysłowie). Zapis z tego okna wyzerowałby ilości —
+  na `.31` sprawdzone, że nic takiego się nie stało. Okno było też przezroczyste.
+
+### Dodane
+- **Kliknięcie numeru paczki** na Paczki (dane) otwiera ilości per kategoria; w oknie
+  „Wpisał(a): … · koniec …".
+
 ## 2026-10-13 — Estymacja na Przydzielaniu, nadwyżka paczki, większy ekran skanu
 
 Bez nowych kolumn i tabel.
