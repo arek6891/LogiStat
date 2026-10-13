@@ -214,4 +214,15 @@ def test_nadwyzka_pyta_i_informuje_lidera(leader_client):
     assert 'Czy akceptujesz nadwyżkę?' in html
     assert 'Poinformuj lidera' in html
     assert 'CZAS_INFO_LIDERA_MS = 5000' in html
-    assert 'nie.focus()' in html
+    # Bezpieczny przycisk z fokusem = „Nie, poprawie" (trzeci argument zapytaj()).
+    assert "{ 'nadwyzka-tak': true, 'nadwyzka-nie': false }, 'nadwyzka-nie')" in html
+
+
+def test_zakladki_do_dokonczenia_i_zespol(leader_client):
+    html = leader_client.get('/scan-paczki').get_data(as_text=True)
+
+    assert 'Paczka do dokończenia' in html and 'Pakowanie zespołowe' in html
+    assert '/api/package-time/przekaz' in html and '/api/package-time/dolacz' in html
+    assert 'id="dok-qty-panel"' in html and 'id="end-qty-panel"' in html
+    # Zamkniecie dla wszystkich — fokus na „tylko moj udzial".
+    assert "{ 'zespol-moj': 'moj', 'zespol-wszyscy': 'wszyscy' }, 'zespol-moj')" in html

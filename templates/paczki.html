@@ -7,9 +7,10 @@
         <p style="color:var(--text-muted);">Surowe dane paczek: zaimportowane z plików CSV/Excel oraz dodane ręcznie.<br>
             <span style="font-size:.85rem;">
             {% if brak_daty_dla_zrobionych %}<strong style="color:var(--danger);">⚠️ Status „Zrobione" / „Wszystkie" wymaga zakresu dat</strong> — bez niego widok obejmowałby całą historię. Ustaw datę „od" lub „do" i filtruj ponownie. Poniżej widok domyślny.
-            {% elif tylko_bledy %}Filtr błędów: paczki rozpoczęte bez końca lub z ilością przekraczającą Stückzahl o ponad 10%.
+            {% elif tylko_bledy %}Filtr błędów: paczki rozpoczęte bez końca, z ilością przekraczającą Stückzahl o ponad 10% oraz paczki kilku osób z nadwyżką (do wyjaśnienia).
             {% elif filtr_po_koncu %}Filtr po <strong>dacie końca paczki</strong> — z definicji obejmuje wyłącznie paczki zakończone.
             {% elif status == 'zrobione' %}Widok: <strong>tylko paczki zakończone</strong> w zadanym zakresie dat.
+            {% elif status == 'do_dokonczenia' %}Widok: <strong>paczki do dokończenia</strong> — poprzednia osoba wpisała swoje ilości, nikt jeszcze nie wbił „Start".
             {% elif status == 'wszystkie' %}Widok: wszystkie paczki — niezrobione i zakończone — w zadanym zakresie dat.
             {% else %}Widok domyślny: <strong>tylko paczki niezrobione</strong> (bez skanu „Koniec paczki"). Status „Zrobione" lub „Wszystkie" wymaga zakresu dat.
             {% endif %}
@@ -194,6 +195,28 @@
                     <button class="btn btn-ghost btn-sm" style="margin-left:.5rem;padding:2px 6px;font-size:.75rem;"
                         onclick="openReassign({{ item.id }}, '{{ item.barcode }}', {{ item.processed_by or 'null' }})"
                         title="Przepisz pracownika">✎</button>
+                    {% if item.udzialy %}
+                    {# Paczka kilku osob (przekazana / zespol): kto, kiedy, ile wpisal #}
+                    <div class="udzialy-paczki">
+                        {% if item.do_dokonczenia() %}<span class="udzial-znacznik">📤 do dokończenia</span>{% endif %}
+                        {% set otwarci = item.udzialy | selectattr('end_at', 'none') | list %}
+                        {% if otwarci %}<span class="udzial-znacznik">👥 zespół pracuje</span>{% endif %}
+                        {% for u in item.udzialy %}
+                        <div>👤 {{ u.user.display_name if u.user else '?' }}
+                            · {{ u.start_at | localdt('%H:%M') }}–{{ u.end_at | localdt('%H:%M') if u.end_at else '…' }}
+                            {% if u.end_at %}· {{ u.suma() }} szt.{% endif %}
+                            {% if u.zamkniete_przez %}<span title="Nie wbił(a) końca — bez ilości, poza normami">· bez ilości (zamknął: {{ u.zamykajacy.display_name if u.zamykajacy else '?' }})</span>{% endif %}
+                        </div>
+                        {% endfor %}
+                        {% if otwarci and not item.scan_end_at %}
+                        <button class="btn btn-ghost btn-sm" style="margin-top:.3rem;padding:2px 6px;font-size:.72rem;"
+                            data-id="{{ item.id }}" data-barcode="{{ item.barcode }}"
+                            data-otwarci="{{ otwarci | map(attribute='user') | map(attribute='display_name') | join(', ') }}"
+                            onclick="zamknijZespol(this)"
+                            title="Ktoś nie wbił końca — zamknij paczkę; otwarte osoby skończą teraz, bez ilości">🔒 Zamknij paczkę</button>
+                        {% endif %}
+                    </div>
+                    {% endif %}
                 </td>
                 <td style="font-size:.8rem;{% if not item.scan_start_at %}color:var(--text-muted){% endif %};">
                     {% if item.scan_start_at %}
@@ -257,6 +280,7 @@
                                — okno pokazywalo same zera (2026-10-13). tojson escapuje ' . #}
                             data-cats='{{ item.get_scan_categories() | tojson }}'
                             data-kto="{{ item.scan_end_by_user.display_name if item.scan_end_by_user else '' }}"
+                            data-udzialy='{{ item.udzialy_krotko() | tojson }}'
                             data-koniec="{{ item.scan_end_at | localdt('%d.%m.%Y %H:%M') if item.scan_end_at else '' }}"
                             onclick="otworzQty(this)" title="Popraw ilości per kategoria">✎ Ilości</button>
                     </div>
@@ -321,7 +345,8 @@
     const doo = document.getElementById('fpDateTo');
 
     function brakujeDaty() {
-        return status.value !== 'niezrobione' && !od.value && !doo.value;
+        // Niezrobione i Do dokonczenia to male zbiory — bez wymaganego zakresu.
+        return !['niezrobione', 'do_dokonczenia'].includes(status.value) && !od.value && !doo.value;
     }
 
     function odswiezPodpowiedz() {
@@ -503,6 +528,23 @@ async function odblokujPaczke(btn) {
     }
 }
 
+// Paczka zespolowa, w ktorej ktos nie wbil konca (poszedl do domu).
+async function zamknijZespol(btn) {
+    if (!confirm(`Zamknąć paczkę ${btn.dataset.barcode}?\n\nNie wbili końca: ${btn.dataset.otwarci}.\n`
+                 + 'Skończą teraz, BEZ swoich ilości (i bez liczenia do norm).')) return;
+    btn.disabled = true;
+    try {
+        const res = await fetch(`/api/packages/${btn.dataset.id}/zamknij-zespol`, { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { showToast(data.error || 'Błąd zamykania.', 'error'); btn.disabled = false; return; }
+        showToast(data.message || 'Zamknięto.', 'success');
+        setTimeout(() => location.reload(), 600);
+    } catch {
+        showToast('Błąd połączenia.', 'error');
+        btn.disabled = false;
+    }
+}
+
 async function toggleCartonDoubleRate(cartonId, checkbox) {
     const val = checkbox.checked;
     checkbox.disabled = true;
@@ -541,9 +583,18 @@ function otworzQty(btn) {
     document.getElementById('qtyStueck').textContent = btn.dataset.stueckzahl;
     // Kto wpisal ilosci = kto zakonczyl paczke (krok 3 przy koncu).
     const kto = document.getElementById('qtyKto');
-    kto.textContent = btn.dataset.koniec
-        ? `Wpisał(a): ${btn.dataset.kto || '—'} · koniec ${btn.dataset.koniec}`
-        : 'Paczka niezakończona — pracownik jeszcze nic nie wpisał.';
+    let udzialy = [];
+    try { udzialy = JSON.parse(btn.dataset.udzialy || '[]'); } catch { udzialy = []; }
+    if (udzialy.length) {
+        // Paczka kilku osob: pola pokazuja SUME, tu rozbicie — poprawka zmienia sume.
+        kto.textContent = 'Wpisali: ' + udzialy.map(u =>
+            `${u.kto} ${u.otwarty ? '(pracuje)' : u.suma + ' szt.'}`).join(' · ')
+            + (btn.dataset.koniec ? ` · koniec ${btn.dataset.koniec}` : ' · paczka niezakończona');
+    } else {
+        kto.textContent = btn.dataset.koniec
+            ? `Wpisał(a): ${btn.dataset.kto || '—'} · koniec ${btn.dataset.koniec}`
+            : 'Paczka niezakończona — pracownik jeszcze nic nie wpisał.';
+    }
     document.getElementById('qtyBlad').style.display = 'none';
 
     let biezace = {};

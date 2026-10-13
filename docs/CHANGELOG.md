@@ -1,5 +1,30 @@
 # LogiStat — Changelog
 
+## 2026-10-13 (3) — Paczka do dokończenia, Pakowanie zespołowe
+
+Nowa tabela `udzial_paczki` (z `create_all()`); bez nowych kolumn w istniejących tabelach.
+
+### Dodane
+- **Czasy paczek → 📤 Paczka do dokończenia**: na koniec zmiany pracownik wpisuje ilości,
+  które przerobił — paczka **nie** jest zamykana. Następna osoba wbija zwykły Start i Koniec;
+  przy końcu widzi, co wpisano wcześniej i ile zostało.
+- **Czasy paczek → 👥 Pakowanie zespołowe**: druga / trzecia osoba dołącza do rozpoczętej
+  paczki. Koniec wbija każdy sam ze swoimi ilościami; paczka zamyka się po ostatnim.
+  Przy końcu, gdy inni jeszcze pracują: „Zakończ tylko mój udział” / „Zamknij paczkę dla
+  wszystkich” (pozostali bez ilości). Lider: **🔒 Zamknij paczkę** na Paczki (dane).
+- **Nadwyżka przy 2+ osobach** (suma > Stückzahl albo kategoria > Stückzahl + 10 %) →
+  błąd „Procesowało N os. (…) — do wyjaśnienia przez lidera” w filtrze ⚠️ błędów.
+- Paczki (dane): status **Do dokończenia**, lista osób przy paczce (czas, ilości), filtr
+  „Osoba” znajduje też uczestników; okno „✎ Ilości” pokazuje, kto ile wpisał.
+
+### Zmienione
+- **Normy, Dashboard (per pracownik, per zmiana)**: paczka kilku osób liczy się każdej
+  osobie z jej udziału — jej czas i jej **wpisane ilości** (paczka jednej osoby jak dotąd:
+  Stückzahl). Udział zamknięty przez kogoś innego (bez ilości) nie wchodzi do norm.
+- Dashboard: paczka do dokończenia liczy się jako **w toku**. Pokrycie skanami (🔒 w
+  Statystykach ogólnych) liczy tylko paczki zakończone.
+- Czas procesowania paczki kilku osób = złączone okresy udziałów (bez przerwy między zmianami).
+
 ## 2026-10-13 (2) — Paczki: ilości wpisane przez pracownika
 
 ### Naprawione

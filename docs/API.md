@@ -440,12 +440,16 @@ Ekran: `/admin/user-options` (Panel Admina → Listy użytkowników).
 | PUT | `/api/packages/<id>/double-rate` | Oznaczenie paczki jako double rate `{ "double_rate": true }` |
 | GET | `/api/employee-lookup?barcode=` | **Krok 1 na `/scan-paczki`** — sprawdza kod pracownika przed skanem paczki: `200 { user: { id, display_name } }`; nieznany/nieaktywny → `404`; kod paczki zamiast identyfikatora → `400` |
 | POST | `/api/package-time/start` | Rejestracja startu procesowania `{ "employee_barcode", "package_barcode" }` |
-| POST | `/api/package-time/end` | Rejestracja końca + czas procesowania (to samo body) |
-| POST | `/api/packages/<id>/unlock-scan` | **Odblokowanie paczki** rozpoczętej i nigdy nie zakończonej (lider+): kasuje `scan_start_at`/`scan_start_by`, ustawia `modified_by`/`modified_at`. Paczka wraca do stanu „nierozpoczęta". Paczka zakończona → 409, nierozpoczęta → 400. |
+| POST | `/api/package-time/end` | Rejestracja końca + czas procesowania (to samo body + `categories`). Paczka kilku osób: zamyka **udział** tej osoby; `zamknij_wszystkich: true` kończy też pozostałych (bez ilości). Odpowiedź `zamknieta: false`, gdy ktoś jeszcze pracuje |
+| POST | `/api/package-time/przekaz` | **Paczka do dokończenia** `{ employee_barcode, package_barcode, categories }` — zapisuje udział (czas + ilości) i **zdejmuje start**; paczka zostaje otwarta, następna osoba robi zwykły `start` + `end`. Tylko osoba, która ją trzyma (403); nierozpoczęta → 400; zakończona / w zespole pracują inni → 409 |
+| POST | `/api/package-time/dolacz` | **Pakowanie zespołowe** `{ employee_barcode, package_barcode }` — dołącza do rozpoczętej paczki (pierwsze dołączenie zakłada udział także osobie, która zaczęła, od jej startu). Nierozpoczęta → 400, zakończona → 409, już pracuje → 200 bez zmian |
+| POST | `/api/packages/<id>/zamknij-zespol` | Lider zamyka paczkę zespołową, gdy ktoś nie wbił końca: otwarte udziały kończą się teraz, bez ilości (`zamkniete_przez`), paczka zamknięta. Bez otwartego zespołu → 400, zakończona → 409 |
+| POST | `/api/packages/<id>/unlock-scan` | **Odblokowanie paczki** rozpoczętej i nigdy nie zakończonej (lider+): kasuje `scan_start_at`/`scan_start_by` **i otwarte udziały zespołu**, ustawia `modified_by`/`modified_at`. Paczka wraca do stanu „nierozpoczęta" (albo „do dokończenia", jeśli ma zamknięte udziały). Paczka zakończona → 409, nierozpoczęta → 400. |
 
 **Filtry na `/paczki`** (query string): `date_from`, `date_to`, `date_typ`, `barcode`,
-`land`, `osoba` (id — kto przejął / rozpoczął / zakończył), `double_rate=1`,
+`land`, `osoba` (id — kto przejął / rozpoczął / zakończył / miał udział), `double_rate=1`,
 `status`, `bledy=1`, `page`. **`status`**: `niezrobione` (domyślne — bez `scan_end_at`) ·
+`do_dokonczenia` (przekazana, nikt nie wbił startu — bez wymaganego zakresu dat) ·
 `zrobione` (tylko z `scan_end_at`) · `wszystkie`. Stary `pokaz_zrobione=1` działa jako
 alias `status=wszystkie`. `bledy=1` ignoruje status (błąd ilości występuje na
 paczce już zakończonej) i liczy się w Pythonie — ilości ze skanu to JSON w kolumnie
@@ -469,6 +473,8 @@ i widok domyślny. W formularzu pilnuje tego JS; warunek po stronie serwera łap
 sklejony URL i zakładkę.
 
 **Blokady czasu paczek** (`/api/package-time/*`):
+- **Paczka kilku osób** (`udzial_paczki`): koniec może wbić każdy z otwartym udziałem; inny → `403`.
+  Zwykły `start` innej osoby dalej `409` (z podpowiedzią „Pakowanie zespołowe”).
 - Paczkę w trakcie (start bez końca) obsługuje **tylko** pracownik, który ją rozpoczął:
   - inny pracownik robi start → `409` „nie można podebrać"
   - inny pracownik robi koniec → `403` „tylko on może zakończyć"
@@ -483,5 +489,6 @@ sklejony URL i zakładkę.
 - `scanned` = ma `processed_by` **lub** `scan_start_at`
 - `scanned_by` = pracownik z przypisania, w razie braku → kto zrobił start
 - `finished` = ma `scan_end_at`
+- `do_dokonczenia` = przekazana, bez startu i końca; `udzialy` = lista `{user_id, user_name, rodzaj, start_at, end_at, otwarty, ilosci, suma, zamkniete_przez}`
 
 > `/api/package-lookup` i `/api/package-time/*` wymagają roli `leader`+.

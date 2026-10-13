@@ -107,6 +107,7 @@
         let finishText, finishOk = c.finished;
         if (c.finished) finishText = '✅ Zakończona';
         else if (c.scan_start_at) finishText = '⏳ W trakcie (rozpoczęta, bez końca)';
+        else if (c.do_dokonczenia) finishText = '📤 Do dokończenia (czeka na następną osobę)';
         else finishText = '⏳ Niezakończona';
 
         const borderCol = c.finished ? 'var(--success,#22c55e)'
@@ -151,6 +152,9 @@
                     ${row('Start', c.scan_start_at ? `${escapeHtml(c.scan_start_by_name) || '—'} · ${fmtDateTime(c.scan_start_at)}` : '—')}
                     ${row('Koniec', c.scan_end_at ? `${escapeHtml(c.scan_end_by_name) || '—'} · ${fmtDateTime(c.scan_end_at)}` : '—')}
                     ${row('Czas procesowania', fmtDuration(c.processing_seconds))}
+                    ${(c.udzialy || []).map(u => row('👤 ' + escapeHtml(u.user_name || '?'),
+                        `${fmtDateTime(u.start_at)} – ${u.otwarty ? 'pracuje' : fmtDateTime(u.end_at) + ' · ' + u.suma + ' szt.'}`
+                        + (u.zamkniete_przez ? ` · zamknął: ${escapeHtml(u.zamkniete_przez)}` : ''))).join('')}
                 </div>
             </div>`;
     }

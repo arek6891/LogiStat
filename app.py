@@ -5,6 +5,7 @@ import json
 import calendar
 import hashlib
 import math
+from types import SimpleNamespace
 from bisect import bisect_right
 from datetime import datetime, date, time, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -23,7 +24,7 @@ from flask_login import (
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import func, and_, or_, case
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 import openpyxl
 from openpyxl.chart import BarChart, Reference
@@ -570,9 +571,25 @@ class ImportedCarton(db.Model):
     modified_by_user = db.relationship('User', foreign_keys=[modified_by])
 
     def processing_seconds(self):
+        # Paczka kilku osob: czas pracy przy niej = zlaczone okresy udzialow
+        # (zespol rownolegle liczy sie raz, przerwa miedzy zmianami wcale).
+        # Rozpietosc start–koniec dawalaby przy przekazaniu cala noc.
+        if self.scan_end_at and self.udzialy:
+            return int(suma_zlaczonych_okresow(
+                [(u.start_at, u.end_at) for u in self.udzialy if u.end_at]))
         if self.scan_start_at and self.scan_end_at:
             return int((self.scan_end_at - self.scan_start_at).total_seconds())
         return None
+
+    def udzialy_krotko(self):
+        """Kto ile wpisal — do okna „✎ Ilosci" na /paczki."""
+        return [{'kto': u.user.display_name if u.user else '?', 'suma': u.suma(),
+                 'otwarty': u.end_at is None} for u in self.udzialy]
+
+    def do_dokonczenia(self):
+        """Przekazana przez poprzednia osobe, nikt jej jeszcze nie przejal."""
+        return (not self.scan_end_at and not self.scan_start_at
+                and bool(self.udzialy))
 
     def get_scan_categories(self):
         """Ilosci per kategoria ze skanu. Zawsze dict {kategoria: int}."""
@@ -619,6 +636,77 @@ class ImportedCarton(db.Model):
             'modified_at': iso_z(self.modified_at),
             'modified_by_login': self.modified_by_user.username if self.modified_by_user else None,
             'scan_categories': self.get_scan_categories(),
+            # Wiele osob przy paczce (przekazanie / zespol) — to_dict jest
+            # wolane tylko dla pojedynczych paczek, wiec bez N+1.
+            'do_dokonczenia': self.do_dokonczenia(),
+            'udzialy': [u.to_dict() for u in self.udzialy],
+        }
+
+
+# Rodzaje udzialu: jak paczka stala sie paczka wielu osob.
+UDZIAL_PRZEKAZANA = 'przekazana'   # „Paczka do dokonczenia" — kolejno, po sobie
+UDZIAL_ZESPOL = 'zespol'           # „Pakowanie zespolowe" — rownolegle
+
+
+class UdzialPaczki(db.Model):
+    """Udzial jednej osoby w paczce, gdy pracuje przy niej wiecej niz jedna (2026-10-13).
+
+    Paczka jednej osoby NIE ma wierszy — czyta sie ja z pol kartonu jak dawniej
+    (16 tys. starych paczek bez migracji). Wiersze powstaja przy przekazaniu
+    („Paczka do dokonczenia") i przy dolaczeniu („Pakowanie zespolowe").
+    Karton trzyma agregat: `scan_category_data` = suma `ilosci` wszystkich
+    udzialow (z sumy, nigdy delta), `scan_end_*` dopiero przy zamknieciu.
+    Normy licza kazda osobe z jej udzialu: jej czas i jej wpisane ilosci.
+    """
+    __tablename__ = 'udzial_paczki'
+    id = db.Column(db.Integer, primary_key=True)
+    carton_id = db.Column(db.Integer, db.ForeignKey('imported_carton.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    rodzaj = db.Column(db.String(20), nullable=False)
+    start_at = db.Column(db.DateTime, nullable=False)
+    end_at = db.Column(db.DateTime, nullable=True)
+    # JSON {kategoria: sztuki} — tylko przez get_ilosci()/set_ilosci().
+    ilosci = db.Column(db.Text, default='{}')
+    # Kto zamknal CUDZY udzial (kolega „zamknij dla wszystkich" albo lider) —
+    # taki udzial nie ma ilosci i nie wchodzi do norm.
+    zamkniete_przez = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+    # delete-orphan: Odblokuj kasuje otwarte udzialy przez usuniecie z listy.
+    carton = db.relationship('ImportedCarton', backref=db.backref(
+        'udzialy', lazy='select', order_by='UdzialPaczki.start_at',
+        cascade='all, delete-orphan'))
+    user = db.relationship('User', foreign_keys=[user_id])
+    zamykajacy = db.relationship('User', foreign_keys=[zamkniete_przez])
+
+    def get_ilosci(self):
+        try:
+            dane = json.loads(self.ilosci) if self.ilosci else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+        if not isinstance(dane, dict):
+            return {}
+        return {k: int(v) for k, v in dane.items()
+                if k in STAT_CATEGORIES and isinstance(v, (int, float))}
+
+    def set_ilosci(self, dane):
+        self.ilosci = json.dumps(
+            {k: int(v) for k, v in (dane or {}).items() if k in STAT_CATEGORIES})
+
+    def suma(self):
+        return sum(self.get_ilosci().values())
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'user_name': self.user.display_name if self.user else None,
+            'rodzaj': self.rodzaj,
+            'start_at': iso_z(self.start_at),
+            'end_at': iso_z(self.end_at),
+            'otwarty': self.end_at is None,
+            'ilosci': self.get_ilosci(),
+            'suma': self.suma(),
+            'zamkniete_przez': self.zamykajacy.display_name if self.zamykajacy else None,
         }
 
 
@@ -1478,10 +1566,13 @@ PACZKI_POLA_DAT = {
 
 
 PACZKI_STATUSY = {
-    'niezrobione': 'Niezrobione',
-    'zrobione':    'Zrobione',
-    'wszystkie':   'Wszystkie',
+    'niezrobione':    'Niezrobione',
+    'do_dokonczenia': 'Do dokończenia',
+    'zrobione':       'Zrobione',
+    'wszystkie':      'Wszystkie',
 }
+# Statusy bez wymaganego zakresu dat (malo paczek — nie wyciagna calej historii).
+PACZKI_STATUSY_BEZ_DAT = ('niezrobione', 'do_dokonczenia')
 
 
 class StroniceLista:
@@ -1525,12 +1616,23 @@ def bledy_paczki(carton):
         bledy.append('Rozpoczęta, ale nie zakończona')
 
     limit = (carton.stueckzahl or 0) * TOLERANCJA_ILOSCI
-    for kat, ile in carton.get_scan_categories().items():
+    ilosci = carton.get_scan_categories()
+    for kat, ile in ilosci.items():
         if ile > limit:
             bledy.append(
                 f'{STAT_CATEGORY_LABELS.get(kat, kat)}: {ile} szt. '
                 f'przy {carton.stueckzahl or 0} w paczce'
             )
+
+    # Paczka wielu osob z nadwyzka (suma > Stückzahl LUB kategoria > +10 %,
+    # decyzja operacji 2026-10-13): nie wiadomo, kto zawyzyl — lider wyjasnia.
+    osoby = {u.user_id: (u.user.display_name if u.user else '?') for u in carton.udzialy}
+    suma = sum(ilosci.values())
+    if len(osoby) >= 2 and (suma > (carton.stueckzahl or 0) or any(i > limit for i in ilosci.values())):
+        bledy.append(
+            f'Procesowało {len(osoby)} os. ({", ".join(osoby.values())}) — wpisano {suma} szt. '
+            f'przy {carton.stueckzahl or 0} w paczce. Do wyjaśnienia przez lidera'
+        )
     return bledy
 
 
@@ -1596,6 +1698,7 @@ def paczki_view():
             ImportedCarton.processed_by == osoba_id,
             ImportedCarton.scan_start_by == osoba_id,
             ImportedCarton.scan_end_by == osoba_id,
+            ImportedCarton.udzialy.any(UdzialPaczki.user_id == osoba_id),
         ))
 
     if tylko_double:
@@ -1606,7 +1709,7 @@ def paczki_view():
     # lapie recznie sklejony URL i zakladke — zamiast bledu pokazujemy widok
     # domyslny z komunikatem (to strona Jinja, nie /api/, wiec abort() dalby
     # surowa strone bledu).
-    brak_daty_dla_zrobionych = status != 'niezrobione' and not (date_from or date_to)
+    brak_daty_dla_zrobionych = status not in PACZKI_STATUSY_BEZ_DAT and not (date_from or date_to)
     if brak_daty_dla_zrobionych:
         status = 'niezrobione'
 
@@ -1625,7 +1728,14 @@ def paczki_view():
             query = query.filter(ImportedCarton.scan_end_at.is_(None))
         elif status == 'zrobione':
             query = query.filter(ImportedCarton.scan_end_at.isnot(None))
+        elif status == 'do_dokonczenia':
+            query = query.filter(ImportedCarton.scan_end_at.is_(None),
+                                 ImportedCarton.scan_start_at.is_(None),
+                                 ImportedCarton.udzialy.any())
 
+    # Udzialy (i ich osoby) jednym zapytaniem — bledy_paczki() i komorka
+    # „Pracownik" czytaja je per paczka.
+    query = query.options(selectinload(ImportedCarton.udzialy).joinedload(UdzialPaczki.user))
     query = query.order_by(ImportedCarton.imported_at.desc())
 
     if tylko_bledy:
@@ -1906,8 +2016,11 @@ def scan_coverage_map():
     """
     # Agregujemy w bazie (GROUP BY), nie w Pythonie — inaczej ekran rozliczen
     # ciagnalby cala tabele kartonow przy kazdym otwarciu.
+    # Tylko paczki ZAKONCZONE: czesc przekazana do dokonczenia ma juz ilosci,
+    # ale paczka nie jest skonczona — nie moze wygladac na „zeskanowana".
     ma_skan = case(
-        (and_(ImportedCarton.scan_category_data.isnot(None),
+        (and_(ImportedCarton.scan_end_at.isnot(None),
+              ImportedCarton.scan_category_data.isnot(None),
               ImportedCarton.scan_category_data.notin_(('{}', '', 'null'))), 1),
         else_=0)
     rows = db.session.query(
@@ -2428,16 +2541,21 @@ def api_daily_stat_update(stat_id):
 #  API: STATISTICS
 # ══════════════════════════════════════════════════════════════════════════════
 
-def wydajnosc_pracownikow(date_from=None, date_to=None):
-    """Zakonczone paczki kazdego pracownika: `{uid: [(start, koniec, sztuk)]}`.
+def prace_osob(date_from=None, date_to=None, user_ids=None):
+    """Zakonczona praca kazdej osoby przy paczkach: `{uid: [(start, koniec, sztuk)]}`.
 
-    Dlaczego z paczek, a nie z `DailyStat`: wpis ilosci jest uzupelniany
-    sporadycznie (na `.31` to kilka wierszy), a skan paczek leci przy kazdej
-    sztuce — to jedyne zrodlo, ktore realnie pokrywa zespol.
-
-    Liczenie (szt./h, szkolenia) robi `policz_wydajnosc()` — tu tylko dane.
-    `start` bywa None (paczka zamknieta bez skanu „Start") — czasu wtedy nie ma.
+    JEDYNA definicja „kto ile zrobil" — Normy, wykresy, Dashboard (per
+    pracownik, per zmiana). Dwa zrodla:
+    - paczka jednej osoby (bez `udzial_paczki`): kto zakonczyl, start–koniec,
+      sztuk = Stückzahl — jak zawsze;
+    - paczka wielu osob (przekazana / zespol): kazdy swoj udzial — jego czas
+      i jego WPISANE ilosci (decyzja operacji 2026-10-13), liczony po koncu
+      udzialu, takze gdy paczke dokonczy ktos inny pozniej. Udzial zamkniety
+      przez kogos innego (bez ilosci) pomijamy — nie ma czego liczyc.
+    Zakres po DOBIE LOKALNEJ konca, polotwarty.
     """
+    ma_udzialy = db.session.query(UdzialPaczki.id).filter(
+        UdzialPaczki.carton_id == ImportedCarton.id).exists()
     q = db.session.query(
         ImportedCarton.scan_end_by,
         ImportedCarton.scan_start_at,
@@ -2446,17 +2564,42 @@ def wydajnosc_pracownikow(date_from=None, date_to=None):
     ).filter(
         ImportedCarton.scan_end_at.isnot(None),
         ImportedCarton.scan_end_by.isnot(None),
+        ~ma_udzialy,
     )
-    # `scan_end_at` to naive UTC — granice doby jak wszedzie indziej.
+    uq = UdzialPaczki.query.filter(
+        UdzialPaczki.end_at.isnot(None),
+        UdzialPaczki.zamkniete_przez.is_(None),
+    )
+    # `scan_end_at` / `end_at` to naive UTC — granice doby jak wszedzie indziej.
     if date_from:
         q = q.filter(ImportedCarton.scan_end_at >= local_day_bounds(date_from)[0])
+        uq = uq.filter(UdzialPaczki.end_at >= local_day_bounds(date_from)[0])
     if date_to:
         q = q.filter(ImportedCarton.scan_end_at < local_day_bounds(date_to)[1])
+        uq = uq.filter(UdzialPaczki.end_at < local_day_bounds(date_to)[1])
+    if user_ids is not None:
+        q = q.filter(ImportedCarton.scan_end_by.in_(list(user_ids)))
+        uq = uq.filter(UdzialPaczki.user_id.in_(list(user_ids)))
 
     per_osoba = {}
     for uid, start, koniec, sztuk in q.all():
         per_osoba.setdefault(uid, []).append((start, koniec, sztuk or 0))
+    for u in uq.all():
+        per_osoba.setdefault(u.user_id, []).append((u.start_at, u.end_at, u.suma()))
     return per_osoba
+
+
+def wydajnosc_pracownikow(date_from=None, date_to=None):
+    """Zakonczone paczki kazdego pracownika: `{uid: [(start, koniec, sztuk)]}`.
+
+    Dlaczego z paczek, a nie z `DailyStat`: wpis ilosci jest uzupelniany
+    sporadycznie (na `.31` to kilka wierszy), a skan paczek leci przy kazdej
+    sztuce — to jedyne zrodlo, ktore realnie pokrywa zespol.
+
+    Liczenie (szt./h, szkolenia) robi `policz_wydajnosc()` — tu tylko dane
+    z `prace_osob()`. `start` bywa None (paczka zamknieta bez skanu „Start").
+    """
+    return prace_osob(date_from, date_to)
 
 
 # Szkolenie bez „konca" (zapomniany skan, brak „Koniec pracy") liczymy do teraz,
@@ -2989,23 +3132,12 @@ def api_stats_user(user_id):
     # lokalnej polnocy trafiala na inny dzien tutaj niz na dashboardzie.
     # Konwersja jest w Pythonie: `local_day_bounds()` jest jedyna definicja doby
     # w calej aplikacji, a zakres jest maly (paczki jednej osoby w okresie).
-    pq = db.session.query(
-        ImportedCarton.scan_start_at,
-        ImportedCarton.scan_end_at,
-        ImportedCarton.stueckzahl,
-    ).filter(
-        ImportedCarton.scan_end_by == user_id,
-        ImportedCarton.scan_end_at.isnot(None),
-    )
-    if date_from:
-        pq = pq.filter(ImportedCarton.scan_end_at >= local_day_bounds(date_from)[0])
-    if date_to:
-        pq = pq.filter(ImportedCarton.scan_end_at < local_day_bounds(date_to)[1])
+    praca = prace_osob(date_from, date_to, user_ids=[user_id]).get(user_id, [])
 
     per_day = {}
     paczki_dnia = {}
     paczki_miesiaca = {}
-    for scan_start_at, scan_end_at, stueckzahl in pq.all():
+    for scan_start_at, scan_end_at, stueckzahl in praca:
         d = utc_to_local(scan_end_at).date().isoformat()
         agg = per_day.setdefault(d, {'cnt': 0, 'pcs': 0})
         agg['cnt'] += 1
@@ -3828,21 +3960,16 @@ def api_dashboard():
     pieces_today = db.session.query(func.sum(ImportedCarton.stueckzahl))\
         .filter(dzis).scalar() or 0
 
-    # Breakdown per pracownik — dziś (kto zakończył paczki)
-    worker_rows = db.session.query(
-        User.id.label('user_id'), User.display_name,
-        func.count(ImportedCarton.id).label('packages'),
-        func.sum(ImportedCarton.stueckzahl).label('pieces')
-    ).join(ImportedCarton, ImportedCarton.scan_end_by == User.id)\
-     .filter(dzis)\
-     .group_by(User.id, User.display_name)\
-     .order_by(func.count(ImportedCarton.id).desc()).all()
-
-    workers_today = [
-        {'user_id': r.user_id, 'name': r.display_name,
-         'packages': r.packages, 'pieces': int(r.pieces or 0)}
-        for r in worker_rows
-    ]
+    # Breakdown per pracownik — dziś. Paczka wielu osob liczy sie kazdej z nich
+    # (jej udzial i jej wpisane ilosci) — `prace_osob()`.
+    praca_dzis = prace_osob(today, today)
+    nazwy = {u.id: u.display_name for u in User.query.filter(
+        User.id.in_(list(praca_dzis))).all()} if praca_dzis else {}
+    workers_today = sorted((
+        {'user_id': uid, 'name': nazwy.get(uid, '?'),
+         'packages': len(p), 'pieces': int(sum(x[2] for x in p))}
+        for uid, p in praca_dzis.items()
+    ), key=lambda w: w['packages'], reverse=True)
 
     # Obecni na zmianach dziś
     shift1 = Shift.query.filter_by(date=today, shift_number=1).first()
@@ -3866,8 +3993,8 @@ def api_dashboard():
     ]
 
     # Per pracownik na zmianie — paczki + DailyStat
-    pkg_by_user = {r.user_id: {'packages': r.packages, 'pieces': int(r.pieces or 0)}
-                   for r in worker_rows}
+    pkg_by_user = {w['user_id']: {'packages': w['packages'], 'pieces': w['pieces']}
+                   for w in workers_today}
 
     daily_per_user = db.session.query(
         DailyStat.user_id,
@@ -3922,7 +4049,9 @@ def _agregaty_planu():
     """Kolumny planu pliku: paczek, sztuk, zrobione, zrobione szt., w toku.
     Jedna definicja dla jednego dnia (Dzis / Wybrany dzien) i zakresu (Per Loading date)."""
     zrobiona = ImportedCarton.scan_end_at.isnot(None)
-    w_toku = and_(ImportedCarton.scan_start_at.isnot(None), ImportedCarton.scan_end_at.is_(None))
+    # W toku = ktos przy niej pracuje albo czeka na dokonczenie po poprzedniej osobie.
+    w_toku = and_(ImportedCarton.scan_end_at.is_(None),
+                  or_(ImportedCarton.scan_start_at.isnot(None), ImportedCarton.udzialy.any()))
     return (
         func.count(ImportedCarton.id),
         func.coalesce(func.sum(ImportedCarton.stueckzahl), 0),
@@ -4049,8 +4178,6 @@ def api_dashboard_shifts():
     except ValueError:
         target = local_today()
 
-    day_start, day_end = local_day_bounds(target)
-
     act_map = {a.id: a.name for a in Activity.query.all()}
     user_map = {u.id: u.display_name for u in User.query.all()}
 
@@ -4061,16 +4188,10 @@ def api_dashboard_shifts():
         for a in ShiftAttendance.query.filter_by(shift_id=sh.id).all():
             user_shifts.setdefault(a.user_id, set()).add(snum)
 
-    # Packages finished that day, grouped by the worker who ended them
-    pkg_rows = db.session.query(
-        ImportedCarton.scan_end_by.label('user_id'),
-        func.count(ImportedCarton.id).label('packages'),
-        func.coalesce(func.sum(ImportedCarton.stueckzahl), 0).label('pieces'),
-    ).filter(
-        ImportedCarton.scan_end_at >= day_start,
-        ImportedCarton.scan_end_at < day_end,
-        ImportedCarton.scan_end_by.isnot(None),
-    ).group_by(ImportedCarton.scan_end_by).all()
+    # Praca tego dnia per osoba (`prace_osob()`): paczka jednej osoby raz,
+    # paczka wielu osob — udzial kazdej z nich, wiec kazda trafia do swojej zmiany.
+    pkg_rows = [SimpleNamespace(user_id=uid, packages=len(p), pieces=sum(x[2] for x in p))
+                for uid, p in prace_osob(target, target).items()]
 
     per_shift_pkg = {1: {'packages': 0, 'pieces': 0}, 2: {'packages': 0, 'pieces': 0}}
     unattributed = {'packages': 0, 'pieces': 0, 'workers': []}
@@ -4507,6 +4628,212 @@ def parse_scan_categories(surowe):
     return wynik, None
 
 
+def otwarte_udzialy(carton):
+    return [u for u in carton.udzialy if u.end_at is None]
+
+
+def lista_osob(udzialy):
+    return ', '.join(u.user.display_name if u.user else '?' for u in udzialy)
+
+
+def przelicz_ilosci_udzialow(carton, actor_id):
+    """Karton = SUMA ilosci wszystkich udzialow (z sumy, nigdy delta) → linia
+    rozliczenia, jak przy zwyklym koncu paczki."""
+    suma = {}
+    for u in carton.udzialy:
+        for kat, ile in u.get_ilosci().items():
+            suma[kat] = suma.get(kat, 0) + ile
+    poprzednie = carton.get_scan_categories()
+    carton.set_scan_categories(suma)
+    if suma or poprzednie:
+        recompute_general_stat(*klucz_linii(carton), actor_id=actor_id, from_scan=True)
+
+
+def zamknij_paczke_wielu_osob(carton, kto_id, teraz):
+    """Ostatni udzial zamkniety → paczka zakonczona. Start = pierwszy udzial,
+    zeby „kto/kiedy zaczal" na /paczki opisywal cala paczke."""
+    pierwszy = min(carton.udzialy, key=lambda u: u.start_at)
+    carton.scan_start_at = pierwszy.start_at
+    carton.scan_start_by = pierwszy.user_id
+    carton.scan_end_at = teraz
+    carton.scan_end_by = kto_id
+
+
+def pracownik_i_paczka_z_body():
+    """Wspolne wejscie stanowiska: (user, carton zablokowany FOR UPDATE) albo odpowiedz bledu."""
+    data = json_body()
+    employee_barcode = (data.get('employee_barcode') or '').strip()
+    package_barcode = (data.get('package_barcode') or '').strip()
+    if not employee_barcode:
+        return data, None, None, (jsonify({'error': 'Brak kodu pracownika.'}), 400)
+    if not package_barcode:
+        return data, None, None, (jsonify({'error': 'Brak kodu paczki.'}), 400)
+    user = User.query.filter_by(barcode_id=employee_barcode, is_active_user=True).first()
+    if not user:
+        return data, None, None, (jsonify({'error': 'Nieznany kod pracownika.'}), 404)
+    carton = (ImportedCarton.query.filter_by(barcode=package_barcode)
+              .with_for_update().first())
+    if not carton:
+        return data, user, None, blad_nieznanej_paczki(package_barcode)
+    return data, user, carton, None
+
+
+def blad_wlasciciela(carton):
+    starter = db.session.get(User, carton.scan_start_by) if carton.scan_start_by else None
+    return jsonify({
+        'error': f'Paczkę rozpoczął {starter.display_name if starter else "inny pracownik"} — tylko on może ją zakończyć.'
+    }), 403
+
+
+@app.route('/api/package-time/przekaz', methods=['POST'])
+@leader_required
+def api_package_time_przekaz():
+    """„Paczka do dokonczenia": koniec zmiany — pracownik wpisuje, co przerobil,
+    a paczka NIE jest zamykana. Start zostaje zdjety, wiec nastepna osoba wbija
+    zwykly Start i konczy paczke standardowo (2026-10-13)."""
+    data, user, carton, blad = pracownik_i_paczka_z_body()
+    if blad:
+        return blad
+    if carton.scan_end_at:
+        return jsonify({'error': 'Paczka jest już zakończona.'}), 409
+    if not carton.scan_start_at:
+        return jsonify({'error': 'Paczka nie jest rozpoczęta — nie ma czego przekazać.'}), 400
+
+    otwarte = otwarte_udzialy(carton)
+    moj = next((u for u in otwarte if u.user_id == user.id), None)
+    if otwarte:
+        if not moj:
+            return jsonify({'error': f'Nie pracujesz przy tej paczce (pracują: {lista_osob(otwarte)}).'}), 403
+        inni = [u for u in otwarte if u is not moj]
+        if inni:
+            return jsonify({'error': f'Przy paczce pracują jeszcze: {lista_osob(inni)}. Wbij zwykły '
+                                     '„Koniec paczki" — zamknie tylko Twój udział, paczkę dokończy zespół.'}), 409
+    elif carton.scan_start_by != user.id:
+        return blad_wlasciciela(carton)
+
+    kategorie, blad = parse_scan_categories(data.get('categories'))
+    if blad:
+        return jsonify({'error': blad}), 400
+
+    teraz = datetime.utcnow()
+    if not moj:
+        moj = UdzialPaczki(carton=carton, user_id=user.id, rodzaj=UDZIAL_PRZEKAZANA,
+                           start_at=carton.scan_start_at)
+        db.session.add(moj)
+    moj.end_at = teraz
+    moj.set_ilosci(kategorie)
+    carton.scan_start_at = None
+    carton.scan_start_by = None
+    przelicz_ilosci_udzialow(carton, user.id)
+    db.session.commit()
+
+    return jsonify({
+        'message': f'Paczka {carton.barcode} czeka na dokończenie — wpisano {moj.suma()} szt. '
+                   'Następna osoba wbija zwykły „Start paczki".',
+        'carton': carton.to_dict()
+    }), 200
+
+
+@app.route('/api/package-time/dolacz', methods=['POST'])
+@leader_required
+def api_package_time_dolacz():
+    """„Pakowanie zespolowe": druga/trzecia osoba dolacza do paczki juz
+    rozpoczetej. Koniec wbija kazdy sam (zakladka Koniec) ze swoimi iloscami."""
+    data, user, carton, blad = pracownik_i_paczka_z_body()
+    if blad:
+        return blad
+    if carton.scan_end_at:
+        return jsonify({'error': 'Paczka jest już zakończona.'}), 409
+    if not carton.scan_start_at:
+        return jsonify({'error': 'Paczka nie jest rozpoczęta — pierwsza osoba wbija „Start paczki".'}), 400
+
+    otwarte = otwarte_udzialy(carton)
+    if any(u.user_id == user.id for u in otwarte) or (not otwarte and carton.scan_start_by == user.id):
+        return jsonify({'message': f'Już pracujesz przy paczce {carton.barcode}.',
+                        'carton': carton.to_dict()}), 200
+
+    teraz = datetime.utcnow()
+    # Pierwsze dolaczenie: osoba, ktora zaczela, tez dostaje udzial — od swojego startu.
+    if carton.scan_start_by and not any(u.user_id == carton.scan_start_by for u in otwarte):
+        db.session.add(UdzialPaczki(carton=carton, user_id=carton.scan_start_by,
+                                    rodzaj=UDZIAL_ZESPOL, start_at=carton.scan_start_at))
+    db.session.add(UdzialPaczki(carton=carton, user_id=user.id, rodzaj=UDZIAL_ZESPOL, start_at=teraz))
+    db.session.commit()
+
+    return jsonify({
+        'message': f'Dołączono do paczki {carton.barcode} — pracują: {lista_osob(otwarte_udzialy(carton))}. '
+                   'Koniec każdy wbija sam w zakładce „Koniec paczki".',
+        'carton': carton.to_dict()
+    }), 200
+
+
+def koniec_udzialu(carton, user, kategorie, zamknij_wszystkich):
+    """Koniec paczki wielu osob: zamyka udzial tej osoby; paczka konczy sie,
+    gdy nie zostal nikt otwarty (albo „zamknij dla wszystkich")."""
+    otwarte = otwarte_udzialy(carton)
+    moj = next((u for u in otwarte if u.user_id == user.id), None)
+    if otwarte and not moj:
+        return jsonify({'error': f'Nie pracujesz przy tej paczce (pracują: {lista_osob(otwarte)}).'}), 403
+    if not otwarte:
+        # Po przekazaniu: osoba, ktora wbila Start, nie ma jeszcze wiersza.
+        if carton.scan_start_by != user.id:
+            return blad_wlasciciela(carton)
+        moj = UdzialPaczki(carton=carton, user_id=user.id, rodzaj=UDZIAL_PRZEKAZANA,
+                           start_at=carton.scan_start_at)
+        db.session.add(moj)
+
+    teraz = datetime.utcnow()
+    moj.end_at = teraz
+    moj.set_ilosci(kategorie)
+    if zamknij_wszystkich:
+        for u in otwarte_udzialy(carton):
+            u.end_at = teraz
+            u.zamkniete_przez = user.id
+    pozostali = otwarte_udzialy(carton)
+    if not pozostali:
+        zamknij_paczke_wielu_osob(carton, user.id, teraz)
+    przelicz_ilosci_udzialow(carton, user.id)
+    db.session.commit()
+
+    if pozostali:
+        msg = (f'Zakończono Twój udział ({moj.suma()} szt.). Przy paczce pracują jeszcze: '
+               f'{lista_osob(pozostali)} — paczka zamknie się po ich końcu.')
+    else:
+        secs = carton.processing_seconds() or 0
+        msg = f'Koniec zarejestrowany — paczka zamknięta, czas procesowania: {secs // 60}m {secs % 60}s.'
+    return jsonify({'message': msg, 'zamknieta': not pozostali, 'carton': carton.to_dict()}), 200
+
+
+@app.route('/api/packages/<int:carton_id>/zamknij-zespol', methods=['POST'])
+@leader_required
+def api_package_zamknij_zespol(carton_id):
+    """Lider zamyka paczke zespolowa, gdy ktos nie wbil konca (poszedl do domu):
+    pozostale otwarte udzialy koncza sie teraz, bez ilosci (i poza normami)."""
+    carton = db.session.query(ImportedCarton).filter_by(id=carton_id).with_for_update().first()
+    if not carton:
+        abort(404)
+    if carton.scan_end_at:
+        return jsonify({'error': 'Paczka jest już zakończona.'}), 409
+    otwarte = otwarte_udzialy(carton)
+    if not otwarte:
+        return jsonify({'error': 'Paczka nie ma otwartego zespołu — dla zwykłej paczki użyj „🔓 Odblokuj".'}), 400
+
+    teraz = datetime.utcnow()
+    for u in otwarte:
+        u.end_at = teraz
+        u.zamkniete_przez = current_user.id
+    # Paczke „konczy" ostatnia osoba, ktora sama wbila koniec — a gdy nikt, ta, ktora zaczela.
+    sami = [u for u in carton.udzialy if not u.zamkniete_przez]
+    kto = max(sami, key=lambda u: u.end_at).user_id if sami else carton.scan_start_by
+    zamknij_paczke_wielu_osob(carton, kto, teraz)
+    carton.modified_at = teraz
+    carton.modified_by = current_user.id
+    przelicz_ilosci_udzialow(carton, current_user.id)
+    db.session.commit()
+    return jsonify({'message': f'Paczka {carton.barcode} zamknięta (bez ilości dla: {lista_osob(otwarte)}).',
+                    'carton': carton.to_dict()}), 200
+
+
 @app.route('/api/package-time/start', methods=['POST'])
 @leader_required
 def api_package_time_start():
@@ -4542,18 +4869,28 @@ def api_package_time_start():
                 'message': f'Paczka {package_barcode} już rozpoczęta przez Ciebie — start bez zmian.',
                 'carton': carton.to_dict()
             }), 200
+        if any(u.user_id == user.id for u in otwarte_udzialy(carton)):
+            return jsonify({
+                'message': f'Pracujesz już przy paczce {package_barcode} (zespół) — start bez zmian.',
+                'carton': carton.to_dict()
+            }), 200
         starter = db.session.get(User, carton.scan_start_by) if carton.scan_start_by else None
         return jsonify({
-            'error': f'Paczka już rozpoczęta przez {starter.display_name if starter else "innego pracownika"}. Nie można jej podebrać.'
+            'error': f'Paczka już rozpoczęta przez {starter.display_name if starter else "innego pracownika"}. '
+                     'Nie można jej podebrać — żeby pracować razem, użyj zakładki „Pakowanie zespołowe".'
         }), 409
 
-    # Świeży start (paczka nierozpoczęta)
+    # Świeży start (paczka nierozpoczęta albo czekajaca na dokonczenie)
+    dokonczenie = carton.do_dokonczenia()
     carton.scan_start_at = datetime.utcnow()
     carton.scan_start_by = user.id
     db.session.commit()
 
+    po_kim = ''
+    if dokonczenie:
+        po_kim = f' Dokończenie po: {lista_osob(carton.udzialy)} (wpisano {sum(u.suma() for u in carton.udzialy)} szt.).'
     return jsonify({
-        'message': f'Start zarejestrowany dla paczki {package_barcode} — {user.display_name}.',
+        'message': f'Start zarejestrowany dla paczki {package_barcode} — {user.display_name}.{po_kim}',
         'carton': carton.to_dict()
     }), 200
 
@@ -4585,6 +4922,12 @@ def api_package_time_end():
 
     if carton.scan_end_at:
         return jsonify({'error': 'Paczka jest już zakończona.'}), 409
+
+    if carton.udzialy:
+        kategorie, blad = parse_scan_categories(data.get('categories'))
+        if blad:
+            return jsonify({'error': blad}), 400
+        return koniec_udzialu(carton, user, kategorie, bool(data.get('zamknij_wszystkich')))
 
     # Tylko pracownik, który rozpoczął paczkę, może ją zakończyć
     if carton.scan_start_by and carton.scan_start_by != user.id:
@@ -4662,6 +5005,10 @@ def api_package_unlock_scan(carton_id):
         return jsonify({'error': 'Paczka nie jest rozpoczęta.'}), 400
 
     poprzedni = db.session.get(User, carton.scan_start_by) if carton.scan_start_by else None
+    # Otwarte udzialy zespolu nie maja ilosci — znikaja razem ze startem.
+    # Zamkniete (przekazane czesci) zostaja: paczka wraca do „do dokonczenia".
+    for u in otwarte_udzialy(carton):
+        carton.udzialy.remove(u)
     carton.scan_start_at = None
     carton.scan_start_by = None
     carton.modified_at = datetime.utcnow()

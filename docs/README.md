@@ -176,7 +176,7 @@ zalogowanego lidera, bo to ekran stanowiskowy).
 ### 👷 Pracownik
 - 📷 **Skaner zmian** (`/scanner/1`, `/scanner/2`) — rejestracja obecności, EAN-128
 - 🕐 **Czas pracy** (`/time-tracking`) — skan kodu pracownika: ☕ przerwa · 🚪 **Inne** · 🎓 **Szkolenie** · 🏁 koniec pracy
-- ⏱ **Czasy paczek** (`/scan-paczki`) — Start/Koniec procesowania + ilości per kategoria przy końcu; ekran powiększony dla stanowiska; **nadwyżka** (suma > ilość w paczce) → pytanie „Czy akceptujesz nadwyżkę?”, po „Tak” 5 s „Poinformuj lidera”
+- ⏱ **Czasy paczek** (`/scan-paczki`) — Start/Koniec procesowania + ilości per kategoria przy końcu; zakładki **📤 Paczka do dokończenia** (koniec zmiany: wpisz swoje ilości, paczkę kończy następna osoba) i **👥 Pakowanie zespołowe** (dołącz do rozpoczętej paczki; koniec wbija każdy sam); ekran powiększony dla stanowiska; **nadwyżka** (suma > ilość w paczce) → pytanie „Czy akceptujesz nadwyżkę?”, po „Tak” 5 s „Poinformuj lidera”
 - 🔎 **Paczki inspektor** (`/scan-package`) — podgląd statusu paczki, **tylko do odczytu**
 
 ### 🧑‍💼 Lider

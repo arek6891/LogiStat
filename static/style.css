@@ -1219,3 +1219,22 @@ input.autozapis-blad {
 
 .scanner-page[data-shift="1"] .scanned-card { border-left: 4px solid var(--shift-1); }
 .scanner-page[data-shift="2"] .scanned-card { border-left: 4px solid var(--shift-2); }
+
+/* /paczki: paczka kilku osob (przekazana / zespol) — lista udzialow pod kodem */
+.udzialy-paczki {
+    margin-top: 4px;
+    min-width: 220px;
+    font-family: var(--font);
+    font-size: .72rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+.udzialy-paczki .udzial-znacznik {
+    display: inline-block;
+    margin: 2px 4px 2px 0;
+    padding: 1px 6px;
+    border-radius: 6px;
+    background: var(--accent-glow);
+    color: var(--accent);
+    font-weight: 600;
+}
