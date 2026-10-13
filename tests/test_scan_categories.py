@@ -364,3 +364,39 @@ def test_swieza_linia_z_importu_przelacza_sie_przy_pierwszym_skanie(leader_clien
 
     assert gstat().category_source == 'scan'
     assert amount(gstat(), 'textile') == 6
+
+
+# ── /paczki: okno „✎ Ilosci" dostaje wpisane ilosci ─────────────────────────
+
+class _Atrybuty(__import__('html.parser').parser.HTMLParser):
+    """Parsuje HTML jak przegladarka — zbiera atrybuty przycisku „✎ Ilosci"."""
+    def __init__(self):
+        super().__init__()
+        self.znalezione = []
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if 'data-cats' in a:
+            self.znalezione.append(a)
+
+
+def test_paczki_przekazuja_wpisane_ilosci_do_okna(leader_client):
+    """JSON w atrybucie w cudzyslowach ucinal sie na pierwszym `"` — okno
+    pokazywalo same zera, a zapis z niego wyzerowalby ilosci (2026-10-13, .31)."""
+    emp = make_user('operator', barcode_id='EMP-Q', display_name="Beata O'Neil")
+    make_carton('P1', stueckzahl=104)
+    start(leader_client, 'EMP-Q')
+    assert end(leader_client, 'EMP-Q', categories={'sorting': 20, 'labelling_on': 5}).status_code == 200
+
+    html = leader_client.get(f'/paczki?status=wszystkie&date_typ=plik'
+                             f'&date_from={ZIEL}&date_to={ZIEL}').get_data(as_text=True)
+    p = _Atrybuty()
+    p.feed(html)
+
+    assert len(p.znalezione) == 1
+    a = p.znalezione[0]
+    assert __import__('json').loads(a['data-cats']) == {'sorting': 20, 'labelling_on': 5}
+    assert a['data-kto'] == "Beata O'Neil"
+    assert a['data-koniec']
+    assert 'class="paczka-ilosci"' in html
+    assert 'var(--surface)' not in html
