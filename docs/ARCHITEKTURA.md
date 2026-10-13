@@ -150,7 +150,8 @@ Quantities entered at package end are the **source of truth for `category_data`*
 **Szczegoly, ktore latwo zepsuc.**
 - `prace_osob()` jest JEDYNA definicja „kto ile zrobil" — Normy, wykresy, Dashboard per pracownik i per zmiana. Udzial liczy sie po swoim koncu, takze gdy paczke dokonczy ktos inny pozniej.
 - Przekazanie zdejmuje `scan_start_*` — inaczej nastepna osoba dostawalaby 409 „rozpoczeta przez…". Stan „do dokonczenia" wynika z danych (brak startu i konca + sa wiersze), bez kolumny.
-- Pierwsze dolaczenie do zespolu zaklada wiersz takze osobie, ktora zaczela (od jej `scan_start_at`) — od tej chwili wszyscy sa wierszami i koniec dziala tak samo dla kazdego.
+- Pierwsze dolaczenie do zespolu zaklada wiersz takze osobie, ktora zaczela (od jej `scan_start_at`) — od tej chwili wszyscy sa wierszami i koniec dziala tak samo dla kazdego. Warunek: brak wiersza tej osoby **z tym samym startem** (nie „brak otwartego”) — inaczej, gdy zaczynajaca skonczyla swoja czesc i lider dorzucil kolejna osobe, dostawala drugi, otwarty udzial i paczka nigdy sie nie zamykala.
+- Link z Norm do /paczki (`date_typ=koniec`) filtruje po koncu KARTONU — czesc przekazana liczy sie w Normach w dniu konca udzialu, wiec przy paczce dokonczonej innego dnia (albo jeszcze „do dokonczenia”) lista i liczba w Normach moga sie roznic.
 - Koniec po przekazaniu tworzy wiersz konczacego od jego `scan_start_at`; przy zamknieciu start kartonu wraca na pierwszy udzial.
 - Czas procesowania = zlaczone okresy udzialow — rozpietosc start–koniec przy przekazaniu obejmowalaby noc.
 - Pokrycie 🔒 liczy tylko zakonczone: przekazana czesc ma juz ilosci, ale paczka nie jest skonczona.
