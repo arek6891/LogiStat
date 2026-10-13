@@ -20,6 +20,11 @@ Nowa tabela `szkolenie_czynnosci` (`create_all()`); nowe kolumny `historia_celu.
   aż ktoś go zmieni; wcześniejsze dni zostają przy swoim celu. Przy zakresie z kilkoma
   celami: cel średnio w okresie (ważony godzinami) + opis zmian; linia celu na wykresach
   robi schodek.
+- **Użytkownicy**: okno edycji w dwóch kolumnach (dane konta | szkolenia) — w jednej nie
+  mieściło się na ekranie laptopa. Wszystkie okna mają `max-height: 92vh` i przewijają się
+  w środku.
+- **Normy, Paczki (dane)**: nazwiska pracowników i numery paczek w kolorze linków
+  z Dashboardu (`--info`) — domyślny niebieski był słabo widoczny na ciemnym tle.
 
 ## 2026-10-13 (3) — Paczka do dokończenia, Pakowanie zespołowe
 

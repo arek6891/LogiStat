@@ -45,6 +45,9 @@
       2026-10-13 na `btn-ghost`). Zdefiniować klasę albo podmienić na `btn-ghost`.
 - [ ] **Estymacja pozostałych czynności** — działa sama, gdy liderzy zaczną wpisywać ilości
       (Wpis ilości) dla czynności innych niż Post Processing.
+- [ ] **Masowe zaznaczanie szkoleń dla czynności** — nowa czynność startuje bez
+      przeszkolonych, a zaznacza się każdą osobę w jej oknie; ewentualnie „zaznacz
+      wszystkich w czynności X” (zaproponowane 2026-10-13, nie zamówione).
 
 - [x] **Testy** — `tests/` (pytest, 495 testów), nacisk na ścieżki rozliczeniowe
   - `pip install -r requirements-dev.txt && pytest`
@@ -92,6 +95,9 @@
 - [x] **Próg czasu przerwy konfigurowalny** — `/admin/settings` (`PUT /api/settings`, klucz `break_threshold_minutes`, domyślnie 30); tabela `AppSetting` (klucz/wartość)
 
 ## 🟢 Ukończone
+
+- [x] **Szkolenia z czynności** (2026-10-13) — przydział tylko przeszkolonych, okno
+      „⛔ Brak szkolenia”; **cel z dnia pracy** w Normach + historia zmian celu
 
 - [x] Skaner EAN-128 z timeoutem (300ms)
 - [x] Drag & drop z multi-select

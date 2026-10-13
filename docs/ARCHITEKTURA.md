@@ -151,6 +151,8 @@ Quantities entered at package end are the **source of truth for `category_data`*
 
 **Cel z dnia pracy.** Historia celu istniala od 2026-10-06, ale sluzyla tylko paczkom ze szkolenia; „% celu" dzielil przez cel **biezacy**, wiec podniesienie celu obnizalo wynik za stare tygodnie. Teraz `policz_wydajnosc()` wazy kazdy zlaczony okres skanowania celem z dnia jego konca (ten sam dzien co przy szkoleniu) i pomija dni z celem 0 (nie ma z czym porownac). Okres przechodzacy przez polnoc idzie w calosci na dzien konca — przyjete uproszczenie. Zespol: ta sama srednia wazona po wszystkich; bez godzin — cel z ostatniego dnia zakresu, zeby kolumny celu nie znikaly na pustym okresie. `cele_dzienne()` liczy sie teraz zawsze (jedno male zapytanie), nie tylko przy szkoleniu.
 
+**Okno uzytkownika.** Z sekcja szkolen (9 czynnosci) jednokolumnowe okno wychodzilo poza ekran laptopa — uzytkownik musial zmniejszac strone. Teraz `.modal-szeroki` + `.uzytkownik-siatka` (dane konta | szkolenia, jedna kolumna ponizej 760 px), a `.modal` ma globalnie `max-height: 92vh; overflow-y: auto`, zeby kazde dlugie okno przewijalo sie w srodku. Przy okazji: linki osob w Normach (`a.js-osoba`) i numery paczek na /paczki maja kolor `--info`, jak na Dashboardzie.
+
 ## Paczka do dokonczenia, Pakowanie zespolowe (2026-10-13)
 
 **Zgloszenie.** (1) Koniec zmiany, paczka nieskonczona: pracownik wpisuje, co przerobil, paczka zostaje otwarta, nastepna osoba wbija Start i konczy standardowo. (2) Lider dorzuca druga/trzecia osobe do rozpoczetej paczki; koniec wbija kazda osoba ze swoimi ilosciami. Nadwyzka przy kilku osobach → blad „do wyjasnienia przez lidera".
