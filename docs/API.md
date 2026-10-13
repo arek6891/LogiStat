@@ -68,6 +68,13 @@ Lista obecnych na danej zmianie.
 ### GET `/api/assignment/data?date=YYYY-MM-DD&shift_number=N`
 Dane do tablicy drag & drop: obecni, przydzieleni, czynności.
 
+`wydajnosc` — średnia **jednej osoby** per czynność (klucz = `activity_id`), ze wszystkich
+pracowników z ostatnich 30 dni do daty zmiany: `{szt_zmiana_os, szt_h_os, zrodlo, probek}`.
+`zrodlo`: `skany` (Post Processing — średnia zespołu szt./h z Norm) albo `wpis` (średnia
+`DailyStat.quantity` na wpis; `probek` = liczba wpisów). Zmiana = 7,5 h. Czynność bez
+danych nie ma klucza. Ekran mnoży przez liczbę przydzielonych. Zwracane też, gdy zmiany
+jeszcze nie ma.
+
 ### GET `/api/assignment/suggestions?date=YYYY-MM-DD&shift_number=N`
 Sugestie AI na podstawie średnich ilości z ostatnich 30 dni.
 

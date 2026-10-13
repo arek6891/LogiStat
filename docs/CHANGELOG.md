@@ -1,5 +1,25 @@
 # LogiStat — Changelog
 
+## 2026-10-13 — Estymacja na Przydzielaniu, nadwyżka paczki, większy ekran skanu
+
+Bez nowych kolumn i tabel.
+
+### Dodane
+- **Przydzielanie: estymacja** pod każdą czynnością — „≈ X szt./zmianę · Y szt./h” =
+  liczba przydzielonych × średnia jednej osoby (wszyscy pracownicy, ostatnie 30 dni,
+  zmiana 7,5 h). Post Processing liczy ze skanów paczek (ta sama średnia co w Normach),
+  pozostałe czynności z Wpisu ilości — bez danych „brak danych do estymacji”.
+- **Czasy paczek: nadwyżka** — suma wpisanych ilości większa niż w paczce → pytanie
+  „Czy akceptujesz nadwyżkę?” (domyślnie „Nie, poprawię”), po „Tak” okno
+  „📣 Poinformuj lidera” na 5 s, zamyka się samo.
+
+### Zmienione
+- **Czasy paczek: cały ekran powiększony** (najmniejszy tekst ~11 → ~14 px) — zgłoszenie
+  operatorów.
+- **Forecast: opisy w sztukach** — „Actual (sztuki)”, „ilość sztuk”, Excel „Actual (Sztuki)”.
+  Liczby bez zmian (zawsze były sumą sztuk).
+- **Statystyki ogólne: filtr Loading date po lewej**, pod tytułem, z etykietami.
+
 ## 2026-10-12 — Statystyki ogólne dla lidera, „Loading date", Dashboard: zakresy
 
 PR #26. Wdrożone na `.31` 2026-10-12 (`1ab0a31`), backup przed:

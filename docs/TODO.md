@@ -40,6 +40,12 @@
 
 ## 🟡 Planowane usprawnienia
 
+- [ ] **Klasa `btn-secondary` nie istnieje w CSS** — przyciski renderują się jak linki na
+      `paczki`, `stats`, `import_csv`, `admin_cost_mapping` (Statystyki ogólne poprawione
+      2026-10-13 na `btn-ghost`). Zdefiniować klasę albo podmienić na `btn-ghost`.
+- [ ] **Estymacja pozostałych czynności** — działa sama, gdy liderzy zaczną wpisywać ilości
+      (Wpis ilości) dla czynności innych niż Post Processing.
+
 - [x] **Testy** — `tests/` (pytest, 495 testów), nacisk na ścieżki rozliczeniowe
   - `pip install -r requirements-dev.txt && pytest`
   - Ten sam zestaw na Postgresie: `LOGISTAT_TEST_DATABASE_URL=... pytest`
@@ -121,6 +127,9 @@
 - [x] **Statystyki ogólne dla lidera** (2026-10-12) — podgląd bez kosztów (ekran i Excel), edycja zostaje u admina
 - [x] **„Loading date”** (2026-10-12) — nowa nazwa „Data pliku” we wszystkich tekstach UI (baza/API bez zmian)
 - [x] **Dashboard: zakresy** (2026-10-12) — Podsumowanie z filtrem Loading date od–do, zakładka „Per Loading date”
+- [x] **Przydzielanie: estymacja** (2026-10-13) — przydzieleni × średnia osoby per czynność (szt./zmianę, szt./h)
+- [x] **Czasy paczek: nadwyżka + większy ekran** (2026-10-13) — pytanie o nadwyżkę, 5 s „Poinformuj lidera”; zoom 1,27
+- [x] **Forecast w sztukach, filtr Stat. ogólnych po lewej** (2026-10-13)
 
 ---
 

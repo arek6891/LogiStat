@@ -1,30 +1,35 @@
 {% extends "base.html" %}
 {% block title %}Statystyki ogólne — LogiStat{% endblock %}
 {% block content %}
-<div class="page-header" style="display:flex;justify-content:space-between;align-items:center;">
+<div class="page-header">
     <div>
         <h1>📊 Statystyki ogólne</h1>
         <p style="color:var(--text-muted);">Dane zagregowane z importów CSV. Puste filtry pokazują wszystkie daty.</p>
     </div>
-    <div style="display:flex;gap:1rem;align-items:center;">
-        <form method="GET" id="filtrForm" style="display:flex;gap:.5rem;align-items:center;">
-            <input type="date" name="date_from" value="{{ date_from }}" class="form-control" style="width:140px;"
-                placeholder="Od">
-            <span style="color:var(--text-muted);">—</span>
-            <input type="date" name="date_to" value="{{ date_to }}" class="form-control" style="width:140px;"
-                placeholder="Do">
-            <button type="submit" class="btn btn-secondary">Filtruj</button>
-            <a href="{{ url_for('general_stats_page') }}" class="btn btn-secondary" style="padding:0.5rem;"
-                title="Wyczyść">✖</a>
-        </form>
-        <div style="width:1px;height:30px;background:var(--border);margin:0 .5rem;"></div>
-        <a id="exportBtn" href="{{ url_for('general_stats_export', date_from=date_from, date_to=date_to) }}"
-           class="btn btn-secondary">⬇ Excel</a>
-        {% if edycja %}
-        <span class="autozapis-status" id="autoZapisStatus"
-              title="Ilości zapisują się same chwilę po wpisaniu"></span>
-        {% endif %}
-    </div>
+</div>
+
+<!-- Filtr po lewej, pod tytulem (2026-10-13) — po prawej, obok Excela, byl
+     malo widoczny. Uklad jak na Forecascie: pola z etykietami. -->
+<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:20px;">
+    <form method="GET" id="filtrForm" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+        <div style="display:flex;flex-direction:column;gap:4px;">
+            <label for="filtrOd" style="font-size:.75rem;color:var(--text-muted);font-weight:500;">Loading date od</label>
+            <input type="date" id="filtrOd" name="date_from" value="{{ date_from }}" class="form-control" style="width:160px;">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+            <label for="filtrDo" style="font-size:.75rem;color:var(--text-muted);font-weight:500;">Loading date do</label>
+            <input type="date" id="filtrDo" name="date_to" value="{{ date_to }}" class="form-control" style="width:160px;">
+        </div>
+        <button type="submit" class="btn btn-primary">🔍 Filtruj</button>
+        <a href="{{ url_for('general_stats_page') }}" class="btn btn-ghost" title="Wyczyść filtr">✖ Wyczyść</a>
+    </form>
+    <div style="width:1px;height:36px;background:var(--border);margin:0 .25rem;"></div>
+    <a id="exportBtn" href="{{ url_for('general_stats_export', date_from=date_from, date_to=date_to) }}"
+       class="btn btn-ghost">⬇ Excel</a>
+    {% if edycja %}
+    <span class="autozapis-status" id="autoZapisStatus"
+          title="Ilości zapisują się same chwilę po wpisaniu"></span>
+    {% endif %}
 </div>
 
 <div style="overflow-x:auto;">

@@ -41,7 +41,10 @@
         {% for activity in activities %}
         <div class="assignment-column">
             <div class="assignment-column-header">
-                <span>{{ activity.name }}</span>
+                <div>
+                    <span>{{ activity.name }}</span>
+                    <div class="estymacja" data-est-for="{{ activity.id }}"></div>
+                </div>
                 <span class="count" data-count-for="{{ activity.id }}">0</span>
             </div>
             <div class="assignment-drop-zone" id="zone-{{ activity.id }}" data-activity="{{ activity.id }}">
@@ -60,6 +63,8 @@
     // zapisem; zapis ze stara wersja (ktos inny zmienil zmiane) dostaje 409.
     let loadedDate = null;
     let wersja = null;
+    // Srednia jednej osoby per czynnosc (/api/assignment/data → wydajnosc).
+    let wydajnosc = {};
 
     // Init date to today
     document.getElementById('assignDate').valueAsDate = new Date();
@@ -83,6 +88,7 @@
             const data = await res.json();
             loadedDate = dateVal;
             wersja = data.wersja;
+            wydajnosc = data.wydajnosc || {};
             renderBoard(data);
         } catch (err) {
             showToast('Błąd ładowania danych.', 'error');
@@ -217,6 +223,32 @@
             const actId = badge.dataset.countFor;
             const zone = document.getElementById(`zone-${actId}`);
             badge.textContent = zone ? zone.children.length : 0;
+        });
+        pokazEstymacje();
+    }
+
+    // Ile zrobia przydzieleni: liczba osob × srednia jednej osoby (wszyscy
+    // pracownicy, 30 dni). Zmiana = 7,5 h bez przerwy.
+    function pokazEstymacje() {
+        const fmt = n => Math.round(n).toLocaleString('pl');
+        document.querySelectorAll('[data-est-for]').forEach(el => {
+            const actId = el.dataset.estFor;
+            const zone = document.getElementById(`zone-${actId}`);
+            const osob = zone ? zone.children.length : 0;
+            const w = wydajnosc[actId];
+            if (!w) {
+                el.textContent = 'brak danych do estymacji';
+                el.title = 'Brak wpisów ilości dla tej czynności z ostatnich 30 dni.';
+                el.classList.add('pusta');
+                return;
+            }
+            el.classList.remove('pusta');
+            el.textContent = `≈ ${fmt(osob * w.szt_zmiana_os)} szt./zmianę · ${fmt(osob * w.szt_h_os)} szt./h`;
+            const skad = w.zrodlo === 'skany'
+                ? 'średnia zespołu ze skanów paczek (jak w Normach)'
+                : `średnia z Wpisu ilości (${w.probek} wpisów)`;
+            el.title = `Na osobę: ${fmt(w.szt_zmiana_os)} szt./zmianę (7,5 h), `
+                + `${fmt(w.szt_h_os)} szt./h — ${skad}, ostatnie 30 dni.`;
         });
     }
 

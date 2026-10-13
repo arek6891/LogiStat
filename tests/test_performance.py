@@ -103,21 +103,30 @@ def test_lista_obecnosci_bez_zapytania_na_pracownika(leader_client, queries):
 
 
 def test_dane_przydzielania_bez_n_plus_1(leader_client, queries):
+    """Liczba SELECT-ow nie rosnie z liczba przydzielen. Porownanie 2 vs 20, nie
+    sztywny limit — estymacja (`wydajnosc_czynnosci()`) doklada staly koszt."""
     shift = logistat.get_or_create_shift(date(2026, 9, 1), 1)
     akt = logistat.Activity.query.first()
-    for i in range(20):
-        u = make_user('operator', barcode_id=f'W{i}')
-        logistat.db.session.add(logistat.ShiftAttendance(shift_id=shift.id, user_id=u.id))
-        logistat.db.session.add(logistat.ActivityAssignment(
-            shift_id=shift.id, user_id=u.id, activity_id=akt.id))
-    logistat.db.session.commit()
-    queries.statements.clear()
 
-    r = leader_client.get('/api/assignment/data?date=2026-09-01&shift_number=1')
-    d = r.get_json()
+    def dodaj(od, do):
+        for i in range(od, do):
+            u = make_user('operator', barcode_id=f'W{i}')
+            logistat.db.session.add(logistat.ShiftAttendance(shift_id=shift.id, user_id=u.id))
+            logistat.db.session.add(logistat.ActivityAssignment(
+                shift_id=shift.id, user_id=u.id, activity_id=akt.id))
+        logistat.db.session.commit()
 
-    assert len(d['assignments']) == 20
-    odczyty = len(queries.selects)
-    assert odczyty < 10, (
-        f'{odczyty} SELECT-ow na 20 przydzielen — user i activity '
-        'maja isc joinedloadem')
+    def odczyty():
+        queries.statements.clear()
+        r = leader_client.get('/api/assignment/data?date=2026-09-01&shift_number=1')
+        return len(r.get_json()['assignments']), len(queries.selects)
+
+    dodaj(0, 2)
+    _, przy_dwoch = odczyty()
+    dodaj(2, 20)
+    n, przy_dwudziestu = odczyty()
+
+    assert n == 20
+    assert przy_dwudziestu == przy_dwoch, (
+        f'{przy_dwoch} → {przy_dwudziestu} SELECT-ow przy 2 → 20 przydzieleniach — '
+        'user i activity maja isc joinedloadem')
