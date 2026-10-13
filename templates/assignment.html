@@ -300,8 +300,12 @@
     function pokazBrakSzkolenia(osoby, zone) {
         const czynnosc = zone.closest('.assignment-column')
             .querySelector('.assignment-column-header span').textContent;
-        document.getElementById('brakSzkoleniaLista').innerHTML = osoby
-            .map(o => `<li><strong>${escapeHtml(o)}</strong> — ${escapeHtml(czynnosc)}</li>`).join('');
+        pokazBrakSzkoleniaLista(osoby.map(o => ({ osoba: o, czynnosc })));
+    }
+
+    function pokazBrakSzkoleniaLista(lista) {
+        document.getElementById('brakSzkoleniaLista').innerHTML = lista
+            .map(x => `<li><strong>${escapeHtml(x.osoba)}</strong> — ${escapeHtml(x.czynnosc)}</li>`).join('');
         document.getElementById('brakSzkoleniaModal').style.display = 'flex';
         document.getElementById('brakSzkoleniaOk').focus();
     }
@@ -388,6 +392,12 @@
                 }
             } catch (e) {
                 if (e.status === 409 && e.dane && e.dane.konflikt) {
+                    e.akcja = { etykieta: 'Wczytaj aktualny', fn: loadData };
+                }
+                // Szkolenie odznaczono w miedzyczasie (inny lider) — tablica
+                // przepuscila ruch, serwer nie. Okno + powrot do stanu z bazy.
+                if (e.dane && e.dane.brak_szkolenia) {
+                    pokazBrakSzkoleniaLista(e.dane.brak_szkolenia);
                     e.akcja = { etykieta: 'Wczytaj aktualny', fn: loadData };
                 }
                 throw e;

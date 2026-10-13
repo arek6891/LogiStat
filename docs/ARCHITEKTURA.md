@@ -266,7 +266,7 @@ Nazwy siedza w `AppSetting` (`kategoria_pl:<kat>`), nie w nowej kolumnie ani tab
 
 **Srednia zespolu bez fragmentow ze szkolenia.** Sa z definicji rowno w celu, wiec ciagnelyby srednia w jego strone i zmienialy „% sredniej" wszystkim innym.
 
-**Historia celu.** „Norma" = cel szt./h (`target_szt_h`), ktory do tej pory byl jedna biezaca wartoscia. Paczka ze szkolenia ma byc liczona celem z TEGO dnia, wiec `HistoriaCelu` (nowa tabela, `create_all()`). Pulapka: dzien sprzed pierwszego wpisu musi miec wartosc sprzed zmiany, inaczej pierwsza zmiana celu po wdrozeniu przeliczylaby wstecz wszystkie szkolenia — stad zasiew biezacej wartosci od 2000-01-01 przy starcie i przed pierwszym zapisem. Cel 0 danego dnia → paczki ze szkolenia licza sie normalnie (nie ma czego zaliczyc). Kolumna „% celu" w przegladzie nadal uzywa biezacego celu — przy zmianie celu w trakcie okresu szkolacy nie wyjdzie rowno 100%.
+**Historia celu.** „Norma" = cel szt./h (`target_szt_h`), ktory do tej pory byl jedna biezaca wartoscia. Paczka ze szkolenia ma byc liczona celem z TEGO dnia, wiec `HistoriaCelu` (nowa tabela, `create_all()`). Pulapka: dzien sprzed pierwszego wpisu musi miec wartosc sprzed zmiany, inaczej pierwsza zmiana celu po wdrozeniu przeliczylaby wstecz wszystkie szkolenia — stad zasiew biezacej wartosci od 2000-01-01 przy starcie i przed pierwszym zapisem. Cel 0 danego dnia → paczki ze szkolenia licza sie normalnie (nie ma czego zaliczyc). Kolumna „% celu" w przegladzie uzywala wtedy biezacego celu — od 2026-10-13 tez liczy celem z dnia pracy (sekcja „Szkolenia z czynnosci, cel z dnia pracy").
 
 ### Osoby szkolone (2026-10-08)
 
