@@ -62,9 +62,13 @@
 
 <!-- Add/Edit Modal -->
 <div class="modal-overlay" id="userModal" data-modal-guard style="display:none;">
-    <div class="modal">
+    <div class="modal modal-szeroki">
         <h3 id="modalTitle">Dodaj użytkownika</h3>
         <input type="hidden" id="editUserId" value="">
+        {# Dwie kolumny: dane konta | szkolenia — w jednej kolumnie okno nie
+           miescilo sie na ekranie laptopa (2026-10-13). #}
+        <div class="uzytkownik-siatka">
+        <div>
 
         <div class="form-group">
             <label>Login (nazwa użytkownika)</label>
@@ -117,6 +121,13 @@
             </small>
             {% endif %}
         </div>
+        <div class="form-group" id="passwordGroup">
+            <label>Hasło <span style="color:var(--text-muted);font-size:0.8rem;">(wymagane dla
+                    liderów/adminów)</span></label>
+            <input type="password" id="userPassword" class="form-control" placeholder="Hasło...">
+        </div>
+        </div>
+        <div>
         <div class="form-group">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                 <input type="checkbox" id="userIsTrainer"> 🎓 Szkolący
@@ -143,10 +154,7 @@
                 Do czynności bez szkolenia nie da się przydzielić tej osoby w Przydzielaniu.
             </small>
         </div>
-        <div class="form-group" id="passwordGroup">
-            <label>Hasło <span style="color:var(--text-muted);font-size:0.8rem;">(wymagane dla
-                    liderów/adminów)</span></label>
-            <input type="password" id="userPassword" class="form-control" placeholder="Hasło...">
+        </div>
         </div>
 
         <div class="modal-actions">

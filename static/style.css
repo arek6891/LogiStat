@@ -921,6 +921,29 @@ tr:last-child td {
     animation: scaleIn 0.2s ease;
 }
 
+/* Dlugie okna (np. konto uzytkownika) przewijaja sie wewnatrz, zamiast
+   wychodzic poza ekran. */
+.modal {
+    max-height: 92vh;
+    overflow-y: auto;
+}
+
+.modal.modal-szeroki {
+    max-width: 960px;
+}
+
+.uzytkownik-siatka {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 28px;
+}
+
+@media (max-width: 760px) {
+    .uzytkownik-siatka {
+        grid-template-columns: 1fr;
+    }
+}
+
 .modal h3 {
     margin-bottom: 20px;
     font-size: 1.2rem;
