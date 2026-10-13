@@ -48,7 +48,16 @@
             są widoczne obok siebie: <strong>% średniej</strong> mówi, jak ktoś wypada na tle
             zespołu, <strong>% celu</strong> — czy przeskakuje wpisaną poprzeczkę. Wpisz
             <strong>0</strong>, żeby schować kolumnę celu.
+            <strong>Zmiana celu obowiązuje od dnia zapisu</strong>, aż ktoś go znowu zmieni —
+            wcześniejsze dni zostają liczone swoim celem.
         </p>
+        <details id="historiaCelu" style="margin-top:.5rem;">
+            <summary style="cursor:pointer;color:var(--text-secondary);font-size:.85rem;">🕓 Historia zmian celu</summary>
+            <table class="data-table" style="margin-top:.5rem;max-width:560px;">
+                <thead><tr><th>Obowiązuje od</th><th style="text-align:right;">Cel szt./h</th><th>Zmienił(a)</th><th>Kiedy</th></tr></thead>
+                <tbody id="historiaCeluBody"></tbody>
+            </table>
+        </details>
     </div>
 
     <div id="przegladPodsumowanie" class="card" style="margin-bottom:16px;"></div>
@@ -264,6 +273,7 @@
         </div>
     </div>
 </div>
+<script type="application/json" id="historiaCeluDane">{{ historia_celu | tojson }}</script>
 {% endblock %}
 
 {% block scripts %}
@@ -357,7 +367,12 @@
             + kafel('Godzin skanowania', s.godzin.toLocaleString('pl'))
             + kafel('Średnia szt./h', d.srednia_szt_h !== null ? d.srednia_szt_h.toLocaleString('pl') : '—', 'var(--accent)')
             + (d.cel_szt_h !== null
-                ? kafel('🎯 Cel szt./h', d.cel_szt_h.toLocaleString('pl'), 'var(--accent)')
+                ? kafel(d.cele_w_okresie.length > 1 && s.godzin > 0 ? '🎯 Cel szt./h (średnio w okresie)' : '🎯 Cel szt./h',
+                        d.cel_szt_h.toLocaleString('pl')
+                        + (d.cele_w_okresie.length > 1
+                            ? `<div style="font-size:.75rem;font-weight:400;color:var(--text-muted);">${opisZmianCelu(d.cele_w_okresie)}</div>`
+                            : ''),
+                        'var(--accent)')
                   + (d.spelnia_cel !== null
                       ? kafel('Spełnia cel', `${d.spelnia_cel} / ${s.w_rankingu}`,
                               d.spelnia_cel === s.w_rankingu ? '#22c55e' : 'var(--danger)')
@@ -390,7 +405,7 @@
                 <td style="text-align:right;font-weight:700;">${r.szt_h.toLocaleString('pl')}</td>
                 <td style="text-align:right;color:${s.kolor};font-weight:600;">${r.proc_sredniej !== null ? r.proc_sredniej + '%' : '—'}</td>
                 <td style="color:${s.kolor};white-space:nowrap;">${s.tekst}</td>
-                <td style="text-align:right;color:${c.kolor};font-weight:600;" class="kol-cel">${r.proc_celu !== null ? r.proc_celu + '%' : '—'}</td>
+                <td style="text-align:right;color:${c.kolor};font-weight:600;" class="kol-cel" title="${escapeHtml(r.cel_szt_h !== null ? 'Cel z dni pracy tej osoby: ' + r.cel_szt_h.toLocaleString('pl') + ' szt./h' : '')}">${r.proc_celu !== null ? r.proc_celu + '%' : '—'}</td>
                 <td style="color:${c.kolor};white-space:nowrap;" class="kol-cel">${c.tekst}</td>
                 <td>${linkDoPaczek(r)}</td>
             </tr>`;
@@ -444,6 +459,27 @@
                    title="Pokaż paczki zakończone przez tę osobę w tym okresie">📦</a>`;
     }
 
+    const dataPL = iso => iso.split('-').reverse().join('.');
+
+    // „300 → 320 od 15.10.2026" — cel zmienial sie w wybranym okresie.
+    function opisZmianCelu(cele) {
+        return cele.map((c, i) => (i ? '→ ' : '') + (c.wartosc || 'brak')
+            + (i && c.od ? ' od ' + dataPL(c.od) : '')).join(' ');
+    }
+
+    function renderujHistorieCelu(historia) {
+        document.getElementById('historiaCeluBody').innerHTML = historia.length
+            ? historia.map(h => `<tr>
+                <td>${h.od ? dataPL(h.od) : 'od początku'}</td>
+                <td style="text-align:right;font-weight:600;">${h.wartosc ? h.wartosc.toLocaleString('pl') : '— (brak celu)'}</td>
+                <td>${h.zmienil ? escapeHtml(h.zmienil) : '—'}</td>
+                <td>${h.zmieniono_at ? new Date(h.zmieniono_at).toLocaleString('pl') : '—'}</td>
+              </tr>`).join('')
+            : '<tr><td colspan="4" style="color:var(--text-muted);">Cel jeszcze nie był ustawiany.</td></tr>';
+    }
+    document.addEventListener('DOMContentLoaded', () =>
+        renderujHistorieCelu(JSON.parse(document.getElementById('historiaCeluDane').textContent)));
+
     async function zapiszCel() {
         const btn = document.getElementById('zapiszCelBtn');
         const wartosc = parseInt(document.getElementById('celSztH').value, 10);
@@ -460,6 +496,7 @@
             const dane = await res.json().catch(() => ({}));
             if (!res.ok) { showToast(dane.error || 'Błąd zapisu.', 'error'); return; }
             showToast(dane.message || 'Zapisano.', 'success');
+            if (dane.historia) renderujHistorieCelu(dane.historia);
             ladujPrzeglad();
         } catch {
             showToast('Błąd połączenia.', 'error');
@@ -717,7 +754,11 @@
             },
         ];
         if (norma.srednia_szt_h !== null) zbiory.push(linia(norma.srednia_szt_h, 'Średnia zespołu szt./h', '#22c55e'));
-        if (norma.cel_szt_h !== null) zbiory.push(linia(norma.cel_szt_h, 'Cel szt./h', '#ef4444'));
+        // Cel ze swojego dnia/miesiaca — po zmianie celu linia robi schodek.
+        if (punkty.some(p => p.cel !== null)) zbiory.push({
+            ...linia(null, 'Cel szt./h', '#ef4444'),
+            data: punkty.map(p => p.cel), stepped: 'middle', spanGaps: true,
+        });
 
         const siatka = { color: 'rgba(46,51,64,0.5)' };
         const tekst = { color: '#9aa0b0' };

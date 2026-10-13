@@ -138,6 +138,18 @@ Przydzielenie operatora do czynności na danej zmianie (drag & drop przez lidera
 
 ---
 
+### `szkolenie_czynnosci`
+Osoba przeszkolona w czynności — tylko taką można przydzielić (2026-10-13, `create_all()`). Brak wiersza = brak szkolenia. Jednorazowo wszyscy istniejący × wszystkie czynności (`zaznacz_wszystkich_przeszkolonych()`, znacznik `app_setting.migracja_szkolenia_czynnosci`).
+
+| Kolumna | Typ | Ograniczenia | Opis |
+|---|---|---|---|
+| user_id | INTEGER | PK, FK → user.id | |
+| activity_id | INTEGER | PK, FK → activity.id | |
+| dodano_at | TIMESTAMP | | naive UTC |
+| dodal_id | INTEGER | FK → user.id, NULL | Kto zaznaczył (NULL = migracja) |
+
+---
+
 ### `daily_stat`
 Wpisy ilości wykonanych sztuk per pracownik per czynność per zmiana. Audit trail.
 
@@ -333,12 +345,14 @@ Plan dzienny — jeden wpis na dzień, wpisywany ręcznie przez lidera. Porówny
 ---
 
 ### `historia_celu`
-Cel szt./h (`target_szt_h`) obowiązujący od dnia `dzien` do następnego wpisu (2026-10-06, `create_all()`). Pierwszy wiersz `2000-01-01` = cel sprzed historii (`zasiej_historie_celu()`). Używany do liczenia paczek ze szkolenia celem z dnia paczki.
+Cel szt./h (`target_szt_h`) obowiązujący od dnia `dzien` do następnego wpisu (2026-10-06, `create_all()`). Pierwszy wiersz `2000-01-01` = cel sprzed historii (`zasiej_historie_celu()`). Używany do liczenia paczek ze szkolenia celem z dnia paczki i (od 2026-10-13) do „% celu” w Normach — każdy dzień swoim celem.
 
 | Kolumna | Typ | Ograniczenia | Opis |
 |---|---|---|---|
 | dzien | DATE | PK | Od kiedy obowiązuje |
 | wartosc | INTEGER | NOT NULL | Cel szt./h (0 = brak) |
+| zmienil_id | INTEGER | FK → user.id, NULL | Kto wpisał (2026-10-13, `migrate_columns()`) |
+| zmieniono_at | TIMESTAMP | NULL | Kiedy, naive UTC (2026-10-13, `migrate_columns()`) |
 
 ---
 

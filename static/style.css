@@ -708,6 +708,14 @@ tr:last-child td {
     box-shadow: 0 0 0 2px var(--accent-glow);
 }
 
+.assignment-user-card.bez-szkolenia {
+    border-color: var(--warning, #f59e0b);
+}
+
+.assignment-user-card.bez-szkolenia > span::after {
+    content: ' ⚠️';
+}
+
 .assignment-user-card.dragging {
     opacity: 0.5;
     transform: scale(0.95);

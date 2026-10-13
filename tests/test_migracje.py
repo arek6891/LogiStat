@@ -20,6 +20,8 @@ KOLUMNY = [
     ('imported_carton', 'data_pliku'),
     ('user', 'is_trainer'),
     ('worker_time_event', 'training_lead_id'),
+    ('historia_celu', 'zmienil_id'),
+    ('historia_celu', 'zmieniono_at'),
 ]
 
 

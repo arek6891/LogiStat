@@ -1,5 +1,26 @@
 # LogiStat — Changelog
 
+## 2026-10-13 (4) — Szkolenia z czynności, cel z dnia pracy
+
+Nowa tabela `szkolenie_czynnosci` (`create_all()`); nowe kolumny `historia_celu.zmienil_id`,
+`historia_celu.zmieniono_at` (`migrate_columns()`).
+
+### Dodane
+- **Użytkownicy → ✅ Przeszkolony w czynnościach**: lider zaznacza, w których czynnościach
+  osoba jest przeszkolona (licznik „✅ Szkolenia N/M” na liście).
+- **Przydzielanie**: osoby bez szkolenia nie da się przeciągnąć na czynność — okno
+  „⛔ Brak szkolenia”; serwer odrzuca taki zapis (400). Przydział zapisany przed
+  odznaczeniem szkolenia zostaje (karta z ⚠️). Sugestie AI tylko do przeszkolonych.
+- Wszyscy istniejący użytkownicy zaznaczeni jednorazowo jako przeszkoleni we wszystkich
+  czynnościach; nowi startują bez szkoleń.
+- **Normy → 🕓 Historia zmian celu**: od kiedy, jaki cel, kto i kiedy zmienił.
+
+### Zmienione
+- **Normy: „% celu” liczony celem z dnia pracy** — zmiana celu obowiązuje od dnia zapisu,
+  aż ktoś go zmieni; wcześniejsze dni zostają przy swoim celu. Przy zakresie z kilkoma
+  celami: cel średnio w okresie (ważony godzinami) + opis zmian; linia celu na wykresach
+  robi schodek.
+
 ## 2026-10-13 (3) — Paczka do dokończenia, Pakowanie zespołowe
 
 Nowa tabela `udzial_paczki` (z `create_all()`); bez nowych kolumn w istniejących tabelach.

@@ -88,8 +88,13 @@ def client(flask_app):
 PASSWORD = 'test-pass-123'
 
 
-def make_user(role='operator', username=None, barcode_id=None, display_name=None):
-    """Utworz uzytkownika i zwroc go (juz w bazie)."""
+def make_user(role='operator', username=None, barcode_id=None, display_name=None,
+              przeszkolony=False):
+    """Utworz uzytkownika i zwroc go (juz w bazie).
+
+    `przeszkolony=True` — szkolenie ze wszystkich czynnosci (bez niego
+    `POST /api/assignment/save` odrzuca nowy przydzial).
+    """
     username = username or f'{role}-{os.urandom(4).hex()}'
     user = logistat.User(
         username=username,
@@ -101,6 +106,10 @@ def make_user(role='operator', username=None, barcode_id=None, display_name=None
         user.set_password(PASSWORD)
     logistat.db.session.add(user)
     logistat.db.session.commit()
+    if przeszkolony:
+        for a in logistat.Activity.query.all():
+            logistat.db.session.add(logistat.SzkolenieCzynnosci(user_id=user.id, activity_id=a.id))
+        logistat.db.session.commit()
     return user
 
 
