@@ -173,6 +173,53 @@ def test_zespol_konczy_kazdy_sam_paczka_zamyka_sie_po_ostatnim(leader_client):
     assert c.get_scan_categories() == {'labelling_on': 60}
 
 
+def test_dolaczenie_po_odejsciu_zaczynajacej_nie_dubluje_jej_udzialu(leader_client):
+    """A zaczyna, B dolacza, A konczy swoja czesc i idzie do domu, lider
+    dorzuca C. A nie moze dostac drugiego (otwartego) udzialu od swojego startu."""
+    a, b, c_ = osoby('A', 'B', 'C')
+    karton()
+    start(leader_client, 'A')
+    dolacz(leader_client, 'B')
+    koniec(leader_client, 'A', kat={'labelling_on': 10})
+
+    assert dolacz(leader_client, 'C').status_code == 200
+
+    c = k()
+    assert [u.user_id for u in c.udzialy].count(a.id) == 1
+    assert {u.user_id for u in logistat.otwarte_udzialy(c)} == {b.id, c_.id}
+    assert koniec(leader_client, 'B', kat={'labelling_on': 20}).get_json()['zamknieta'] is False
+    assert koniec(leader_client, 'C', kat={'labelling_on': 30}).get_json()['zamknieta'] is True
+    assert k().get_scan_categories() == {'labelling_on': 60}
+
+
+def test_zaczynajaca_wraca_do_zespolu_z_nowym_udzialem(leader_client):
+    a, _ = osoby('A', 'B')
+    karton()
+    start(leader_client, 'A')
+    dolacz(leader_client, 'B')
+    koniec(leader_client, 'A', kat={'labelling_on': 10})
+    s_a = k().scan_start_at
+
+    assert dolacz(leader_client, 'A').status_code == 200
+
+    udzialy_a = [u for u in k().udzialy if u.user_id == a.id]
+    assert len(udzialy_a) == 2
+    assert udzialy_a[0].end_at and udzialy_a[1].end_at is None
+    assert udzialy_a[1].start_at > s_a                 # od teraz, nie kopia startu
+
+
+def test_inspektor_widzi_przekazana_jako_zeskanowana(leader_client):
+    osoby('A')
+    karton()
+    start(leader_client, 'A')
+    przekaz(leader_client, 'A', kat={'labelling_on': 5})
+
+    d = leader_client.get('/api/package-lookup?barcode=P1').get_json()['carton']
+
+    assert d['scanned'] is True and d['scanned_by'] == 'Osoba A'
+    assert d['do_dokonczenia'] is True and d['finished'] is False
+
+
 def test_zamknij_dla_wszystkich(leader_client):
     a, b, c_ = osoby('A', 'B', 'C')
     karton()

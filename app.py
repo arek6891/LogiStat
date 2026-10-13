@@ -4309,8 +4309,10 @@ def api_package_lookup():
 
     d = carton.to_dict()
     # Derived status: przeskanowana = przypisana LUB rozpoczęto pomiar czasu
-    d['scanned'] = bool(carton.processed_by) or bool(carton.scan_start_at)
-    d['scanned_by'] = d.get('processed_by_name') or d.get('scan_start_by_name')
+    # Przekazana do dokonczenia nie ma startu, ale ktos juz przy niej pracowal.
+    d['scanned'] = bool(carton.processed_by) or bool(carton.scan_start_at) or bool(carton.udzialy)
+    d['scanned_by'] = (d.get('processed_by_name') or d.get('scan_start_by_name')
+                       or (d['udzialy'][0]['user_name'] if d['udzialy'] else None))
     d['finished'] = bool(carton.scan_end_at)
     return jsonify({'carton': d}), 200
 
@@ -4753,8 +4755,13 @@ def api_package_time_dolacz():
                         'carton': carton.to_dict()}), 200
 
     teraz = datetime.utcnow()
-    # Pierwsze dolaczenie: osoba, ktora zaczela, tez dostaje udzial — od swojego startu.
-    if carton.scan_start_by and not any(u.user_id == carton.scan_start_by for u in otwarte):
+    # Pierwsze dolaczenie: osoba, ktora zaczela, tez dostaje udzial — od swojego
+    # startu. Tylko jesli nie ma JUZ wiersza z tego startu: gdy zaczynajaca
+    # skonczyla swoja czesc (wiersz zamkniety), drugi wiersz od tego samego
+    # startu bylby otwartym udzialem osoby, ktora poszla do domu.
+    if carton.scan_start_by and not any(
+            u.user_id == carton.scan_start_by and u.start_at == carton.scan_start_at
+            for u in carton.udzialy):
         db.session.add(UdzialPaczki(carton=carton, user_id=carton.scan_start_by,
                                     rodzaj=UDZIAL_ZESPOL, start_at=carton.scan_start_at))
     db.session.add(UdzialPaczki(carton=carton, user_id=user.id, rodzaj=UDZIAL_ZESPOL, start_at=teraz))
