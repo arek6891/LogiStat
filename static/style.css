@@ -708,6 +708,20 @@ tr:last-child td {
     box-shadow: 0 0 0 2px var(--accent-glow);
 }
 
+/* Linki do pracownika / paczki w tabelach — ten sam kolor co na Dashboardzie
+   (domyslny niebieski przegladarki byl slabo widoczny na ciemnym tle). */
+a.js-osoba {
+    color: var(--info);
+}
+
+.assignment-user-card.bez-szkolenia {
+    border-color: var(--warning, #f59e0b);
+}
+
+.assignment-user-card.bez-szkolenia > span::after {
+    content: ' ⚠️';
+}
+
 .assignment-user-card.dragging {
     opacity: 0.5;
     transform: scale(0.95);
@@ -911,6 +925,29 @@ tr:last-child td {
     max-width: 500px;
     box-shadow: var(--shadow-lg);
     animation: scaleIn 0.2s ease;
+}
+
+/* Dlugie okna (np. konto uzytkownika) przewijaja sie wewnatrz, zamiast
+   wychodzic poza ekran. */
+.modal {
+    max-height: 92vh;
+    overflow-y: auto;
+}
+
+.modal.modal-szeroki {
+    max-width: 960px;
+}
+
+.uzytkownik-siatka {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 28px;
+}
+
+@media (max-width: 760px) {
+    .uzytkownik-siatka {
+        grid-template-columns: 1fr;
+    }
 }
 
 .modal h3 {

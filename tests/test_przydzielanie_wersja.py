@@ -30,7 +30,7 @@ def test_odczyt_zwraca_wersje_takze_dla_nieistniejacej_zmiany(leader_client):
 
 
 def test_zapis_zwraca_wersje_zgodna_z_odczytem(leader_client):
-    u = make_user('operator')
+    u = make_user('operator', przeszkolony=True)
     akt = logistat.Activity.query.first()
     v0 = wczytaj(leader_client)['wersja']
 
@@ -43,7 +43,7 @@ def test_zapis_zwraca_wersje_zgodna_z_odczytem(leader_client):
 
 def test_kolejne_zapisy_z_wersja_z_poprzedniego_przechodza(leader_client):
     """Tak pracuje autozapis: kazdy zapis bierze wersje z odpowiedzi poprzedniego."""
-    u = make_user('operator')
+    u = make_user('operator', przeszkolony=True)
     a1, a2 = logistat.Activity.query.limit(2).all()
     v = wczytaj(leader_client)['wersja']
 
@@ -56,7 +56,7 @@ def test_kolejne_zapisy_z_wersja_z_poprzedniego_przechodza(leader_client):
 
 
 def test_nieaktualna_wersja_daje_409_i_nie_nadpisuje(flask_app):
-    u = make_user('operator')
+    u = make_user('operator', przeszkolony=True)
     a1, a2 = logistat.Activity.query.limit(2).all()
     lider_a, lider_b = make_user('leader'), make_user('leader')
     ka, kb = flask_app.test_client(), flask_app.test_client()
@@ -81,7 +81,7 @@ def test_nieaktualna_wersja_daje_409_i_nie_nadpisuje(flask_app):
 
 
 def test_wersja_dotyczy_tylko_swojej_zmiany(leader_client):
-    u = make_user('operator')
+    u = make_user('operator', przeszkolony=True)
     akt = logistat.Activity.query.first()
     v2 = wczytaj(leader_client, shift_number=2)['wersja']
 
@@ -92,7 +92,7 @@ def test_wersja_dotyczy_tylko_swojej_zmiany(leader_client):
 
 
 def test_zapis_bez_wersji_dziala_jak_dawniej(leader_client):
-    u = make_user('operator')
+    u = make_user('operator', przeszkolony=True)
     akt = logistat.Activity.query.first()
     assert przydzial(leader_client, u.id, akt.id).status_code == 200
     assert przydzial(leader_client, u.id, akt.id).status_code == 200
@@ -100,7 +100,7 @@ def test_zapis_bez_wersji_dziala_jak_dawniej(leader_client):
 
 
 def test_zapis_blokuje_wiersz_zmiany(leader_client, queries):
-    u = make_user('operator')
+    u = make_user('operator', przeszkolony=True)
     akt = logistat.Activity.query.first()
 
     przydzial(leader_client, u.id, akt.id)
@@ -113,7 +113,7 @@ def test_zapis_blokuje_wiersz_zmiany(leader_client, queries):
 def test_rownolegle_zapisy_nie_dubluja_przydzialu(flask_app):
     """Delete + insert z dwoch stanowisk naraz: bez blokady wiersza zmiany oba
     wstawialy swoj komplet i zmiana miala przydzial podwojnie."""
-    u = make_user('operator')
+    u = make_user('operator', przeszkolony=True)
     akt = logistat.Activity.query.first()
     lider = make_user('leader')
     logistat.get_or_create_shift(logistat.parse_date(DZIEN), 1)

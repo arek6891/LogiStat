@@ -35,12 +35,17 @@
                 {% if user.worker_type %}<span class="badge">{{ user.worker_type.name }}</span>{% endif %}
                 {% if user.shift_group %}<span class="badge">{{ user.shift_group.name }}</span>{% endif %}
                 {% if user.is_trainer %}<span class="badge" title="Osoba szkoląca">🎓 Szkolący</span>{% endif %}
+                {% set przeszkolony = szkolenia.get(user.id, []) %}
+                {% set aktywnych = czynnosci | selectattr('id', 'in', przeszkolony) | list | length %}
+                <span class="badge" title="Czynności, do których można przydzielić tę osobę"
+                      {% if not aktywnych %}style="color:var(--danger);"{% endif %}>
+                    ✅ Szkolenia {{ aktywnych }}/{{ czynnosci | length }}</span>
                 {% if not user.is_active_user %}
                 <span class="badge badge-inactive">nieaktywny</span>
                 {% endif %}
             </div>
             <div class="admin-actions">
-                <button class="btn btn-ghost btn-sm" onclick='editUser({{ user.id }}, {{ user.to_dict()|tojson }})'>✏️
+                <button class="btn btn-ghost btn-sm" onclick='editUser({{ user.id }}, {{ user.to_dict()|tojson }}, {{ szkolenia.get(user.id, [])|tojson }})'>✏️
                     Edytuj</button>
                 {% if user.is_active_user %}
                 <button class="btn btn-ghost btn-sm" onclick="deactivateUser({{ user.id }})"
@@ -57,9 +62,13 @@
 
 <!-- Add/Edit Modal -->
 <div class="modal-overlay" id="userModal" data-modal-guard style="display:none;">
-    <div class="modal">
+    <div class="modal modal-szeroki">
         <h3 id="modalTitle">Dodaj użytkownika</h3>
         <input type="hidden" id="editUserId" value="">
+        {# Dwie kolumny: dane konta | szkolenia — w jednej kolumnie okno nie
+           miescilo sie na ekranie laptopa (2026-10-13). #}
+        <div class="uzytkownik-siatka">
+        <div>
 
         <div class="form-group">
             <label>Login (nazwa użytkownika)</label>
@@ -112,6 +121,13 @@
             </small>
             {% endif %}
         </div>
+        <div class="form-group" id="passwordGroup">
+            <label>Hasło <span style="color:var(--text-muted);font-size:0.8rem;">(wymagane dla
+                    liderów/adminów)</span></label>
+            <input type="password" id="userPassword" class="form-control" placeholder="Hasło...">
+        </div>
+        </div>
+        <div>
         <div class="form-group">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                 <input type="checkbox" id="userIsTrainer"> 🎓 Szkolący
@@ -121,10 +137,24 @@
                 w czasie szkolenia liczą się jej w Normach jako 100% celu z danego dnia.
             </small>
         </div>
-        <div class="form-group" id="passwordGroup">
-            <label>Hasło <span style="color:var(--text-muted);font-size:0.8rem;">(wymagane dla
-                    liderów/adminów)</span></label>
-            <input type="password" id="userPassword" class="form-control" placeholder="Hasło...">
+        <div class="form-group">
+            <label>✅ Przeszkolony w czynnościach</label>
+            <div id="userCzynnosci" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:4px 12px;">
+                {% for a in czynnosci %}
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400;">
+                    <input type="checkbox" class="czynnosc-szkolenie" value="{{ a.id }}"> {{ a.name }}
+                </label>
+                {% endfor %}
+            </div>
+            <div style="display:flex;gap:8px;margin-top:4px;">
+                <button type="button" class="btn btn-ghost btn-sm" onclick="zaznaczCzynnosci(true)">Zaznacz wszystkie</button>
+                <button type="button" class="btn btn-ghost btn-sm" onclick="zaznaczCzynnosci(false)">Odznacz wszystkie</button>
+            </div>
+            <small style="color:var(--text-muted);">
+                Do czynności bez szkolenia nie da się przydzielić tej osoby w Przydzielaniu.
+            </small>
+        </div>
+        </div>
         </div>
 
         <div class="modal-actions">
@@ -162,6 +192,7 @@
         document.getElementById('userWorkerType').value = '';
         document.getElementById('userShiftGroup').value = '';
         document.getElementById('userIsTrainer').checked = false;
+        ustawCzynnosci([]);
         document.getElementById('userPassword').value = '';
         document.getElementById('passwordGroup').style.display = 'none';
         document.getElementById('userUsername').disabled = false;
@@ -169,7 +200,17 @@
         document.getElementById('userUsername').focus();
     }
 
-    function editUser(id, user) {
+    function ustawCzynnosci(ids) {
+        document.querySelectorAll('.czynnosc-szkolenie').forEach(cb => {
+            cb.checked = ids.includes(parseInt(cb.value, 10));
+        });
+    }
+
+    function zaznaczCzynnosci(tak) {
+        document.querySelectorAll('.czynnosc-szkolenie').forEach(cb => { cb.checked = tak; });
+    }
+
+    function editUser(id, user, czynnosci) {
         document.getElementById('modalTitle').textContent = 'Edytuj użytkownika';
         document.getElementById('editUserId').value = id;
         document.getElementById('userUsername').value = user.username;
@@ -179,6 +220,7 @@
         document.getElementById('userWorkerType').value = user.worker_type_id || '';
         document.getElementById('userShiftGroup').value = user.shift_group_id || '';
         document.getElementById('userIsTrainer').checked = !!user.is_trainer;
+        ustawCzynnosci(czynnosci || []);
         document.getElementById('userPassword').value = '';
         document.getElementById('passwordGroup').style.display =
             user.role === 'operator' ? 'none' : 'block';
@@ -200,6 +242,8 @@
             worker_type_id: document.getElementById('userWorkerType').value || null,
             shift_group_id: document.getElementById('userShiftGroup').value || null,
             is_trainer: document.getElementById('userIsTrainer').checked,
+            czynnosci: [...document.querySelectorAll('.czynnosc-szkolenie:checked')]
+                .map(cb => parseInt(cb.value, 10)),
             password: document.getElementById('userPassword').value
         };
 

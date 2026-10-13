@@ -145,7 +145,7 @@ def test_przydzielenie_nieznanego_pracownika_daje_400(leader_client):
 def test_bledne_przydzielenie_nie_kasuje_istniejacych(leader_client):
     """Endpoint najpierw czyscil zmiane, potem wstawial — bledny wiersz w
     srodku zostawialby zmiane bez przydzialu."""
-    u = make_user('operator')
+    u = make_user('operator', przeszkolony=True)
     akt = logistat.Activity.query.first()
     ok = leader_client.post('/api/assignment/save', json={
         'date': '2026-09-01', 'shift_number': 1,

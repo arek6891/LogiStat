@@ -135,6 +135,24 @@ Quantities entered at package end are the **source of truth for `category_data`*
 
 **Forecast.** Zmienione tylko opisy (podtytul, naglowek wykresu, kolumny tabeli, Excel „Actual (Sztuki)"); liczby od zawsze byly `SUM(stueckzahl)`.
 
+## Szkolenia z czynnosci, cel z dnia pracy (2026-10-13)
+
+**Zgloszenie.** (1) W Uzytkownikach zaznaczac, w ktorych czynnosciach ktos jest przeszkolony; bez szkolenia nie da sie go przydzielic — pop-up o braku szkolenia. Wszystkich obecnych na tescie zaznaczyc. (2) Cel ustawiamy sami i ma sie zapisywac historycznie: od dnia zmiany obowiazuje, az ktos go zmieni.
+
+**Decyzje (operacje).** Nowa osoba i nowa czynnosc — **bez szkolen** (lider musi zaznaczyc). Zaznacza lider i admin (lider tylko operatorom, jak reszta edycji kont). Odznaczenie **nie zdejmuje** zapisanego przydzialu — blokada tylko dla nowych. „% celu" — cel z dnia pracy.
+
+**Dlaczego blokada tylko dla NOWYCH par.** `POST /api/assignment/save` podmienia cala zmiane. Gdyby sprawdzal kazda pare, lider, ktory odznaczyl komus szkolenie, nie zapisalby juz zadnego ruchu na tej zmianie, dopoki nie zdejmie tej osoby — a nie wiedzialby dlaczego. Para zapisana zostaje (karta ⚠️), ale po zdjeciu juz nie wraca. Klient trzyma `zapisanePary` z ostatniego udanego zapisu — to ta sama regula co na serwerze.
+
+**Dlaczego tabela, a nie JSON na `user`.** Zapytanie „kto z obecnych jest przeszkolony" ma byc jednym SELECT-em (`szkolenia_czynnosci(ids)`), a FK pilnuje, zeby skasowana czynnosc nie zostawila smieci. Wiersz = przeszkolony, wiec „nowy = bez szkolen" nie wymaga zadnego kodu.
+
+**Migracja.** `zaznacz_wszystkich_przeszkolonych()` jednym `INSERT … SELECT … CROSS JOIN` (na `.31` ~140 × 9), pod advisory lockiem w `init_db()`, ze znacznikiem w `AppSetting` — drugi start nie zaznaczy ponownie kogos, komu lider szkolenie zdjal. Wlaczy sie tez na pierwszym starcie produkcji (tam tylko admin).
+
+**Edycja szkolen.** `czynnosci` zastepuje zbior **tylko wsrod aktywnych** czynnosci — okno pokazuje aktywne, wiec zwykly zapis kasowalby szkolenia z czynnosci chwilowo wylaczonej.
+
+**Cel z dnia pracy.** Historia celu istniala od 2026-10-06, ale sluzyla tylko paczkom ze szkolenia; „% celu" dzielil przez cel **biezacy**, wiec podniesienie celu obnizalo wynik za stare tygodnie. Teraz `policz_wydajnosc()` wazy kazdy zlaczony okres skanowania celem z dnia jego konca (ten sam dzien co przy szkoleniu) i pomija dni z celem 0 (nie ma z czym porownac). Okres przechodzacy przez polnoc idzie w calosci na dzien konca — przyjete uproszczenie. Zespol: ta sama srednia wazona po wszystkich; bez godzin — cel z ostatniego dnia zakresu, zeby kolumny celu nie znikaly na pustym okresie. `cele_dzienne()` liczy sie teraz zawsze (jedno male zapytanie), nie tylko przy szkoleniu.
+
+**Okno uzytkownika.** Z sekcja szkolen (9 czynnosci) jednokolumnowe okno wychodzilo poza ekran laptopa — uzytkownik musial zmniejszac strone. Teraz `.modal-szeroki` + `.uzytkownik-siatka` (dane konta | szkolenia, jedna kolumna ponizej 760 px), a `.modal` ma globalnie `max-height: 92vh; overflow-y: auto`, zeby kazde dlugie okno przewijalo sie w srodku. Przy okazji: linki osob w Normach (`a.js-osoba`) i numery paczek na /paczki maja kolor `--info`, jak na Dashboardzie.
+
 ## Paczka do dokonczenia, Pakowanie zespolowe (2026-10-13)
 
 **Zgloszenie.** (1) Koniec zmiany, paczka nieskonczona: pracownik wpisuje, co przerobil, paczka zostaje otwarta, nastepna osoba wbija Start i konczy standardowo. (2) Lider dorzuca druga/trzecia osobe do rozpoczetej paczki; koniec wbija kazda osoba ze swoimi ilosciami. Nadwyzka przy kilku osobach → blad „do wyjasnienia przez lidera".
@@ -250,7 +268,7 @@ Nazwy siedza w `AppSetting` (`kategoria_pl:<kat>`), nie w nowej kolumnie ani tab
 
 **Srednia zespolu bez fragmentow ze szkolenia.** Sa z definicji rowno w celu, wiec ciagnelyby srednia w jego strone i zmienialy „% sredniej" wszystkim innym.
 
-**Historia celu.** „Norma" = cel szt./h (`target_szt_h`), ktory do tej pory byl jedna biezaca wartoscia. Paczka ze szkolenia ma byc liczona celem z TEGO dnia, wiec `HistoriaCelu` (nowa tabela, `create_all()`). Pulapka: dzien sprzed pierwszego wpisu musi miec wartosc sprzed zmiany, inaczej pierwsza zmiana celu po wdrozeniu przeliczylaby wstecz wszystkie szkolenia — stad zasiew biezacej wartosci od 2000-01-01 przy starcie i przed pierwszym zapisem. Cel 0 danego dnia → paczki ze szkolenia licza sie normalnie (nie ma czego zaliczyc). Kolumna „% celu" w przegladzie nadal uzywa biezacego celu — przy zmianie celu w trakcie okresu szkolacy nie wyjdzie rowno 100%.
+**Historia celu.** „Norma" = cel szt./h (`target_szt_h`), ktory do tej pory byl jedna biezaca wartoscia. Paczka ze szkolenia ma byc liczona celem z TEGO dnia, wiec `HistoriaCelu` (nowa tabela, `create_all()`). Pulapka: dzien sprzed pierwszego wpisu musi miec wartosc sprzed zmiany, inaczej pierwsza zmiana celu po wdrozeniu przeliczylaby wstecz wszystkie szkolenia — stad zasiew biezacej wartosci od 2000-01-01 przy starcie i przed pierwszym zapisem. Cel 0 danego dnia → paczki ze szkolenia licza sie normalnie (nie ma czego zaliczyc). Kolumna „% celu" w przegladzie uzywala wtedy biezacego celu — od 2026-10-13 tez liczy celem z dnia pracy (sekcja „Szkolenia z czynnosci, cel z dnia pracy").
 
 ### Osoby szkolone (2026-10-08)
 

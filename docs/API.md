@@ -103,6 +103,7 @@ Zapisuje przydzielenia — **podmienia cały przydział zmiany** (ekran wysyła 
 
 - `wersja` (opcjonalna) — wersja wczytana z `/api/assignment/data` albo z odpowiedzi poprzedniego zapisu. Jeśli ktoś inny zmienił przydział tej zmiany w międzyczasie → **409** `{error, konflikt: true, wersja}` i **nic nie jest zapisane**. Bez `wersja` zapis działa jak dawniej (bez sprawdzania).
 - Zapis blokuje wiersz zmiany (`SELECT … FOR UPDATE`), więc równoległe zapisy tej samej zmiany idą po kolei.
+- **Szkolenia (2026-10-13):** nowa para (osoba, czynność) bez szkolenia (`szkolenie_czynnosci`) → **400** `{error, brak_szkolenia: [{user_id, activity_id, osoba, czynnosc}]}`, nic nie zapisane. Para już zapisana na tej zmianie przechodzi, choćby szkolenie odznaczono. `/api/assignment/data` zwraca `szkolenia: {user_id: [activity_id]}`; sugestie AI tylko do czynności z przeszkoleniem.
 - Odpowiedź: `{message, wersja}` — nowa wersja do kolejnego zapisu.
 
 ---
@@ -192,7 +193,9 @@ Ustawia docelową wydajność (**lider+**, inaczej niż admin-only `PUT /api/set
 { "target_szt_h": 250 }
 ```
 
-Liczba całkowita ≥ 0; **0 wyłącza** kolumnę celu. Zapis trafia też do `historia_celu` jako cel od dziś (ostatni zapis dnia wygrywa) — paczki ze szkolenia liczą się celem z dnia paczki. Endpoint przyjmuje **wyłącznie ten klucz** — nie jest furtką do reszty `AppSetting`. Uzasadnienie uprawnień: cel jest informacyjny (koloruje kolumnę), nie dotyka rozliczeń ani żadnej blokady, a poprzeczkę ustala lider prowadzący zmianę.
+Liczba całkowita ≥ 0; **0 wyłącza** kolumnę celu. Zapis trafia też do `historia_celu` jako cel od dziś do następnej zmiany (ostatni zapis dnia wygrywa; z `zmienil_id`, `zmieniono_at`). Odpowiedź: `{message, target_szt_h, historia: [{od, wartosc, zmienil, zmieniono_at}]}` (od najnowszego, `od: null` = „od początku”).
+
+**Cel z dnia pracy (2026-10-13).** W przeglądzie każdy pracownik ma `cel_szt_h` = średnia celów z dni, w które skanował (ważona godzinami; dni z celem 0 pominięte), i `proc_celu` liczony tym celem. Na górze `cel_szt_h` = to samo dla całego zespołu (bez godzin — cel ostatniego dnia zakresu) oraz `cele_w_okresie: [{od, wartosc}]`. Punkty wykresów `/api/stats/user/<id>` mają `cel`. Endpoint przyjmuje **wyłącznie ten klucz** — nie jest furtką do reszty `AppSetting`. Uzasadnienie uprawnień: cel jest informacyjny (koloruje kolumnę), nie dotyka rozliczeń ani żadnej blokady, a poprzeczkę ustala lider prowadzący zmianę.
 
 **Skok do paczek:** każdy wiersz przeglądu linkuje do `/paczki?osoba=<id>&date_typ=koniec&date_from=&date_to=` — paczki, które złożyły się na wynik, w tym samym zakresie dat. `date_typ=koniec` sam zdejmuje domyślne „tylko niezrobione".
 
@@ -278,7 +281,7 @@ linkuje dashboard (`user_id` jest w `workers_today` i `unattributed.workers`).
 |--------|-----|------|
 | GET | `/api/users` | Lista użytkowników |
 | POST | `/api/users` | Dodaj użytkownika |
-| PUT | `/api/users/<id>` | Edytuj użytkownika |
+| PUT | `/api/users/<id>` | Edytuj użytkownika; `czynnosci: [activity_id]` = szkolenia (zastępuje zbiór wśród aktywnych czynności; POST przyjmuje to samo) |
 | DELETE | `/api/users/<id>` | Dezaktywuj (soft delete) |
 
 **POST/PUT body:**

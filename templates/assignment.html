@@ -53,6 +53,21 @@
         {% endfor %}
     </div>
 </div>
+
+<!-- Brak szkolenia: osoba bez szkolenia z czynnosci nie trafia na nia -->
+<div class="modal-overlay" id="brakSzkoleniaModal" style="display:none;">
+    <div class="modal" style="background:var(--bg-card-solid);max-width:480px;">
+        <h3>⛔ Brak szkolenia</h3>
+        <p>Tych osób nie można przydzielić — nie mają szkolenia z czynności:</p>
+        <ul id="brakSzkoleniaLista" style="margin:0 0 12px 18px;"></ul>
+        <p style="color:var(--text-muted);font-size:.85rem;">
+            Szkolenie zaznacza lider w <a href="{{ url_for('admin_users') }}" style="color:var(--accent);">Użytkownicy</a> → Edytuj → „Przeszkolony w czynnościach”.
+        </p>
+        <div class="modal-actions">
+            <button class="btn btn-primary" id="brakSzkoleniaOk" onclick="zamknijBrakSzkolenia()">OK</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -65,6 +80,14 @@
     let wersja = null;
     // Srednia jednej osoby per czynnosc (/api/assignment/data → wydajnosc).
     let wydajnosc = {};
+    // Szkolenia {user_id: [activity_id]} i pary juz zapisane na tej zmianie —
+    // zapisany przydzial zostaje, choc szkolenie odznaczono (serwer tak samo).
+    let szkolenia = {};
+    let zapisanePary = new Set();
+    const para = (uid, aid) => `${uid}:${aid}`;
+    const przeszkolony = (uid, aid) => (szkolenia[uid] || []).includes(Number(aid));
+    const moznaPrzydzielic = (uid, aid) =>
+        Number(aid) === 0 || przeszkolony(uid, aid) || zapisanePary.has(para(uid, aid));
 
     // Init date to today
     document.getElementById('assignDate').valueAsDate = new Date();
@@ -89,6 +112,8 @@
             loadedDate = dateVal;
             wersja = data.wersja;
             wydajnosc = data.wydajnosc || {};
+            szkolenia = data.szkolenia || {};
+            zapisanePary = new Set(data.assignments.map(a => para(a.user_id, a.activity_id)));
             renderBoard(data);
         } catch (err) {
             showToast('Błąd ładowania danych.', 'error');
@@ -198,17 +223,24 @@
                     return;   // przeciagnieto cos spoza tablicy (np. zaznaczony tekst)
                 }
                 let przeniesiono = false;
+                const bezSzkolenia = [];
+                const actId = zone.dataset.activity;
                 userIds.forEach(uid => {
                     const card = document.querySelector(`.assignment-user-card[data-user-id="${uid}"]`);
-                    if (card) {
-                        if (card.parentElement !== zone) przeniesiono = true;
-                        zone.appendChild(card);
-                        card.classList.remove('selected', 'dragging');
+                    if (!card) return;
+                    card.classList.remove('selected', 'dragging');
+                    if (card.parentElement === zone) return;
+                    if (!moznaPrzydzielic(uid, actId)) {
+                        bezSzkolenia.push(card.querySelector('span').textContent);
+                        return;            // karta zostaje, gdzie byla
                     }
+                    przeniesiono = true;
+                    zone.appendChild(card);
                 });
                 selectedCards.clear();
                 updateCounts();
                 if (przeniesiono) saveAssignments();
+                if (bezSzkolenia.length) pokazBrakSzkolenia(bezSzkolenia, zone);
             });
         });
     }
@@ -219,6 +251,19 @@
         document.getElementById('unassignedCount').textContent = unassigned;
 
         // Per-activity counts
+        // Przydzial sprzed odznaczenia szkolenia zostaje, ale widac go od razu.
+        document.querySelectorAll('.assignment-drop-zone:not(#unassignedZone)').forEach(zone => {
+            zone.querySelectorAll('.assignment-user-card').forEach(card => {
+                const brak = !przeszkolony(card.dataset.userId, zone.dataset.activity);
+                card.classList.toggle('bez-szkolenia', brak);
+                card.title = brak ? '⚠️ Brak szkolenia z tej czynności — przydział sprzed odznaczenia' : '';
+            });
+        });
+        document.querySelectorAll('#unassignedZone .assignment-user-card').forEach(card => {
+            card.classList.remove('bez-szkolenia');
+            card.title = '';
+        });
+
         document.querySelectorAll('[data-count-for]').forEach(badge => {
             const actId = badge.dataset.countFor;
             const zone = document.getElementById(`zone-${actId}`);
@@ -251,6 +296,26 @@
                 + `${fmt(w.szt_h_os)} szt./h — ${skad}, ostatnie 30 dni.`;
         });
     }
+
+    function pokazBrakSzkolenia(osoby, zone) {
+        const czynnosc = zone.closest('.assignment-column')
+            .querySelector('.assignment-column-header span').textContent;
+        pokazBrakSzkoleniaLista(osoby.map(o => ({ osoba: o, czynnosc })));
+    }
+
+    function pokazBrakSzkoleniaLista(lista) {
+        document.getElementById('brakSzkoleniaLista').innerHTML = lista
+            .map(x => `<li><strong>${escapeHtml(x.osoba)}</strong> — ${escapeHtml(x.czynnosc)}</li>`).join('');
+        document.getElementById('brakSzkoleniaModal').style.display = 'flex';
+        document.getElementById('brakSzkoleniaOk').focus();
+    }
+
+    function zamknijBrakSzkolenia() {
+        document.getElementById('brakSzkoleniaModal').style.display = 'none';
+    }
+    document.getElementById('brakSzkoleniaModal').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) zamknijBrakSzkolenia();
+    });
 
     // ── AI Suggestions ──
     async function loadSuggestions() {
@@ -321,9 +386,18 @@
                 const dane = await zapiszJson('/api/assignment/save', 'POST', {
                     date, shift_number: shiftNumber, assignments, wersja
                 });
-                if (date === loadedDate && shiftNumber === currentShift) wersja = dane.wersja;
+                if (date === loadedDate && shiftNumber === currentShift) {
+                    wersja = dane.wersja;
+                    zapisanePary = new Set(assignments.map(a => para(a.user_id, a.activity_id)));
+                }
             } catch (e) {
                 if (e.status === 409 && e.dane && e.dane.konflikt) {
+                    e.akcja = { etykieta: 'Wczytaj aktualny', fn: loadData };
+                }
+                // Szkolenie odznaczono w miedzyczasie (inny lider) — tablica
+                // przepuscila ruch, serwer nie. Okno + powrot do stanu z bazy.
+                if (e.dane && e.dane.brak_szkolenia) {
+                    pokazBrakSzkoleniaLista(e.dane.brak_szkolenia);
                     e.akcja = { etykieta: 'Wczytaj aktualny', fn: loadData };
                 }
                 throw e;

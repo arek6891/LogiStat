@@ -388,6 +388,72 @@ class ActivityAssignment(db.Model):
         }
 
 
+class SzkolenieCzynnosci(db.Model):
+    """Osoba przeszkolona w czynnosci (2026-10-13, operacje) — tylko wtedy
+    mozna ja do tej czynnosci przydzielic. Wiersz = przeszkolony; brak wiersza
+    = nie (nowa osoba i nowa czynnosc startuja bez szkolen). Istniejacych
+    w dniu wdrozenia zaznacza raz `zaznacz_wszystkich_przeszkolonych()`.
+    """
+    __tablename__ = 'szkolenie_czynnosci'
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
+    activity_id = db.Column(db.Integer, db.ForeignKey('activity.id'), primary_key=True)
+    dodano_at = db.Column(db.DateTime, default=datetime.utcnow)
+    dodal_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+
+def szkolenia_czynnosci(user_ids=None):
+    """`{user_id: {activity_id, …}}` — jedno zapytanie (opcjonalnie dla wybranych)."""
+    q = db.session.query(SzkolenieCzynnosci.user_id, SzkolenieCzynnosci.activity_id)
+    if user_ids is not None:
+        if not user_ids:
+            return {}
+        q = q.filter(SzkolenieCzynnosci.user_id.in_(list(user_ids)))
+    wynik = {}
+    for uid, aid in q:
+        wynik.setdefault(uid, set()).add(aid)
+    return wynik
+
+
+def ustaw_szkolenia(user, activity_ids):
+    """Zbior czynnosci, w ktorych `user` jest przeszkolony — zastepuje caly."""
+    if not isinstance(activity_ids, list):
+        abort(400, 'Pole „czynnosci" musi być listą.')
+    nowe = {require_int(a, 'czynnosci') for a in activity_ids}
+    znane = {a for (a,) in db.session.query(Activity.id).filter(Activity.id.in_(nowe))} \
+        if nowe else set()
+    if nowe - znane:
+        abort(400, 'Nieznana czynność.')
+    obecne = {w.activity_id: w for w in SzkolenieCzynnosci.query.filter_by(user_id=user.id)}
+    # Ekran pokazuje tylko aktywne czynnosci — szkolenie z wylaczonej zostaje,
+    # zeby po jej ponownym wlaczeniu nie trzeba bylo zaznaczac wszystkich od nowa.
+    aktywne = {a for (a,) in db.session.query(Activity.id).filter_by(is_active=True)}
+    for aid, w in obecne.items():
+        if aid not in nowe and aid in aktywne:
+            db.session.delete(w)
+    for aid in nowe - obecne.keys():
+        db.session.add(SzkolenieCzynnosci(user_id=user.id, activity_id=aid,
+                                          dodal_id=current_user.id))
+
+
+ZNACZNIK_SZKOLEN_CZYNNOSCI = 'migracja_szkolenia_czynnosci'
+
+
+def zaznacz_wszystkich_przeszkolonych():
+    """Jednorazowo (znacznik w AppSetting): kazdy istniejacy uzytkownik
+    przeszkolony w kazdej istniejacej czynnosci — decyzja operacji 2026-10-13
+    („wszystkich, ktorych mamy na tescie, zaznaczamy"). Kto przyjdzie pozniej,
+    startuje bez szkolen."""
+    if db.session.get(AppSetting, ZNACZNIK_SZKOLEN_CZYNNOSCI) is not None:
+        return
+    db.session.execute(db.text("""
+        INSERT INTO szkolenie_czynnosci (user_id, activity_id, dodano_at)
+        SELECT u.id, a.id, now() AT TIME ZONE 'UTC' FROM "user" u CROSS JOIN activity a
+        ON CONFLICT DO NOTHING
+    """))
+    db.session.add(AppSetting(key=ZNACZNIK_SZKOLEN_CZYNNOSCI, value=local_today().isoformat()))
+    db.session.commit()
+
+
 class DailyStat(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     shift_id = db.Column(db.Integer, db.ForeignKey('shift.id'), nullable=False)
@@ -926,6 +992,25 @@ class HistoriaCelu(db.Model):
     __tablename__ = 'historia_celu'
     dzien = db.Column(db.Date, primary_key=True)
     wartosc = db.Column(db.Integer, nullable=False)
+    # Kto i kiedy wpisal (2026-10-13) — lista zmian pod polem celu w Normach.
+    # Puste w wierszach sprzed tej daty i w zasiewie.
+    zmienil_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    zmieniono_at = db.Column(db.DateTime, nullable=True)
+    zmienil = db.relationship('User')
+
+    def to_dict(self):
+        return {
+            'od': None if self.dzien == POCZATEK_HISTORII_CELU else self.dzien.isoformat(),
+            'wartosc': self.wartosc,
+            'zmienil': self.zmienil.display_name if self.zmienil else None,
+            'zmieniono_at': iso_z(self.zmieniono_at),
+        }
+
+
+def historia_celu_lista():
+    """Wszystkie wpisy historii celu, od najnowszego — dla listy w Normach."""
+    return [w.to_dict() for w in HistoriaCelu.query.options(
+        joinedload(HistoriaCelu.zmienil)).order_by(HistoriaCelu.dzien.desc()).all()]
 
 
 POCZATEK_HISTORII_CELU = date(2000, 1, 1)
@@ -1193,7 +1278,8 @@ def stats():
     activities = Activity.query.filter_by(is_active=True)\
         .order_by(Activity.sort_order).all()
     return render_template('stats.html', users=users, activities=activities,
-                           cel_szt_h=get_setting_int('target_szt_h', 0))
+                           cel_szt_h=get_setting_int('target_szt_h', 0),
+                           historia_celu=historia_celu_lista())
 
 
 @app.route('/admin/activities')
@@ -1207,8 +1293,12 @@ def admin_activities():
 @leader_required
 def admin_users():
     users = User.query.order_by(User.display_name).all()
+    szkolenia = szkolenia_czynnosci()
     return render_template('admin_users.html', users=users,
-                           options=user_options_by_kind())
+                           options=user_options_by_kind(),
+                           czynnosci=Activity.query.filter_by(is_active=True)
+                           .order_by(Activity.sort_order).all(),
+                           szkolenia={u: sorted(a) for u, a in szkolenia.items()})
 
 
 @app.route('/admin/panel')
@@ -2204,6 +2294,7 @@ def api_assignment_data():
             'assignments': [],
             'activities': [a.to_dict() for a in activities],
             'wydajnosc': wydajnosc_czynnosci(parse_date(shift_date)),
+            'szkolenia': {},
             'wersja': wersja_przydzialu([])
         }), 200
 
@@ -2226,6 +2317,10 @@ def api_assignment_data():
         'activities': [a.to_dict() for a in activities],
         'unassigned': [a.user.to_dict() for a in attendances
                        if a.user_id not in assigned_user_ids],
+        # {user_id: [activity_id…]} — tablica nie pozwala upuscic osoby na
+        # czynnosc bez szkolenia (serwer i tak to sprawdza przy zapisie).
+        'szkolenia': {str(u): sorted(a) for u, a in szkolenia_czynnosci(
+            {a.user_id for a in attendances} | assigned_user_ids).items()},
         'wersja': wersja_przydzialu(assignments)
     }), 200
 
@@ -2264,6 +2359,12 @@ def api_assignment_suggestions():
         Shift.date >= thirty_days_ago
     ).group_by(DailyStat.user_id, DailyStat.activity_id).all()
 
+    # Sugestie tylko tam, gdzie osoba jest przeszkolona — zapis i tak by je odrzucil.
+    szkolenia = szkolenia_czynnosci(attendee_ids)
+
+    def przeszkolony(uid, aid):
+        return aid in szkolenia.get(uid, ())
+
     # Build performance map: {(user_id, activity_id): avg_qty}
     perf = {}
     for s in stats:
@@ -2285,7 +2386,7 @@ def api_assignment_suggestions():
         # Rank available users by performance for this activity
         candidates = []
         for uid in attendee_ids:
-            if uid not in assigned:
+            if uid not in assigned and przeszkolony(uid, act.id):
                 avg = perf.get((uid, act.id), 0)
                 candidates.append((avg, uid))
         candidates.sort(reverse=True)
@@ -2305,9 +2406,10 @@ def api_assignment_suggestions():
         activity_counts[s['activity_id']] = activity_counts.get(s['activity_id'], 0) + 1
 
     for uid in attendee_ids:
-        if uid not in assigned:
-            # Find activity with fewest assigned people
-            min_act_id = min(activity_counts, key=activity_counts.get)
+        mozliwe = [a for a in activity_counts if przeszkolony(uid, a)]
+        if uid not in assigned and mozliwe:
+            # Find activity with fewest assigned people (z tych, w ktorych przeszkolony)
+            min_act_id = min(mozliwe, key=activity_counts.get)
             suggestions.append({
                 'user_id': uid,
                 'activity_id': min_act_id,
@@ -2424,6 +2526,30 @@ def api_assignment_save():
                 'konflikt': True,
                 'wersja': teraz,
             }), 409
+
+    # Szkolenia (2026-10-13): NOWY przydzial tylko do czynnosci, w ktorej osoba
+    # jest przeszkolona. Juz zapisany zostaje, choc szkolenie odznaczono —
+    # inaczej odznaczenie zablokowaloby zapis calej zmiany.
+    juz_sa = {(a.user_id, a.activity_id) for a in
+              ActivityAssignment.query.filter_by(shift_id=shift.id)}
+    do_sprawdzenia = {(u, a) for u, a, _ in nowe if (u, a) not in juz_sa}
+    if do_sprawdzenia:
+        szkolenia = szkolenia_czynnosci({u for u, _ in do_sprawdzenia})
+        brak = sorted((u, a) for u, a in do_sprawdzenia if a not in szkolenia.get(u, ()))
+        if brak:
+            db.session.rollback()
+            osoby = {u.id: u.display_name for u in User.query.filter(
+                User.id.in_({u for u, _ in brak}))}
+            nazwy = {a.id: a.name for a in Activity.query.filter(
+                Activity.id.in_({a for _, a in brak}))}
+            lista = [{'user_id': u, 'activity_id': a, 'osoba': osoby.get(u, f'#{u}'),
+                      'czynnosc': nazwy.get(a, f'#{a}')} for u, a in brak]
+            return jsonify({
+                'error': 'Brak szkolenia: ' + '; '.join(
+                    f"{x['osoba']} — {x['czynnosc']}" for x in lista)
+                    + '. Szkolenia zaznacza się w Użytkownikach.',
+                'brak_szkolenia': lista,
+            }), 400
 
     # Clear existing assignments for this shift
     ActivityAssignment.query.filter_by(shift_id=shift.id).delete()
@@ -2788,6 +2914,18 @@ def policz_wydajnosc(paczki, szkolenia=(), cel_dnia=None, jako_szkolony=()):
         sztuk_zaliczonych += sek / 3600.0 * cel_dnia(dzien)
 
     sekundy = suma_zlaczonych_okresow(wszystkie_okresy)
+    # Cel obowiazujacy w dniu pracy (2026-10-13): kazda godzina skanowania
+    # wazy cel ze swojego dnia (dzien konca zlaczonego okresu, jak przy
+    # szkoleniu). Godziny z dni bez celu (0) nie wchodza — nie ma ich z czym
+    # porownac.
+    sekundy_z_celem = 0.0
+    cel_x_sekundy = 0.0
+    for start, koniec in _zlacz_okresy(wszystkie_okresy):
+        cel = cel_dnia(utc_to_local(koniec).date())
+        if cel > 0:
+            sek = (koniec - start).total_seconds()
+            sekundy_z_celem += sek
+            cel_x_sekundy += sek * cel
     return {
         'paczek': len(paczki),
         'sztuk': sum(p[2] for p in paczki),
@@ -2804,7 +2942,33 @@ def policz_wydajnosc(paczki, szkolenia=(), cel_dnia=None, jako_szkolony=()):
         'sekundy_jako_szkolony': sekundy_jako_szkolony,
         'sztuk_do_sredniej': sztuk_zwykle,
         'sekundy_do_sredniej': suma_zlaczonych_okresow(zwykle_okresy) + sekundy_poza_czesciowych,
+        'cel_szt_h': (round(cel_x_sekundy / sekundy_z_celem, 1)
+                      if sekundy_z_celem > 0 else None),
+        'sekundy_z_celem': sekundy_z_celem,
+        'cel_x_sekundy': cel_x_sekundy,
     }
+
+
+def zmiany_celu(date_from=None, date_to=None):
+    """Cele obowiazujace w zakresie dni: `[{'od': iso|None, 'wartosc'}]`, rosnaco.
+
+    Pierwszy element to cel obowiazujacy juz na poczatku zakresu (`od` = jego
+    prawdziwy dzien wpisu; `None` = zasiew „od zawsze"). Wartosc 0 = brak celu.
+    """
+    wiersze = HistoriaCelu.query.order_by(HistoriaCelu.dzien).all()
+    wynik = []
+    for w in wiersze:
+        if date_to and w.dzien > date_to:
+            break
+        wpis = {'od': None if w.dzien == POCZATEK_HISTORII_CELU else w.dzien.isoformat(),
+                'wartosc': w.wartosc}
+        if date_from and w.dzien <= date_from:
+            wynik = [wpis]             # obowiazywal juz na poczatku zakresu
+        else:
+            wynik.append(wpis)
+    if not wynik:
+        wynik = [{'od': None, 'wartosc': get_setting_int('target_szt_h', 0)}]
+    return wynik
 
 
 def zasiej_historie_celu():
@@ -2843,14 +3007,18 @@ def api_stats_target_update():
     zasiej_historie_celu()
     dzis = db.session.get(HistoriaCelu, local_today())
     if dzis is None:
-        db.session.add(HistoriaCelu(dzien=local_today(), wartosc=wartosc))
+        dzis = HistoriaCelu(dzien=local_today(), wartosc=wartosc)
+        db.session.add(dzis)
     else:
         dzis.wartosc = wartosc         # ostatni zapis danego dnia wygrywa
+    dzis.zmienil_id = current_user.id
+    dzis.zmieniono_at = datetime.utcnow()
     set_setting('target_szt_h', wartosc)
     db.session.commit()
     return jsonify({
         'message': 'Zapisano cel.' if wartosc else 'Cel wyłączony.',
         'target_szt_h': wartosc,
+        'historia': historia_celu_lista(),
     }), 200
 
 
@@ -2885,12 +3053,12 @@ def przeglad_zespolu(date_from, date_to):
     prog_dobry = get_setting_int('norm_good_pct', 110)
     prog_slaby = get_setting_int('norm_weak_pct', 90)
     min_paczek = get_setting_int('min_packages_rank', 3)
-    cel = get_setting_int('target_szt_h', 0) or None      # 0 = nie ustawiono
 
     dane = wydajnosc_pracownikow(date_from, date_to)
     szkolenia, szkoleni = okresy_szkolen(dane.keys(), date_from, date_to)
-    # Historia celu tylko gdy ktos szkolil — bez tego zadnego zapytania wiecej.
-    cel_dnia = cele_dzienne() if szkolenia else None
+    # Cel z dnia pracy (2026-10-13): kazdy liczony celem, ktory obowiazywal,
+    # gdy skanowal — zmiana celu nie przelicza starych dni.
+    cel_dnia = cele_dzienne()
     # joinedload: rodzaj pracownika i nazwa zmiany ida do kazdego wiersza.
     uzytkownicy = {u.id: u for u in User.query.options(
         joinedload(User.worker_type), joinedload(User.shift_group)).filter(
@@ -2899,6 +3067,8 @@ def przeglad_zespolu(date_from, date_to):
     wiersze = []
     suma_sztuk_z_czasem = 0
     suma_godzin_z_czasem = 0.0
+    sekundy_z_celem = 0.0
+    cel_x_sekundy = 0.0
     for uid, paczki in dane.items():
         user = uzytkownicy.get(uid)
         if not user:
@@ -2911,6 +3081,8 @@ def przeglad_zespolu(date_from, date_to):
             # z definicji rowno w celu).
             suma_sztuk_z_czasem += w['sztuk_do_sredniej']
             suma_godzin_z_czasem += w['sekundy_do_sredniej'] / 3600.0
+        sekundy_z_celem += w['sekundy_z_celem']
+        cel_x_sekundy += w['cel_x_sekundy']
         wiersze.append({
             'user_id': uid,
             'display_name': user.display_name,
@@ -2928,6 +3100,8 @@ def przeglad_zespolu(date_from, date_to):
             'paczek_jako_szkolony': w['paczek_jako_szkolony'],
             'godzin_jako_szkolony': round(w['sekundy_jako_szkolony'] / 3600.0, 2),
             'paczek_do_oceny': w['paczek_do_oceny'],
+            # Cel tej osoby: srednia celow z dni, w ktore skanowala (wazona godzinami).
+            'cel_szt_h': w['cel_szt_h'],
         })
 
     # Do rankingu wchodzi tylko ten, kto ma dosc paczek i zmierzony czas.
@@ -2955,8 +3129,8 @@ def przeglad_zespolu(date_from, date_to):
         # 100% = spelnia. NIE uzywamy tu pasm norm_good/norm_weak — te opisuja
         # odchylenie od sredniej zespolu, a lider, ktory wpisal liczbe jako
         # wymagany poziom, przeczytalby „rowno w celu = tylko ok" jako blad.
-        if cel:
-            proc_celu = round(r['szt_h'] / cel * 100)
+        if r['cel_szt_h']:
+            proc_celu = round(r['szt_h'] / r['cel_szt_h'] * 100)
             r['proc_celu'] = proc_celu
             r['ocena_celu'] = 'spelnia' if proc_celu >= 100 else 'ponizej'
         else:
@@ -2971,11 +3145,21 @@ def przeglad_zespolu(date_from, date_to):
     ranking.sort(key=lambda r: r['szt_h'], reverse=True)
     za_malo.sort(key=lambda r: r['display_name'])
 
+    # Cel zespolu w okresie: wazony godzinami wszystkich; bez godzin — cel
+    # z ostatniego dnia zakresu (zeby kolumna celu nie znikala na pustym dniu).
+    zmiany = zmiany_celu(date_from, date_to)
+    if sekundy_z_celem > 0:
+        cel = round(cel_x_sekundy / sekundy_z_celem, 1)
+    else:
+        cel = cel_dnia(date_to or local_today()) or None
+
     return {
         'date_from': date_from.isoformat() if date_from else None,
         'date_to': date_to.isoformat() if date_to else None,
         'srednia_szt_h': round(srednia, 1) if srednia else None,
         'cel_szt_h': cel,
+        # Cele obowiazujace w zakresie, rosnaco — >1 = cel zmienial sie po drodze.
+        'cele_w_okresie': zmiany,
         'progi': {'dobry': prog_dobry, 'slaby': prog_slaby, 'min_paczek': min_paczek},
         # Bez celu albo bez nikogo w rankingu nie ma czego zliczac — `None`,
         # nie 0. „0 / 0" czytaloby sie jak „nikt nie spelnia" albo, gorzej,
@@ -3014,10 +3198,15 @@ def norma_pracownika(user_id, date_from, date_to):
         if r['user_id'] == user_id:
             wynik['miejsce'] = i + 1
             wynik['wiersz'] = r
+            # Cel tej osoby — z dni, w ktore pracowala (% celu liczony wlasnie nim).
+            if r['cel_szt_h'] is not None:
+                wynik['cel_szt_h'] = r['cel_szt_h']
             return wynik
     for r in p['za_malo_danych']:
         if r['user_id'] == user_id:
             wynik['wiersz'] = r
+            if r['cel_szt_h'] is not None:
+                wynik['cel_szt_h'] = r['cel_szt_h']
             wynik['powod_braku_oceny'] = (
                 'szkolony' if r['paczek_do_oceny'] == 0 and r['paczek_jako_szkolony']
                 else 'brak_czasu' if r['szt_h'] is None
@@ -3046,6 +3235,10 @@ def wykres_wydajnosci(paczki_per_klucz, szkolenia=(), cel_dnia=None, jako_szkolo
             'szt_h': w['szt_h'],
             'paczek_szkolenia': w['paczek_szkolenia'],
             'paczek_jako_szkolony': w['paczek_jako_szkolony'],
+            # Cel z dni tego punktu; dzien bez zmierzonego czasu — cel tego dnia.
+            'cel': (w['cel_szt_h'] if w['cel_szt_h'] is not None
+                    else (cel_dnia(date.fromisoformat(klucz)) or None)
+                    if cel_dnia and len(klucz) == 10 else None),
         })
     return punkty
 
@@ -3148,7 +3341,7 @@ def api_stats_user(user_id):
     szkolenia, szkoleni = okresy_szkolen([user_id], date_from, date_to)
     szkolenia = szkolenia.get(user_id, ())
     szkoleni = szkoleni.get(user_id, ())
-    cel_dnia = cele_dzienne() if szkolenia else None
+    cel_dnia = cele_dzienne()
 
     paczki_podsumowanie = podsumuj_paczki_pracownika(per_day)
 
@@ -3325,6 +3518,9 @@ def api_user_create():
         user.set_password(password)
 
     db.session.add(user)
+    if 'czynnosci' in data:
+        db.session.flush()
+        ustaw_szkolenia(user, data['czynnosci'])
     db.session.commit()
     return jsonify(user.to_dict()), 201
 
@@ -3378,6 +3574,8 @@ def api_user_update(user_id):
             setattr(user, kolumna, resolve_user_option(data[kolumna], kind))
     if 'is_trainer' in data:
         user.is_trainer = bool(data['is_trainer'])
+    if 'czynnosci' in data:
+        ustaw_szkolenia(user, data['czynnosci'])
     if 'role' in data:
         user.role = data['role']
     if 'is_active_user' in data:
@@ -5930,6 +6128,8 @@ def migrate_columns():
             ('"user"', "is_trainer", "BOOLEAN NOT NULL DEFAULT FALSE"),
             # "user" w REFERENCES tez musi byc w cudzyslowie.
             ("worker_time_event", "training_lead_id", 'INTEGER REFERENCES "user"(id)'),
+            ("historia_celu", "zmienil_id", 'INTEGER REFERENCES "user"(id)'),
+            ("historia_celu", "zmieniono_at", "TIMESTAMP"),
         ]
 
         for table, column, col_def in migrations:
@@ -6114,6 +6314,7 @@ def init_db():
             migruj_date_pliku()
             seed_data()
             zasiej_historie_celu()
+            zaznacz_wszystkich_przeszkolonych()
             db.session.commit()
         finally:
             conn.execute(db.text('SELECT pg_advisory_unlock(:id)'), {'id': lock_id})
