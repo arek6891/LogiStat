@@ -167,7 +167,7 @@
             {% set proc_secs = item.processing_seconds() %}
             <tr>
                 <td style="font-family:monospace; color:var(--accent);">
-                    <a href="#" class="paczka-ilosci" style="color:inherit;text-decoration:underline dotted;"
+                    <a href="#" class="paczka-ilosci" style="color:var(--info);text-decoration:underline dotted;"
                        onclick="otworzQty(this.closest('tr').querySelector('[data-cats]')); return false;"
                        title="Pokaż ilości wpisane przez pracownika">{{ item.barcode }}</a>
                     {% for blad in bledy_map.get(item.id, []) %}

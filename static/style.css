@@ -708,6 +708,12 @@ tr:last-child td {
     box-shadow: 0 0 0 2px var(--accent-glow);
 }
 
+/* Linki do pracownika / paczki w tabelach — ten sam kolor co na Dashboardzie
+   (domyslny niebieski przegladarki byl slabo widoczny na ciemnym tle). */
+a.js-osoba {
+    color: var(--info);
+}
+
 .assignment-user-card.bez-szkolenia {
     border-color: var(--warning, #f59e0b);
 }
