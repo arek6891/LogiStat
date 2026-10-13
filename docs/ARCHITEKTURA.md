@@ -135,6 +135,30 @@ Quantities entered at package end are the **source of truth for `category_data`*
 
 **Forecast.** Zmienione tylko opisy (podtytul, naglowek wykresu, kolumny tabeli, Excel „Actual (Sztuki)"); liczby od zawsze byly `SUM(stueckzahl)`.
 
+## Paczka do dokonczenia, Pakowanie zespolowe (2026-10-13)
+
+**Zgloszenie.** (1) Koniec zmiany, paczka nieskonczona: pracownik wpisuje, co przerobil, paczka zostaje otwarta, nastepna osoba wbija Start i konczy standardowo. (2) Lider dorzuca druga/trzecia osobe do rozpoczetej paczki; koniec wbija kazda osoba ze swoimi ilosciami. Nadwyzka przy kilku osobach → blad „do wyjasnienia przez lidera".
+
+**Dlaczego osobna tabela, a nie kolumny na kartonie.** Do tej pory paczka = jedna osoba (jeden start, jeden koniec, jeden zestaw ilosci) i na tym stoja rozliczenie, Normy, Dashboard, filtr osoby i bledow. `udzial_paczki` trzyma udzial kazdej osoby; karton zostaje **agregatem** (suma ilosci, koniec dopiero po ostatnim), wiec rozliczenie (`scan_category_totals`, `recompute_general_stat`) nie zmienilo sie ani o linie. Wiersze powstaja **tylko przy 2+ osobach** — 16 tys. starych paczek na `.31` bez migracji, a paczka jednej osoby czyta sie jak dawniej.
+
+**Decyzje operacji.**
+- Normy: przy paczce kilku osob kazda liczy sie ze **swoich wpisanych ilosci i swojego czasu** (nie z podzialu Stückzahl). Uwaga: wpisane kategorie to nie zawsze sztuki paczki (np. 104 szt. i Sorting 20) — tak zdecydowano swiadomie. Paczka jednej osoby dalej liczy Stückzahl.
+- Blad: obie reguly (suma > Stückzahl **lub** kategoria > +10 %), tylko przy 2+ roznych osobach; komunikat z nazwiskami.
+- Zespol: zamyka ostatni; gdy ktos nie wbil konca — **oba sposoby**: pytanie na stanowisku („Zakoncz tylko moj udzial" z fokusem / „Zamknij dla wszystkich") i przycisk lidera „🔒 Zamknij paczke". Zamkniety za kogos udzial nie ma ilosci i nie wchodzi do norm (inaczej czas bez sztuk zanizalby mu wynik).
+- Paczka do dokonczenia = „w toku" na Dashboardzie + osobny status na /paczki (bez wymaganego zakresu dat).
+
+**Szczegoly, ktore latwo zepsuc.**
+- `prace_osob()` jest JEDYNA definicja „kto ile zrobil" — Normy, wykresy, Dashboard per pracownik i per zmiana. Udzial liczy sie po swoim koncu, takze gdy paczke dokonczy ktos inny pozniej.
+- Przekazanie zdejmuje `scan_start_*` — inaczej nastepna osoba dostawalaby 409 „rozpoczeta przez…". Stan „do dokonczenia" wynika z danych (brak startu i konca + sa wiersze), bez kolumny.
+- Pierwsze dolaczenie do zespolu zaklada wiersz takze osobie, ktora zaczela (od jej `scan_start_at`) — od tej chwili wszyscy sa wierszami i koniec dziala tak samo dla kazdego. Warunek: brak wiersza tej osoby **z tym samym startem** (nie „brak otwartego”) — inaczej, gdy zaczynajaca skonczyla swoja czesc i lider dorzucil kolejna osobe, dostawala drugi, otwarty udzial i paczka nigdy sie nie zamykala.
+- Link z Norm do /paczki (`date_typ=koniec`) filtruje po koncu KARTONU — czesc przekazana liczy sie w Normach w dniu konca udzialu, wiec przy paczce dokonczonej innego dnia (albo jeszcze „do dokonczenia”) lista i liczba w Normach moga sie roznic.
+- Koniec po przekazaniu tworzy wiersz konczacego od jego `scan_start_at`; przy zamknieciu start kartonu wraca na pierwszy udzial.
+- Czas procesowania = zlaczone okresy udzialow — rozpietosc start–koniec przy przekazaniu obejmowalaby noc.
+- Pokrycie 🔒 liczy tylko zakonczone: przekazana czesc ma juz ilosci, ale paczka nie jest skonczona.
+- „✎ Ilosci" lidera zmienia sume na kartonie; kolejny koniec udzialu przelicza sume z wierszy — poprawiac po zamknieciu paczki.
+- /paczki `selectinload` udzialow (filtr bledow czyta je per paczka) — test 2 vs 12 paczek.
+- Stanowisko: panel ilosci jest wspolny dla „Koniec" i „Do dokonczenia" (makra Jinja, prefiks `end`/`dok`); pytanie o nadwyzke liczy to, co wpisali wczesniej inni + moje.
+
 ## Statystyki ogolne dla lidera, nazwa „Loading date" (2026-10-12)
 
 **Zgloszenie.** Liderzy maja widziec Statystyki ogolne, ale bez kosztow. Data pliku ma sie nazywac „Loading date".

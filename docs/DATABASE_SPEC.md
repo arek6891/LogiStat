@@ -200,6 +200,25 @@ Słownik mapowania kraju na numer zlecenia wewnętrznego (Innenauftrag) z system
 
 ---
 
+### `udzial_paczki`
+Udział jednej osoby w paczce, gdy pracuje przy niej **więcej niż jedna** (2026-10-13).
+Paczka jednej osoby **nie ma wierszy** — czyta się ją z pól `imported_carton`. Tabela z `create_all()`.
+
+| Kolumna | Typ | Ograniczenia | Opis |
+|---|---|---|---|
+| id | SERIAL | PK | |
+| carton_id | INTEGER | FK → imported_carton.id, NOT NULL, indeks | Paczka |
+| user_id | INTEGER | FK → user.id, NOT NULL, indeks | Osoba |
+| rodzaj | VARCHAR(20) | NOT NULL | `przekazana` (paczka do dokończenia — kolejno) · `zespol` (pakowanie zespołowe — równolegle) |
+| start_at / end_at | TIMESTAMP | start NOT NULL | Naive UTC; `end_at` NULL = osoba jeszcze pracuje |
+| ilosci | TEXT (JSON) | DEFAULT '{}' | Ilości per kategoria wpisane przez tę osobę |
+| zamkniete_przez | INTEGER | FK → user.id | Kto zamknął CUDZY udział („zamknij dla wszystkich” / lider) — bez ilości, poza normami |
+
+`imported_carton.scan_category_data` = **suma** `ilosci` wszystkich udziałów (z sumy, nie delta);
+`scan_end_*` ustawiane dopiero, gdy nie został nikt otwarty.
+
+---
+
 ### `general_stat`
 Dane zagregowane z importów CSV/Excel. Grupowanie po **`(uebergabe_nr, land, data_pliku)`** — `klucz_linii()` w kodzie (do 2026-10: po `ziel_datum`). Ilości kategorii jako JSON w kolumnie **TEXT** (JSONB jest zakazany — psuje `json.loads` w akcesorach).
 

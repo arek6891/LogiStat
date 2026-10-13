@@ -286,7 +286,7 @@ def test_ekran_skanowania_ma_pola_wszystkich_kategorii(leader_client):
     html = leader_client.get('/scan-paczki').get_data(as_text=True)
 
     for kat in logistat.STAT_CATEGORIES:
-        assert f'id="qty-{kat}"' in html
+        assert f'id="end-qty-{kat}"' in html
     assert 'end-qty-stueckzahl' in html          # ilosc sztuk pokazana pracownikowi
     assert 'Labelling one' in html               # nowe etykiety
     assert 'Carton labeling' not in html
