@@ -3,8 +3,9 @@
 Decyzja operacji (2026-10-06): szkolenie to czas pracy — nie pomniejsza czasu
 pracy jak przerwa / „Inne". W Normach paczki ZAKONCZONE W CZASIE szkolenia
 licza sie jako dokladnie 100% celu z dnia paczki (czas skanowania × cel), tylko
-one; reszta dnia idzie z prawdziwych sztuk, a samo szkolenie bez paczek niczego
-nie dolicza. Paczki ze szkolenia nie wchodza do sredniej zespolu.
+one — paczka zahaczajaca o szkolenie cala (2026-10-14); reszta dnia idzie z
+prawdziwych sztuk, a samo szkolenie bez paczek niczego nie dolicza. Paczki ze
+szkolenia nie wchodza do sredniej zespolu.
 """
 from datetime import date, datetime, timedelta
 
@@ -461,9 +462,9 @@ def test_dwa_zapisy_celu_jednego_dnia(leader_client):
     assert logistat.HistoriaCelu.query.count() == 2   # zasiew + dzis
 
 
-def test_paczka_zaczeta_przed_szkoleniem_zalicza_tylko_czas_w_szkoleniu(leader_client):
-    """Paczka 8:05–10:05 (120 szt., 60 szt./h), szkolenie od 10:00: 5 minut celu
-    (100 szt./h), reszta z prawdziwych sztuk — nie 2 h po 100."""
+def test_paczka_zahaczajaca_o_szkolenie_liczy_sie_cala(leader_client):
+    """Paczka 8:05–10:05 (120 szt., 60 szt./h), szkolenie od 10:00: cala paczka
+    po celu (operacje, 2026-10-14) — wczesniej tylko 5 minut, reszta z sztuk."""
     ustaw_cel(100)
     t = szkolacy()
     szkolenie(t, DZIEN, chwila(DZIEN, 10), chwila(DZIEN, 12))
@@ -473,9 +474,27 @@ def test_paczka_zaczeta_przed_szkoleniem_zalicza_tylko_czas_w_szkoleniu(leader_c
     r = wiersz(dane, 'Trener')
 
     assert r['paczek_szkolenia'] == 1
-    assert r['szt_h'] == 61.7                  # (115 + 100 * 5/60) / 2 h
-    assert r['godzin_szkolenia'] == round(5 / 60, 2)
-    assert dane['srednia_szt_h'] == 60         # tylko czesc poza szkoleniem
+    assert r['szt_h'] == 100
+    assert r['godzin_szkolenia'] == 2.0
+    assert dane['srednia_szt_h'] is None       # nic nie zostalo do sredniej
+
+
+def test_paczka_otwarta_przez_przerwe_miedzy_szkoleniami(leader_client):
+    """Zgloszenie z .31 (12.10): na przerwe trzeba zakonczyc szkolenie, paczka
+    zostaje otwarta. Przerwa w srodku paczki nie moze zbijac szkolacego
+    ponizej celu (bylo 93%)."""
+    ustaw_cel(100)
+    t = szkolacy()
+    szkolenie(t, DZIEN, chwila(DZIEN, 8), chwila(DZIEN, 9))
+    szkolenie(t, DZIEN, chwila(DZIEN, 9, 30), chwila(DZIEN, 11))
+    paczka(t, 10, chwila(DZIEN, 8, 30), chwila(DZIEN, 9, 45))  # przez przerwe
+    paczki_po_kolei(t, DZIEN, 10, ile=2, sztuk=5, minut=30)
+
+    r = wiersz(przeglad(leader_client), 'Trener')
+
+    assert r['paczek_szkolenia'] == 3
+    assert r['szt_h'] == 100
+    assert r['proc_celu'] == 100 and r['ocena_celu'] == 'spelnia'
 
 
 def test_paczka_w_szkoleniu_rownolegle_z_inna_nie_liczy_czasu_dwa_razy(leader_client):

@@ -2839,10 +2839,11 @@ def policz_wydajnosc(paczki, szkolenia=(), cel_dnia=None, jako_szkolony=()):
     czas i proporcjonalna czesc sztuk. Liczone PIERWSZE i niezaleznie od celu.
     Paczka bez skanu „Start" zakonczona w szkoleniu wypada cala.
 
-    **Osoba szkolaca** (`szkolenia`, decyzja 2026-10-06): z tego, co zostalo,
-    fragment czasu paczki nakladajacy sie na prowadzone szkolenie = czas × cel
-    z dnia zakonczenia paczki (dokladnie 100%), reszta paczki = odpowiedni
-    ulamek prawdziwych sztuk. Zaliczony czas to suma ZLACZONYCH fragmentow
+    **Osoba szkolaca** (`szkolenia`, decyzja 2026-10-06, zmiana 2026-10-14): z
+    tego, co zostalo, paczka nakladajaca sie choc troche na prowadzone
+    szkolenie liczy sie CALA jako czas × cel z dnia zakonczenia paczki
+    (dokladnie 100%) — takze minuty przed/po szkoleniu i w przerwie miedzy
+    blokami szkolenia. Zaliczony czas to suma ZLACZONYCH okresow takich paczek
     per dzien (dwie paczki naraz nie dostana tej samej minuty dwa razy). Samo
     szkolenie bez paczek nic nie dolicza; dzien bez celu (0) — normalnie.
     Paczka bez „Start" zakonczona w szkoleniu nie ma czasu, wiec nie wchodzi
@@ -2857,7 +2858,6 @@ def policz_wydajnosc(paczki, szkolenia=(), cel_dnia=None, jako_szkolony=()):
     wszystkie_okresy = []
     zwykle_okresy = []         # czas liczony normalnie
     sztuk_zwykle = 0.0         # prawdziwe sztuki liczone normalnie
-    sekundy_poza_czesciowych = 0.0
     w_szkoleniu_dnia = {}      # dzien -> fragmenty paczek w prowadzonym szkoleniu
     paczek_szkolenia = 0
     paczek_jako_szkolony = 0
@@ -2893,18 +2893,18 @@ def policz_wydajnosc(paczki, szkolenia=(), cel_dnia=None, jako_szkolony=()):
                 continue
         wszystkie_okresy.extend(pozostale)
 
-        fragmenty = ([(max(a, s), min(b, k)) for a, b in pozostale for s, k in szkolenia
-                      if min(b, k) > max(a, s)]
-                     if szkolenia and cel_dnia(dzien) > 0 else [])
-        if not fragmenty:
+        w_szkoleniu = (szkolenia and cel_dnia(dzien) > 0
+                       and any(min(b, k) > max(a, s)
+                               for a, b in pozostale for s, k in szkolenia))
+        if not w_szkoleniu:
             sztuk_zwykle += sztuk * (sek_pozostale / trwanie)
             zwykle_okresy.extend(pozostale)
             continue
-        poza = max(0.0, sek_pozostale - sum((k - s).total_seconds() for s, k in fragmenty))
+        # Paczka zahaczajaca o szkolenie liczy sie CALA (operacje, 2026-10-14):
+        # szkolacy konczy szkolenie na kazda przerwe, a paczka zostaje otwarta —
+        # czas przerwy szedl z prawdziwych sztuk i trener wychodzil ponizej celu.
         paczek_szkolenia += 1
-        w_szkoleniu_dnia.setdefault(dzien, []).extend(fragmenty)
-        sztuk_zwykle += sztuk * (poza / trwanie)
-        sekundy_poza_czesciowych += poza
+        w_szkoleniu_dnia.setdefault(dzien, []).extend(pozostale)
 
     sekundy_szkolenia = 0.0
     sztuk_zaliczonych = 0.0
@@ -2941,7 +2941,7 @@ def policz_wydajnosc(paczki, szkolenia=(), cel_dnia=None, jako_szkolony=()):
         'paczek_jako_szkolony': paczek_jako_szkolony,
         'sekundy_jako_szkolony': sekundy_jako_szkolony,
         'sztuk_do_sredniej': sztuk_zwykle,
-        'sekundy_do_sredniej': suma_zlaczonych_okresow(zwykle_okresy) + sekundy_poza_czesciowych,
+        'sekundy_do_sredniej': suma_zlaczonych_okresow(zwykle_okresy),
         'cel_szt_h': (round(cel_x_sekundy / sekundy_z_celem, 1)
                       if sekundy_z_celem > 0 else None),
         'sekundy_z_celem': sekundy_z_celem,
