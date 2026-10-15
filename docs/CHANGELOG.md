@@ -34,6 +34,14 @@ Nowe kolumny `imported_carton.tabela_ilosci`, `roznica`, `roznica_potwierdzona_a
 ### Usunięte
 - Pytanie „Czy akceptujesz nadwyżkę?” i okno „📣 Poinformuj lidera” na stanowisku.
 
+## 2026-10-14 — Normy: paczka szkolącego zahaczająca o szkolenie liczy się cała
+
+### Zmienione
+- **Normy, osoba szkoląca**: paczka, która choć częściowo przypada na szkolenie, liczy się
+  w całości jako 100% celu z dnia paczki. Wcześniej tylko minuty w szkoleniu — przy przerwie
+  (trzeba na nią zakończyć szkolenie) z otwartą paczką czas przerwy szedł z prawdziwych sztuk
+  i szkoląca z samymi paczkami ze szkolenia miała 93% celu (zgłoszenie z testu, 12.10).
+
 ## 2026-10-13 (4) — Szkolenia z czynności, cel z dnia pracy
 
 Nowa tabela `szkolenie_czynnosci` (`create_all()`); nowe kolumny `historia_celu.zmienil_id`,
