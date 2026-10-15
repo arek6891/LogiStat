@@ -1,5 +1,39 @@
 # LogiStat — Changelog
 
+## 2026-10-15 — Tabela ilości na koniec paczki, Total Amount, ❗ do potwierdzenia
+
+Nowe kolumny `imported_carton.tabela_ilosci`, `roznica`, `roznica_potwierdzona_at`,
+`roznica_potwierdzona_przez`, `udzial_paczki.tabela` (`migrate_columns()`).
+
+### Dodane
+- **Czasy paczek → Koniec / Paczka do dokończenia**: zamiast listy kategorii tabela grup
+  artykułowych (Biżuteria, Akcesoria, Okulary, Tekstylia) z kolumnami Brak, Nadwyżka,
+  Uszkodzone, Podwójnie, Potrójnie; „Pojedynczo” i „Sortowane ze względu na uszkodzenie”
+  liczy system. Pod tabelą: sortowanie inne, podmiana karty (uszkodzonej / algorytm),
+  etykietowanie worków. Ilość biżuterii = ilość z pliku minus pozostałe grupy.
+- Przy paczce kilku osób każdy wpisuje swoje sztuki wprost i nie widzi wpisów innych.
+- **❗ do potwierdzenia**: paczka z Brakiem, Nadwyżką, Uszkodzonymi albo (kilka osób) sumą
+  inną niż w pliku dostaje wykrzyknik na stronie Paczki; lider klika „✔ Potwierdź”.
+  Kafelek „❗ Do potwierdzenia” na Dashboardzie (Dziś).
+- **Paczki → ✎ Ilości**: ta sama tabela (paczka kilku osób — poprawka jednej osoby naraz).
+- Dymki „ⓘ” w Statystykach ogólnych (skąd ilość w każdej kolumnie, jak liczony koszt —
+  koszt tylko dla admina) i w Normach (które wpisane pola liczą się do sztuk).
+
+### Zmienione
+- **Rozliczenie z tabeli**: Labelling one / twice / triple tylko z biżuterii, twice × 1,5,
+  triple × 2 (pierwsza etykieta 1, każda kolejna 0,5); akcesoria / okulary / tekstylia do
+  swoich kolumn (wszystkie sztuki bez uszkodzonych); uszkodzone + sortowanie inne → Sorting.
+  Ilości mogą mieć połówki.
+- **Total Amount** = suma wszystkich kolumn oprócz Labelling twice i triple (wcześniej sam
+  Labelling one), w obu wierszach — także żółtym double rate.
+- **Normy, paczka kilku osób**: osoba dostaje Pojedynczo + Podwójnie + Potrójnie + Uszkodzone
+  ze swojej tabeli. Paczka jednej osoby bez zmian (Stückzahl).
+- **Filtr „⚠️ Błędy”** dla paczek z tabelą: tylko rozpoczęte bez końca i niepotwierdzony ❗,
+  bez progów. Paczki sprzed zmiany — stare reguły.
+
+### Usunięte
+- Pytanie „Czy akceptujesz nadwyżkę?” i okno „📣 Poinformuj lidera” na stanowisku.
+
 ## 2026-10-14 — Normy: paczka szkolącego zahaczająca o szkolenie liczy się cała
 
 ### Zmienione

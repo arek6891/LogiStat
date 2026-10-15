@@ -205,17 +205,15 @@ def test_panel_ilosci_mowi_ze_paczka_nie_jest_zakonczona(leader_client):
     assert '/api/employee-lookup' in html
 
 
-def test_nadwyzka_pyta_i_informuje_lidera(leader_client):
-    """Suma > ilosc w paczce: pytanie (fokus na „Nie”), po „Tak” 5 s „Poinformuj
-    lidera”, ktore znika samo. Serwer sumy nadal nie waliduje."""
+def test_bez_pytania_o_nadwyzke_i_bez_poinformuj_lidera(leader_client):
+    """Operacja 2026-10-15: nadwyzka to zwykly wpis w tabeli (polegamy na
+    deklaracji pracownika), lider widzi ❗ na /paczki i na Dashboardzie."""
     html = leader_client.get('/scan-paczki').get_data(as_text=True)
 
-    assert 'id="nadwyzkaModal"' in html
-    assert 'Czy akceptujesz nadwyżkę?' in html
-    assert 'Poinformuj lidera' in html
-    assert 'CZAS_INFO_LIDERA_MS = 5000' in html
-    # Bezpieczny przycisk z fokusem = „Nie, poprawie" (trzeci argument zapytaj()).
-    assert "{ 'nadwyzka-tak': true, 'nadwyzka-nie': false }, 'nadwyzka-nie')" in html
+    assert 'nadwyzkaModal' not in html
+    assert 'Czy akceptujesz nadwyżkę?' not in html
+    assert 'liderModal' not in html
+    assert 'CZAS_INFO_LIDERA_MS' not in html
 
 
 def test_zakladki_do_dokonczenia_i_zespol(leader_client):

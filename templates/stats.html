@@ -88,9 +88,34 @@
                         <th>Rodzaj pracownika</th>
                         <th>Nazwa zmiany</th>
                         <th style="text-align:right;">Paczek</th>
-                        <th style="text-align:right;">Sztuk</th>
+                        <th style="text-align:right;">Sztuk
+                            <span class="podpowiedz" tabindex="0" aria-label="Jak liczone są sztuki w Normach">ⓘ
+                                <span class="podpowiedz-tresc">
+                                    <strong>Sztuki do Norm</strong> — tylko paczki <u>zakończone</u>, po dniu końca paczki:<br><br>
+                                    <strong>Paczka jednej osoby</strong>: ilość z pliku importu (Stückzahl).
+                                    Wpisane Brak, Nadwyżka, Uszkodzone, Podwójnie i Potrójnie <u>nie zmieniają</u>
+                                    tej liczby, służą do rozliczenia.<br><br>
+                                    <strong>Paczka kilku osób</strong> (Pakowanie zespołowe, Paczka do dokończenia):
+                                    każda osoba dostaje to, co sama wpisała, czyli
+                                    <em>Pojedynczo + Podwójnie + Potrójnie + Uszkodzone</em> ze wszystkich grup.
+                                    Podwójnie i Potrójnie liczą się tu jako zwykłe sztuki, bez ×1,5 i ×2.<br><br>
+                                    <u>Nie liczą się</u>: Sortowanie inne, podmiany kart, worki.
+                                    Osoba, której udział zamknął ktoś inny (bez ilości), nie dostaje nic.
+                                    Paczki sprzed 15.10.2026: suma wpisanych kategorii.
+                                </span>
+                            </span>
+                        </th>
                         <th style="text-align:right;">Godzin</th>
-                        <th style="text-align:right;">Szt./h</th>
+                        <th style="text-align:right;">Szt./h
+                            <span class="podpowiedz" tabindex="0" aria-label="Jak liczone są sztuki na godzinę">ⓘ
+                                <span class="podpowiedz-tresc">
+                                    <strong>Szt./h</strong> = Sztuk ÷ godziny skanowania (od „Start” do „Koniec”
+                                    paczki; równoległe paczki liczą się raz). Przerwy nie obniżają wyniku.
+                                    Szkolący: paczka, która choć częściowo przypada na szkolenie, liczy się w całości po celu (🎓 w wierszu);
+                                    szkolony: czas pod szkoleniem nie wchodzi wcale.
+                                </span>
+                            </span>
+                        </th>
                         <th style="text-align:right;">% średniej</th>
                         <th>Ocena</th>
                         <th style="text-align:right;" class="kol-cel">% celu</th>

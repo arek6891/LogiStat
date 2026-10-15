@@ -32,7 +32,7 @@
     {% endif %}
 </div>
 
-<div style="overflow-x:auto;">
+<div class="tabela-statystyk">
     <table class="data-table" id="statsTable">
         <thead>
             <tr>
@@ -56,18 +56,16 @@
                     Total Amount
                     <span class="podpowiedz" tabindex="0" aria-label="Skąd się bierze Total Amount">ⓘ
                         <span class="podpowiedz-tresc">
-                            <strong>Total Amount</strong> — ilość z kategorii
-                            <strong>{{ category_labels[total_amount_category] }}</strong>
-                            ({{ category_labels_pl[total_amount_category] }}), czyli z ilości
-                            wpisywanych przez pracownika przy zakończeniu paczki
-                            („Czasy paczek" → Koniec) i poprawianych w „Paczki (dane)" → ✎ Ilości.<br><br>
-                            Świadomie <u>nie</u> jest to suma wszystkich kategorii: jedna sztuka
-                            przechodzi przez kilka czynności (etykietowanie, sortowanie…), więc
-                            taka suma liczyłaby ten sam towar wielokrotnie i przebijała Amounts.<br><br>
-                            <em>Amounts</em> = ile sztuk przyjechało · <em>Total Amount</em> = ile
-                            sztuk faktycznie przerobiono. Rozjazd między nimi jest normalny
-                            w trakcie zmiany — licznik 🔒 obok List-ID pokazuje, ile paczek
-                            linii jest już zeskanowanych.
+                            <strong>Total Amount</strong> = suma wszystkich kolumn Amount
+                            w wierszu <u>oprócz</u>
+                            {% for kat in total_amount_bez %}<strong>{{ category_labels[kat] }}</strong>{% if not loop.last %} i {% endif %}{% endfor %}
+                            (decyzja operacji z 15.10.2026, w obu wierszach, także żółtym double rate).
+                            Do tej daty była to sama kolumna Labelling one.<br><br>
+                            Twice i triple to te same sztuki biżuterii z dodatkowymi etykietami,
+                            więc w sumie liczyłyby się drugi raz.<br><br>
+                            <em>Amounts</em> = ile sztuk przyjechało według pliku · <em>Total Amount</em> = suma
+                            usług z tabel ilości. Rozjazd jest normalny w trakcie zmiany. Licznik 🔒
+                            pod Amounts pokazuje, ile paczek linii jest już zeskanowanych.
                         </span>
                     </span>
                 </th>
@@ -75,13 +73,36 @@
                 <th colspan="{{ 2 if pokaz_koszty else 1 }}"
                     style="text-align:center;background:rgba(99,102,241,.08);border-bottom:2px solid var(--accent);min-width:160px;">
                     {{ category_labels[cat] }}
+                    <span class="podpowiedz" tabindex="0" aria-label="Skąd się bierze {{ category_labels[cat] }}">ⓘ
+                        <span class="podpowiedz-tresc" style="text-align:left;font-weight:400;">
+                            <strong>{{ category_labels[cat] }}</strong> — suma ze wszystkich paczek
+                            tej linii, z tabeli ilości wpisywanej na koniec paczki
+                            („Czasy paczek” → Koniec, poprawki w „Paczki (dane)” → ✎ Ilości):<br>
+                            {{ zrodlo_kategorii[cat] }}<br><br>
+                            Paczki zakończone przed 15.10.2026 mają ilości wpisane po staremu,
+                            od razu per kolumna. Linia z ilościami wpisanymi ręcznie (bez 🔒) bierze je
+                            z tej tabeli, nie z paczek.
+                            {% if pokaz_koszty %}<br><br>
+                            <strong>Cost</strong> = Amount × stawka „{{ category_labels[cat] }}”
+                            z Mapowania kosztów (Panel Admina) za miesiąc i rok Loading date
+                            tej linii. Brak stawki na ten miesiąc = koszt 0.{% endif %}
+                        </span>
+                    </span>
                     <span style="display:block;font-weight:400;font-size:.72rem;color:var(--text-muted);">
                         {{ category_labels_pl[cat] }}
                     </span>
                 </th>
                 {% endfor %}
                 {% if pokaz_koszty %}
-                <th rowspan="2" style="min-width:100px;background:rgba(34,197,94,.08);">Total cost (EUR)</th>
+                <th rowspan="2" style="min-width:100px;background:rgba(34,197,94,.08);">Total cost (EUR)
+                    <span class="podpowiedz" tabindex="0" aria-label="Skąd się bierze Total cost">ⓘ
+                        <span class="podpowiedz-tresc" style="font-weight:400;">
+                            <strong>Total cost</strong> = suma kolumn Cost w wierszu, czyli dla każdej
+                            kolumny Amount × jej stawka z Mapowania kosztów za miesiąc Loading date.
+                            Liczony przy każdym otwarciu strony, więc zmiana stawki od razu zmienia koszt.
+                        </span>
+                    </span>
+                </th>
                 {% endif %}
             </tr>
             <tr>
@@ -149,8 +170,12 @@
                 {% set computed_cost = amt * rate %}
                 {% set row_total.val = row_total.val + computed_cost %}
                 {% endfor %}
-                {# Total Amount = wylacznie Labelling one — patrz dymek w naglowku. #}
-                {% set row_total_amount = cd.get(total_amount_category, {}).get('amount', 0) %}
+                {# Total Amount = wszystko poza twice/triple — patrz dymek w naglowku. #}
+                {% set row_total_amount = namespace(val=0) %}
+                {% for cat in categories if cat not in total_amount_bez %}
+                {% set row_total_amount.val = row_total_amount.val + (cd.get(cat, {}).get('amount', 0) or 0) %}
+                {% endfor %}
+                {% set row_total_amount = row_total_amount.val | round(2) %}
                 <td class="row-total-amount" style="font-weight:700; color:#60a5fa;"
                     data-val="{{ row_total_amount }}">{{ row_total_amount }}</td>
 
@@ -190,7 +215,7 @@
             {% set amt = dcd.get(cat, {}).get('amount', 0) %}
             {% set rate = rates.get(cat, 0.0) %}
             {% set dr_total.val = dr_total.val + amt * rate %}
-            {% set dr_total_amount.val = dr_total_amount.val + amt %}
+            {% if cat not in total_amount_bez %}{% set dr_total_amount.val = dr_total_amount.val + amt %}{% endif %}
             {% endfor %}
             <tr data-id="{{ s.id }}" data-ym="{{ row_ym }}" data-dr-row="true" class="dr-row">
                 <td>{{ s.loading_date.strftime('%d.%m.%Y') }}</td>
@@ -288,6 +313,12 @@
         top: 0;
         z-index: 2;
     }
+    /* Otwarty dymek nad drugim wierszem naglowka (tez sticky, z-index 2). */
+    #statsTable th:hover,
+    #statsTable th:focus-within { z-index: 6; }
+    /* overflow-x:auto przycina tez w pionie — przy kilku liniach dymek
+       z naglowka uciekal pod krawedz tabeli. */
+    .tabela-statystyk { overflow-x: auto; min-height: 460px; }
 
     .dr-row {
         background: rgba(251, 191, 36, .10);
@@ -334,7 +365,10 @@
     });
 
     const ratesByYm = JSON.parse('{{ rates_by_ym|tojson|safe }}');
-    const TOTAL_AMOUNT_CATEGORY = '{{ total_amount_category }}';
+    const TOTAL_AMOUNT_BEZ = {{ total_amount_bez | tojson }};
+    // Ilosci ze skanow moga miec polowki (Labelling twice ×1,5).
+    const ilosc = (v) => parseFloat(v) || 0;
+    const pokazIlosc = (v) => String(Math.round(v * 100) / 100);
 
     function updateRowTotal(row) {
         let total = 0;
@@ -343,17 +377,15 @@
         const ym = row.dataset.ym;
         const rates = ratesByYm[ym] || {};
 
-        // Zwykly wiersz: Total Amount = tylko TOTAL_AMOUNT_CATEGORY (Labelling one).
-        // Zolty wiersz double rate zostaje na sumie wszystkich kategorii.
-        const wierszDoubleRate = row.dataset.drRow === 'true';
+        // Total Amount = wszystko poza TOTAL_AMOUNT_BEZ, w obu wierszach.
 
         categories.forEach(cat => {
             const amountInput = row.querySelector(`[data-cat="${cat}"][data-field="amount"]`);
             const costInput = row.querySelector(`[data-cat="${cat}"][data-field="cost"]`);
             if (amountInput && costInput) {
-                const amt = parseInt(amountInput.value) || 0;
+                const amt = ilosc(amountInput.value);
                 const rate = parseFloat(rates[cat]) || 0.0;
-                if (wierszDoubleRate || cat === TOTAL_AMOUNT_CATEGORY) totalAmount += amt;
+                if (!TOTAL_AMOUNT_BEZ.includes(cat)) totalAmount += amt;
                 const cst = amt * rate;
                 costInput.value = cst.toFixed(2);
                 total += cst;
@@ -368,7 +400,7 @@
 
         const totalAmountCell = row.querySelector('.row-total-amount');
         if (totalAmountCell) {
-            totalAmountCell.textContent = totalAmount;
+            totalAmountCell.textContent = pokazIlosc(totalAmount);
             totalAmountCell.dataset.val = totalAmount;
         }
     }
@@ -383,12 +415,12 @@
 
         let sumTotalAmounts = 0;
         document.querySelectorAll('.row-total-amount').forEach(td => {
-            let rowAmt = parseInt(td.dataset.val);
-            if (isNaN(rowAmt)) rowAmt = parseInt(td.textContent) || 0;
+            let rowAmt = parseFloat(td.dataset.val);
+            if (isNaN(rowAmt)) rowAmt = ilosc(td.textContent);
             sumTotalAmounts += rowAmt;
         });
         const sumTotAmtEl = document.getElementById('sumTotalAmounts');
-        if (sumTotAmtEl) sumTotAmtEl.textContent = sumTotalAmounts;
+        if (sumTotAmtEl) sumTotAmtEl.textContent = pokazIlosc(sumTotalAmounts);
 
         // Category Amounts and Costs
         const categories = JSON.parse('{{ categories|tojson|safe }}');
@@ -396,7 +428,7 @@
             let catAmount = 0;
             let catCost = 0;
             document.querySelectorAll(`[data-cat="${cat}"][data-field="amount"]`).forEach(inp => {
-                catAmount += parseInt(inp.value) || 0;
+                catAmount += ilosc(inp.value);
             });
             document.querySelectorAll(`[data-cat="${cat}"][data-field="cost"]`).forEach(inp => {
                 // Cost is already calculated per row based on mapping
@@ -404,7 +436,7 @@
             });
             const amtEl = document.getElementById(`sum-${cat}-amount`);
             const costEl = document.getElementById(`sum-${cat}-cost`);
-            if (amtEl) amtEl.textContent = catAmount;
+            if (amtEl) amtEl.textContent = pokazIlosc(catAmount);
             if (costEl) costEl.textContent = catCost.toFixed(2) + ' €';
         });
 

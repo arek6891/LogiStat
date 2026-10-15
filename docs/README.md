@@ -93,7 +93,8 @@ LogiStat/
 │   ├── test_recompute.py           # recompute_general_stat (suma, nie delta)
 │   ├── test_double_rate_i_koszty.py # Żółta linia + amount × stawka
 │   ├── test_scan_categories.py     # Ilości ze skanu → rozliczenie, category_source
-│   ├── test_total_amount.py        # Total Amount = Labelling one (ekran + eksport)
+│   ├── test_total_amount.py        # Total Amount = wszystko poza twice/triple (ekran + eksport)
+│   ├── test_tabela_ilosci.py       # Tabela ilości → rozliczenie, zespół, ❗ do potwierdzenia
 │   ├── test_packages_api.py        # Ręczne dodanie/edycja paczki
 │   ├── test_package_times.py       # Blokada właściciela paczki
 │   ├── test_filtry_paczek.py       # Filtry /paczki (daty, osoba, błędy) + odblokowanie
@@ -118,7 +119,8 @@ LogiStat/
 ├── docker-compose.test.yml # PostgreSQL pod pytest (port 55432, tmpfs)
 ├── .env.example            # Wzor konfiguracji lokalnej (SECRET_KEY, haslo bazy)
 ├── static/
-│   └── style.css           # Design system (dark theme)
+│   ├── style.css           # Design system (dark theme)
+│   └── tabela_ilosci.js    # Tabela ilości (stanowisko + okno „✎ Ilości”)
 ├── templates/
 │   ├── base.html           # Layout + sidebar + toasty
 │   ├── login.html          # Logowanie liderów/adminów
@@ -176,11 +178,11 @@ zalogowanego lidera, bo to ekran stanowiskowy).
 ### 👷 Pracownik
 - 📷 **Skaner zmian** (`/scanner/1`, `/scanner/2`) — rejestracja obecności, EAN-128
 - 🕐 **Czas pracy** (`/time-tracking`) — skan kodu pracownika: ☕ przerwa · 🚪 **Inne** · 🎓 **Szkolenie** · 🏁 koniec pracy
-- ⏱ **Czasy paczek** (`/scan-paczki`) — Start/Koniec procesowania + ilości per kategoria przy końcu; zakładki **📤 Paczka do dokończenia** (koniec zmiany: wpisz swoje ilości, paczkę kończy następna osoba) i **👥 Pakowanie zespołowe** (dołącz do rozpoczętej paczki; koniec wbija każdy sam); ekran powiększony dla stanowiska; **nadwyżka** (suma > ilość w paczce) → pytanie „Czy akceptujesz nadwyżkę?”, po „Tak” 5 s „Poinformuj lidera”
+- ⏱ **Czasy paczek** (`/scan-paczki`) — Start/Koniec procesowania + **tabela ilości** przy końcu (patrz „Tabela ilości” niżej); zakładki **📤 Paczka do dokończenia** (koniec zmiany: wpisz swoje sztuki, paczkę kończy następna osoba) i **👥 Pakowanie zespołowe** (dołącz do rozpoczętej paczki; koniec wbija każdy sam ze swoimi sztukami); ekran powiększony dla stanowiska
 - 🔎 **Paczki inspektor** (`/scan-package`) — podgląd statusu paczki, **tylko do odczytu**
 
 ### 🧑‍💼 Lider
-- 🏠 **Dashboard** (`/dashboard`) — **Dziś** (plan dzisiejszego pliku), **Wybrany dzień**, **Podsumowanie** (niezrobione wg Loading date, z filtrem zakresu), **Per Loading date** (tabela dni z zakresu), per pracownik, per zmiana; kliknięcie nazwiska otwiera Normy tej osoby
+- 🏠 **Dashboard** (`/dashboard`) — **Dziś** (plan dzisiejszego pliku + kafelek **❗ Do potwierdzenia**), **Wybrany dzień**, **Podsumowanie** (niezrobione wg Loading date, z filtrem zakresu), **Per Loading date** (tabela dni z zakresu), per pracownik, per zmiana; kliknięcie nazwiska otwiera Normy tej osoby
 - 📈 **Forecast** (`/forecast`) — prognoza ilości **sztuk** per dzień (Actual = suma sztuk wg Loading date); **Różnica = Actual − Forecast** (minus = przyjechało mniej niż plan)
 - 📋 **Przydzielanie** (`/assignment`) — drag & drop operatorów do czynności; pod każdą czynnością **estymacja** „≈ X szt./zmianę · Y szt./h” = przydzieleni × średnia osoby (30 dni, wszyscy pracownicy; Post Processing ze skanów paczek, reszta z Wpisu ilości; zmiana 7,5 h)
 - ✏️ **Wpis ilości** (`/data-entry`) — ilości zrobione per osoba
@@ -188,7 +190,7 @@ zalogowanego lidera, bo to ekran stanowiskowy).
 - 📦 **Paczki (dane)** (`/paczki`) — surowe dane paczek z filtrami (patrz niżej)
 - 👥 **Czasy pracowników** (`/worker-times`) — przegląd i korekta czasów + filtry
 - 📥 **Import danych** (`/import-csv`) — CSV (`;`) lub Excel (`.xlsx`), dedup po barcode; przed importem **okno z datą pliku**; niżej **📅 Popraw Loading date** (grupowo)
-- 💶 **Statystyki ogólne** (`/general-stats`) — rozliczenie wg list i dat (filtr Loading date od–do po lewej, pod tytułem) + eksport Excel. **Lider: tylko podgląd, bez kolumn kosztów** (ekran i Excel); koszty i edycja ilości — admin
+- 💶 **Statystyki ogólne** (`/general-stats`) — rozliczenie wg list i dat (filtr Loading date od–do po lewej, pod tytułem) + eksport Excel; przy każdej kolumnie **ⓘ** — skąd ilość i jak liczony koszt; **Total Amount** = suma kolumn bez Labelling twice i triple. **Lider: tylko podgląd, bez kolumn kosztów** (ekran i Excel); koszty i edycja ilości — admin
 - 👤 **Użytkownicy** (`/admin/users`) — zakładanie i edycja kont, w tym **rodzaj pracownika** i **nazwa zmiany** (listy rozwijane)
 
 ### 🛡️ Admin
@@ -321,8 +323,8 @@ starych dni.
 ### Paczki (dane) — filtry i odblokowanie
 **Domyślnie widać tylko paczki niezrobione** (bez zarejestrowanego „Końca paczki").
 Filtry: **typ daty + zakres dat**, barcode, land, **pracownik** (kto przejął / rozpoczął
-/ zakończył), **Status**, a w rzędzie pod nimi znaczniki **tylko double rate** i
-**⚠️ pokaż błędy**.
+/ zakończył), **Status**, a w rzędzie pod nimi znaczniki **tylko double rate**,
+**⚠️ pokaż błędy** i **❗ do potwierdzenia**.
 
 **Status:** **Niezrobione** (domyślnie) · **Zrobione** (wyłącznie zakończone) ·
 **Wszystkie** (jedne i drugie). Do 2026-10 był tu znacznik „pokaż zrobione", który
@@ -357,9 +359,44 @@ w zakresie i wciąż otwarte".
 ⚠️ **Status „Zrobione" i „Wszystkie" wymaga zakresu dat** — bez niego widok objąłby
 całą historię (tysiące paczek). Wybór bez daty blokuje filtrowanie i podświetla pola dat.
 
-Filtr błędów łapie dwie rzeczy:
+Filtr błędów łapie:
 1. paczkę **rozpoczętą i nigdy nie zakończoną**,
-2. ilość w kategorii przekraczającą Stückzahl o **ponad 10%**.
+2. paczkę z tabelą ilości (od 15.10.2026) z **niepotwierdzonym ❗**,
+3. paczkę sprzed tabeli: ilość w kategorii przekraczającą Stückzahl o **ponad 10%**
+   (albo nadwyżkę przy kilku osobach).
+
+**❗ do potwierdzenia** pokazuje tylko paczki z różnicą w tabeli (Brak, Nadwyżka,
+Uszkodzone, przy kilku osobach suma inna niż w pliku), ze wszystkich dni — to ta sama
+lista co kafelek na Dashboardzie. Lider sprawdza (rozmowa z pracownikiem, przeliczenie
+kartonu) i klika **✔ Potwierdź**; zostaje wpis, kto i kiedy. Poprawka w **✎ Ilości**
+też potwierdza.
+
+### Tabela ilości na koniec paczki (od 15.10.2026)
+Wiersze to grupy artykułowe: **Biżuteria, Akcesoria, Okulary, Tekstylia**. Plik importu
+ma jedną ilość na karton, więc cała trafia do Biżuterii — operator wpisuje tylko, ile
+jest akcesoriów, okularów i tekstyliów (kolumna „Ilość”), a system odejmuje je od
+biżuterii. Dalej kolumny **Brak, Nadwyżka, Uszkodzone, Podwójnie, Potrójnie**;
+**Pojedynczo** = Ilość − Brak + Nadwyżka − Uszkodzone − Podwójnie − Potrójnie liczy
+system. Pod tabelą: sortowanie inne, podmiana karty (uszkodzonej / algorytm), worki.
+Pola są puste; puste = 0 przy zapisie. Ujemne „Pojedynczo” blokuje zapis.
+
+Do rozliczenia (Statystyki ogólne):
+
+| Kolumna | Skąd |
+|---|---|
+| Labelling one | Biżuteria · Pojedynczo |
+| Labelling twice | Biżuteria · Podwójnie × 1,5 (pierwsza etykieta 1, każda kolejna 0,5) |
+| Labelling triple | Biżuteria · Potrójnie × 2 |
+| Accessoire / Sunglasses / Textile | Akcesoria / Okulary / Tekstylia — wszystkie sztuki bez uszkodzonych |
+| Sorting | Uszkodzone ze wszystkich grup + sortowanie inne |
+| Card facture | obie podmiany karty |
+| Labelling polybag | worki |
+
+Brak nie trafia do rozliczenia. **Paczka kilku osób** (zespół, do dokończenia): każdy
+wpisuje swoje sztuki wprost (Pojedynczo, Podwójnie, Potrójnie, Uszkodzone) i nie widzi
+wpisów innych; karton = suma, a gdy suma ≠ ilość w pliku — ❗. **Normy** tej osoby =
+Pojedynczo + Podwójnie + Potrójnie + Uszkodzone z jej tabeli; paczka jednej osoby
+dalej liczy się ilością z pliku.
 
 Paczka w trakcie należy do pracownika, który ją rozpoczął — inny dostanie `409` przy
 starcie i `403` przy końcu. Jeśli ten pracownik już do niej nie wróci, lider zdejmuje
