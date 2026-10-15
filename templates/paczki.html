@@ -7,7 +7,8 @@
         <p style="color:var(--text-muted);">Surowe dane paczek: zaimportowane z plików CSV/Excel oraz dodane ręcznie.<br>
             <span style="font-size:.85rem;">
             {% if brak_daty_dla_zrobionych %}<strong style="color:var(--danger);">⚠️ Status „Zrobione" / „Wszystkie" wymaga zakresu dat</strong> — bez niego widok obejmowałby całą historię. Ustaw datę „od" lub „do" i filtruj ponownie. Poniżej widok domyślny.
-            {% elif tylko_bledy %}Filtr błędów: paczki rozpoczęte bez końca, z ilością przekraczającą Stückzahl o ponad 10% oraz paczki kilku osób z nadwyżką (do wyjaśnienia).
+            {% elif do_potwierdzenia %}Widok: <strong>paczki z ❗ do potwierdzenia</strong> — Brak, Nadwyżka lub Uszkodzone w tabeli ilości albo suma kilku osób inna niż w pliku, z wszystkich dni. „✔ Potwierdź” zdejmuje paczkę z listy.
+            {% elif tylko_bledy %}Filtr błędów: paczki rozpoczęte bez końca oraz paczki z niepotwierdzonym ❗ (Brak, Nadwyżka lub Uszkodzone w tabeli ilości albo suma kilku osób inna niż w pliku). Paczki sprzed 15.10.2026: stare reguły (kategoria ponad Stückzahl +10 %, nadwyżka przy kilku osobach).
             {% elif filtr_po_koncu %}Filtr po <strong>dacie końca paczki</strong> — z definicji obejmuje wyłącznie paczki zakończone.
             {% elif status == 'zrobione' %}Widok: <strong>tylko paczki zakończone</strong> w zadanym zakresie dat.
             {% elif status == 'do_dokonczenia' %}Widok: <strong>paczki do dokończenia</strong> — poprzednia osoba wpisała swoje ilości, nikt jeszcze nie wbił „Start".
@@ -59,6 +60,12 @@
                     <input type="checkbox" name="bledy" value="1" {% if tylko_bledy %}checked{% endif %}
                            style="width:16px;height:16px;cursor:pointer;">
                     <span style="color:var(--danger);">⚠️ pokaż błędy</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;white-space:nowrap;font-size:.85rem;"
+                       title="Paczki z różnicą w tabeli ilości, których lider jeszcze nie potwierdził (wszystkie dni)">
+                    <input type="checkbox" name="do_potwierdzenia" value="1" {% if do_potwierdzenia %}checked{% endif %}
+                           style="width:16px;height:16px;cursor:pointer;">
+                    <span style="color:var(--danger);">❗ do potwierdzenia</span>
                 </label>
             </div>
         </form>
@@ -143,6 +150,30 @@
     </div>
 </div>
 
+<!-- Modal tabeli ilosci (paczki od 2026-10-15) — ta sama tabela co na stanowisku -->
+<div id="tabelaModal" data-modal-guard style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;">
+    <div style="background:var(--bg-card-solid);border-radius:12px;padding:2rem;max-width:820px;width:94%;max-height:92vh;overflow-y:auto;">
+        <h3 style="margin-top:0;">✎ Tabela ilości</h3>
+        <p style="color:var(--text-muted);font-size:.85rem;">
+            Paczka <strong id="tabBarcode" style="font-family:monospace;color:var(--accent);"></strong>
+            · w pliku <strong id="tabStueck"></strong> szt.<br>
+            <strong id="tabKto" style="color:var(--text-primary);"></strong><br>
+            Zapis od razu przelicza Statystyki ogólne i potwierdza ❗ tej paczki.
+        </p>
+        <div id="tabOsobaWiersz" style="display:none;margin:.5rem 0 1rem;">
+            <label for="tabOsoba" style="font-size:.85rem;color:var(--text-muted);">Czyje ilości poprawiasz:</label>
+            <select id="tabOsoba" class="form-control" style="max-width:320px;"></select>
+            <div id="tabOsoby" style="font-size:.8rem;color:var(--text-muted);margin-top:.35rem;"></div>
+        </div>
+        <div id="tabTabela"></div>
+        <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:1.25rem;">
+            <button class="btn btn-ghost" onclick="zamknijTabele()">Anuluj</button>
+            <button class="btn btn-primary" id="tabZapisz" onclick="zapiszTabele()">💾 Zapisz</button>
+        </div>
+        <div id="tabBlad" style="display:none;margin-top:.75rem;color:var(--danger);font-size:.85rem;"></div>
+    </div>
+</div>
+
 <div style="overflow-x:auto;">
     <table class="data-table">
         <thead>
@@ -170,10 +201,27 @@
                     <a href="#" class="paczka-ilosci" style="color:var(--info);text-decoration:underline dotted;"
                        onclick="otworzQty(this.closest('tr').querySelector('[data-cats]')); return false;"
                        title="Pokaż ilości wpisane przez pracownika">{{ item.barcode }}</a>
-                    {% for blad in bledy_map.get(item.id, []) %}
+                    {% for blad in bledy_map.get(item.id, []) if not blad.startswith('❗') %}
                     <div style="margin-top:3px;font-family:inherit;font-size:.7rem;background:rgba(248,113,113,.15);
                                 color:var(--danger);padding:2px 6px;border-radius:6px;display:inline-block;">⚠️ {{ blad }}</div>
                     {% endfor %}
+                    {% if item.roznica %}
+                    {# ❗ z tabeli ilosci: lider potwierdza po rozmowie z pracownikiem
+                       albo po przeliczeniu kartonu (operacja, 2026-10-15). #}
+                    {% if item.roznica_potwierdzona_at %}
+                    <div class="roznica-paczki potwierdzona"
+                         title="{{ item.powody_roznicy() | join('; ') }}">✔ różnica potwierdzona
+                        · {{ item.potwierdzajacy.display_name if item.potwierdzajacy else '?' }}
+                        {{ item.roznica_potwierdzona_at | localdt('%d.%m %H:%M') }}</div>
+                    {% else %}
+                    <div class="roznica-paczki">❗ {{ item.powody_roznicy() | join('; ') }}
+                        <button class="btn btn-ghost btn-sm" style="padding:1px 6px;font-size:.7rem;"
+                            data-id="{{ item.id }}" data-barcode="{{ item.barcode }}"
+                            onclick="potwierdzRoznice(this)"
+                            title="Sprawdzone (rozmowa z pracownikiem albo przeliczony karton) — zdejmij wykrzyknik">✔ Potwierdź</button>
+                    </div>
+                    {% endif %}
+                    {% endif %}
                 </td>
                 <td>{{ item.land or '—' }}</td>
                 <td style="text-align:right; font-weight:bold;">{{ item.stueckzahl }}</td>
@@ -204,7 +252,7 @@
                         {% for u in item.udzialy %}
                         <div>👤 {{ u.user.display_name if u.user else '?' }}
                             · {{ u.start_at | localdt('%H:%M') }}–{{ u.end_at | localdt('%H:%M') if u.end_at else '…' }}
-                            {% if u.end_at %}· {{ u.suma() }} szt.{% endif %}
+                            {% if u.end_at %}· {{ u.sztuki() }} szt.{% endif %}
                             {% if u.zamkniete_przez %}<span title="Nie wbił(a) końca — bez ilości, poza normami">· bez ilości (zamknął: {{ u.zamykajacy.display_name if u.zamykajacy else '?' }})</span>{% endif %}
                         </div>
                         {% endfor %}
@@ -282,7 +330,9 @@
                             data-kto="{{ item.scan_end_by_user.display_name if item.scan_end_by_user else '' }}"
                             data-udzialy='{{ item.udzialy_krotko() | tojson }}'
                             data-koniec="{{ item.scan_end_at | localdt('%d.%m.%Y %H:%M') if item.scan_end_at else '' }}"
-                            onclick="otworzQty(this)" title="Popraw ilości per kategoria">✎ Ilości</button>
+                            data-edytor="{{ item.edytor_ilosci() }}"
+                            data-tabela='{{ item.get_tabela() | tojson }}'
+                            onclick="otworzQty(this)" title="Pokaż / popraw ilości">✎ Ilości</button>
                     </div>
                     {% if item.modified_at %}<div style="font-size:.7rem;color:var(--text-muted);" title="Ostatnia edycja">✏ {{ item.modified_by_user.username if item.modified_by_user else '' }} · {{ item.modified_at | localdt('%d.%m %H:%M') }}</div>{% endif %}
                 </td>
@@ -302,11 +352,11 @@
 {% if pagination and pagination.pages > 1 %}
 <div style="margin-top: 1.5rem; display: flex; justify-content: center; gap: .5rem;">
     {% if pagination.has_prev %}
-    <a href="{{ url_for('paczki_view', page=pagination.prev_num, date_from=date_from, date_to=date_to, date_typ=date_typ, barcode=barcode, land=land, osoba=osoba_id, double_rate='1' if tylko_double else None, status=status, bledy='1' if tylko_bledy else None) }}" class="btn btn-secondary">« Poprzednia</a>
+    <a href="{{ url_for('paczki_view', page=pagination.prev_num, date_from=date_from, date_to=date_to, date_typ=date_typ, barcode=barcode, land=land, osoba=osoba_id, double_rate='1' if tylko_double else None, status=status, bledy='1' if tylko_bledy else None, do_potwierdzenia='1' if do_potwierdzenia else None) }}" class="btn btn-secondary">« Poprzednia</a>
     {% endif %}
     <span style="display:flex; align-items:center; padding: 0 1rem; color: var(--text-muted);">Strona {{ pagination.page }} z {{ pagination.pages }}</span>
     {% if pagination.has_next %}
-    <a href="{{ url_for('paczki_view', page=pagination.next_num, date_from=date_from, date_to=date_to, date_typ=date_typ, barcode=barcode, land=land, osoba=osoba_id, double_rate='1' if tylko_double else None, status=status, bledy='1' if tylko_bledy else None) }}" class="btn btn-secondary">Następna »</a>
+    <a href="{{ url_for('paczki_view', page=pagination.next_num, date_from=date_from, date_to=date_to, date_typ=date_typ, barcode=barcode, land=land, osoba=osoba_id, double_rate='1' if tylko_double else None, status=status, bledy='1' if tylko_bledy else None, do_potwierdzenia='1' if do_potwierdzenia else None) }}" class="btn btn-secondary">Następna »</a>
     {% endif %}
 </div>
 {% endif %}
@@ -332,6 +382,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ static_v('tabela_ilosci.js') }}"></script>
 <script>
 // ── Filtry: status „Zrobione" / „Wszystkie" wymaga zakresu dat ────────────
 // Bez daty ten widok obejmowałby całą historię paczek. Serwer i tak odrzuci
@@ -578,6 +629,7 @@ function qtyPrzelicz() {
 }
 
 function otworzQty(btn) {
+    if (btn.dataset.edytor && btn.dataset.edytor !== 'stary') return otworzTabele(btn);
     qtyKartonId = btn.dataset.id;
     document.getElementById('qtyBarcode').textContent = btn.dataset.barcode;
     document.getElementById('qtyStueck').textContent = btn.dataset.stueckzahl;
@@ -646,6 +698,131 @@ async function zapiszQty() {
 document.addEventListener('input', e => {
     if (e.target.matches('#qtyRows input[data-kategoria]')) qtyPrzelicz();
 });
+
+// ── Tabela ilosci (paczki od 2026-10-15) ────────────────────────────────────
+
+let tab = null;   // {kartonId, edytor, stueckzahl, udzialy, komponent}
+
+function zbudujTabele() {
+    const kontener = document.getElementById('tabTabela');
+    let wartosci = null, tryb = 'wzor';
+    if (tab.edytor === 'zespol') {
+        tryb = 'zespol';
+        const id = parseInt(document.getElementById('tabOsoba').value, 10);
+        const u = tab.udzialy.find(x => x.id === id);
+        wartosci = u ? u.tabela : null;
+    } else {
+        wartosci = tab.tabela;
+    }
+    tab.komponent = TabelaIlosci.zbuduj(kontener, {
+        tryb, stueckzahl: tab.stueckzahl, wartosci, naKoniec: zapiszTabele,
+    });
+}
+
+function otworzTabele(btn) {
+    let udzialy = [], tabela = null;
+    try { udzialy = JSON.parse(btn.dataset.udzialy || '[]'); } catch { udzialy = []; }
+    try { tabela = JSON.parse(btn.dataset.tabela || 'null'); } catch { tabela = null; }
+    tab = { kartonId: btn.dataset.id, edytor: btn.dataset.edytor,
+            stueckzahl: parseInt(btn.dataset.stueckzahl, 10) || 0, udzialy, tabela };
+    document.getElementById('tabBarcode').textContent = btn.dataset.barcode;
+    document.getElementById('tabStueck').textContent = tab.stueckzahl;
+    document.getElementById('tabBlad').style.display = 'none';
+
+    const kto = document.getElementById('tabKto');
+    const wiersz = document.getElementById('tabOsobaWiersz');
+    const zapisz = document.getElementById('tabZapisz');
+    zapisz.disabled = false;
+    if (tab.edytor === 'zespol') {
+        // Kazda osoba wpisala swoje sztuki — lider poprawia jedna osobe naraz.
+        const zamkniete = udzialy.filter(u => !u.otwarty);
+        const sel = document.getElementById('tabOsoba');
+        sel.innerHTML = zamkniete.map(u =>
+            `<option value="${u.id}">${escapeHtml(u.kto)} — ${u.bez_ilosci ? 'bez ilości' : u.sztuki + ' szt.'}</option>`).join('');
+        const razem = zamkniete.reduce((a, u) => a + (u.sztuki || 0), 0);
+        document.getElementById('tabOsoby').textContent =
+            `Razem wpisano ${razem} szt. przy ${tab.stueckzahl} w pliku.`
+            + (udzialy.some(u => u.otwarty) ? ' Część osób jeszcze pracuje.' : '');
+        wiersz.style.display = zamkniete.length ? 'block' : 'none';
+        kto.textContent = btn.dataset.koniec ? `Paczka kilku osób · koniec ${btn.dataset.koniec}`
+                                             : 'Paczka kilku osób · niezakończona';
+        if (!zamkniete.length) {
+            document.getElementById('tabTabela').innerHTML =
+                '<p style="color:var(--text-muted);">Nikt jeszcze nie wpisał swoich ilości.</p>';
+            zapisz.disabled = true;
+            document.getElementById('tabelaModal').style.display = 'flex';
+            return;
+        }
+        sel.onchange = zbudujTabele;
+    } else {
+        wiersz.style.display = 'none';
+        kto.textContent = btn.dataset.koniec
+            ? `Wpisał(a): ${btn.dataset.kto || '—'} · koniec ${btn.dataset.koniec}`
+            : 'Paczka niezakończona — pracownik jeszcze nic nie wpisał.';
+    }
+    zbudujTabele();
+    document.getElementById('tabelaModal').style.display = 'flex';
+    const pierwsze = tab.komponent.pierwszePole();
+    if (pierwsze) pierwsze.focus();
+}
+
+function zamknijTabele() {
+    document.getElementById('tabelaModal').style.display = 'none';
+    tab = null;
+}
+
+async function zapiszTabele() {
+    if (!tab || !tab.komponent) return;
+    const blad = document.getElementById('tabBlad');
+    const odczyt = tab.komponent.odczytaj();
+    if (odczyt.blad) {
+        blad.textContent = odczyt.blad;
+        blad.style.display = 'block';
+        if (odczyt.pole) odczyt.pole.focus();
+        return;
+    }
+    const body = { tabela: odczyt.tabela };
+    if (tab.edytor === 'zespol') body.udzial_id = parseInt(document.getElementById('tabOsoba').value, 10);
+    try {
+        const res = await fetch(`/api/packages/${tab.kartonId}/tabela`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            blad.textContent = data.error || 'Błąd zapisu.';
+            blad.style.display = 'block';
+            return;
+        }
+        zamknijTabele();
+        showToast('Ilości zapisane — rozliczenie przeliczone.', 'success');
+        setTimeout(() => location.reload(), 700);
+    } catch {
+        blad.textContent = 'Błąd połączenia.';
+        blad.style.display = 'block';
+    }
+}
+
+async function potwierdzRoznice(btn) {
+    if (!confirm(`Potwierdzić różnicę w paczce ${btn.dataset.barcode}?\n\n`
+                 + 'Wykrzyknik zniknie, a na liście zostanie, kto i kiedy potwierdził.')) return;
+    btn.disabled = true;
+    try {
+        const res = await fetch(`/api/packages/${btn.dataset.id}/potwierdz-roznice`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) {
+            showToast(data.error || 'Błąd potwierdzenia.', 'error');
+            btn.disabled = false;
+            return;
+        }
+        showToast('Różnica potwierdzona.', 'success');
+        setTimeout(() => location.reload(), 600);
+    } catch {
+        showToast('Błąd połączenia.', 'error');
+        btn.disabled = false;
+    }
+}
 
 </script>
 {% endblock %}

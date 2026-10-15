@@ -22,6 +22,11 @@ KOLUMNY = [
     ('worker_time_event', 'training_lead_id'),
     ('historia_celu', 'zmienil_id'),
     ('historia_celu', 'zmieniono_at'),
+    ('imported_carton', 'tabela_ilosci'),
+    ('imported_carton', 'roznica'),
+    ('imported_carton', 'roznica_potwierdzona_at'),
+    ('imported_carton', 'roznica_potwierdzona_przez'),
+    ('udzial_paczki', 'tabela'),
 ]
 
 

@@ -2,12 +2,16 @@
 
 ## 🔴 Do zrobienia (priorytetowe)
 
-- [ ] **Total Amount w żółtym wierszu double rate** — do decyzji z operacją (2026-09-18)
-  - Zwykły wiersz Statystyk ogólnych liczy od 2026-09-18 **tylko `Labelling one`**
-  - Żółty wiersz double rate **celowo został sumą wszystkich kategorii** — zmiana
-    wstrzymana do ustalenia z operacją, czy ma działać tak samo jak zwykły wiersz
-  - Miejsca do zmiany, jeśli decyzja padnie na „tak samo": `templates/general_stats.html`
-    (blok `dr_total_amount`) oraz `write_data_row(..., is_double_rate=True)` w `app.py`
+- [ ] **Tabela ilości — dalsze kroki** (po wdrożeniu 2026-10-15)
+  - Algorytm „Sortowanie inne” (biżuteria KIDS dla Hiszpanii) i „Podmiana karty ze względu
+    na algorytm” (pierścionki, RFID) — czeka na regułę i źródło danych (Warengruppe ID w pliku?)
+  - Ilość per grupa z pliku klienta, gdy zacznie ją przysyłać (dziś cała ilość → Biżuteria)
+  - Bez odpowiedzi operacji: czy kategoria A/B z pliku ma związek z grupą; termin startu
+    (wdrożone dla wszystkich od razu); Normy paczki jednej osoby dalej po Stückzahl
+  - Nowa grupa artykułowa = zmiana w kodzie (`GRUPY_ARTYKULOWE` + kolumna rozliczenia)
+
+- [x] **Total Amount w żółtym wierszu double rate** — rozstrzygnięte 2026-10-15: oba wiersze
+  = suma wszystkich kolumn oprócz Labelling twice i triple
 
 - [x] **PostgreSQL** — wdrożony na środowisku TESTOWYM (`.31`) 2026-08-31
   - Własny kontener `logistat-test-db` (`postgres:16-alpine`), bez portu na hoście

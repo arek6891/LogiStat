@@ -47,7 +47,6 @@
         flex-direction: column;
         gap: 4px;
     }
-    .nadwyzka-inni { font-size: 1rem; color: var(--text-muted); margin-top: 6px; }
     .tab-panel.active { display: block; }
 
     .scan-card {
@@ -175,28 +174,8 @@
         border-radius: var(--radius-sm);
         font-weight: 700;
     }
-    .qty-grid { display: flex; flex-direction: column; gap: 8px; }
-    .qty-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        padding: 6px 10px;
-        border-radius: var(--radius-sm);
-        background: var(--bg-hover);
-    }
-    .qty-row label { font-size: .92rem; color: var(--text-primary); }
-    .qty-row input {
-        width: 96px;
-        padding: 8px 10px;
-        font-size: 1.05rem;
-        text-align: right;
-        border-radius: var(--radius-sm);
-        border: 2px solid var(--border);
-        background: var(--bg-primary);
-        color: var(--text-primary);
-    }
-    .qty-row input:focus { outline: none; border-color: var(--accent); }
+    /* Tabela ilosci ma 8 kolumn — karta Koniec / Do dokonczenia jest szersza. */
+    .scan-card.z-tabela { max-width: 760px; }
     .qty-foot {
         display: flex;
         justify-content: space-between;
@@ -205,25 +184,14 @@
         gap: 12px;
         margin-top: 18px;
     }
-    .qty-sum { font-size: .95rem; color: var(--text-muted); }
-    .qty-sum strong { color: var(--text-primary); font-size: 1.1rem; }
     .recent-item .time { color: var(--text-muted); font-size: .78rem; }
 
-    /* Nadwyzka: wpisano wiecej niz w paczce. Okna sa POZA .stanowisko-skanu
-       (zoom na przodku psuje position:fixed), wiec maja wlasne, duze rozmiary. */
-    .nadwyzka-okno { max-width: 620px; font-size: 1.25rem; }
-    .nadwyzka-okno h3 { font-size: 1.6rem; color: #f59e0b; }
-    .nadwyzka-okno .liczby { font-size: 1.4rem; margin: 14px 0; }
-    .nadwyzka-okno .btn { font-size: 1.15rem; padding: 14px 22px; }
-    .poinformuj-lidera {
-        max-width: 640px;
-        text-align: center;
-        border: 3px solid #f59e0b;
-        font-size: 1.4rem;
-    }
-    .poinformuj-lidera .ikona { font-size: 4rem; line-height: 1; }
-    .poinformuj-lidera h3 { font-size: 2rem; color: #f59e0b; margin: 12px 0; }
-    .poinformuj-lidera .odliczanie { margin-top: 16px; font-size: 1rem; color: var(--text-muted); }
+    /* Okno zespolu jest POZA .stanowisko-skanu (zoom na przodku psuje
+       position:fixed), wiec ma wlasne, duze rozmiary. */
+    .zespol-okno { max-width: 620px; font-size: 1.25rem; }
+    .zespol-okno h3 { font-size: 1.6rem; }
+    .zespol-okno .liczby { font-size: 1.4rem; margin: 14px 0; }
+    .zespol-okno .btn { font-size: 1.15rem; padding: 14px 22px; }
 </style>
 {% endblock %}
 
@@ -258,23 +226,14 @@
                 </div>
                 <div class="qty-count">W paczce: <span id="{{ prefix }}-qty-stueckzahl">–</span> szt.</div>
             </div>
-            {# Paczka wielu osob: co wpisali wczesniej inni i kto jeszcze pracuje #}
+            {# Paczka wielu osob: kto jeszcze pracuje (bez ich ilosci — kazdy deklaruje swoja czesc) #}
             <div class="inni-box" id="{{ prefix }}-qty-inni"></div>
 
-            <div class="qty-grid">
-                {% for klucz, etykieta in kategorie %}
-                <div class="qty-row">
-                    <label for="{{ prefix }}-qty-{{ klucz }}">{{ etykieta }}</label>
-                    <input type="number" min="0" step="1" id="{{ prefix }}-qty-{{ klucz }}"
-                        data-kategoria="{{ klucz }}" placeholder="0"
-                        autocomplete="off" oninput="przeliczSume('{{ prefix }}')"
-                        onkeydown="qtyKey(event, {{ loop.index0 }}, '{{ prefix }}')">
-                </div>
-                {% endfor %}
-            </div>
+            {# Tabela buduje sie w JS (static/tabela_ilosci.js) — tryb zalezy od paczki #}
+            <div id="{{ prefix }}-qty-tabela"></div>
 
             <div class="qty-foot">
-                <div class="qty-sum">Wpisano: <strong id="{{ prefix }}-qty-sum">0</strong> szt.</div>
+                <div></div>
                 <div style="display:flex;gap:8px;">
                     <button class="btn btn-ghost" onclick="anulujKoniec('{{ prefix }}')">Anuluj</button>
                     <button class="btn btn-primary" onclick="zapiszIlosci('{{ prefix }}')">{{ przycisk }}</button>
@@ -314,11 +273,11 @@
 
 <!-- TAB: Koniec paczki -->
 <div id="tab-end" class="tab-panel">
-    <div class="scan-card">
+    <div class="scan-card z-tabela">
         <h3 style="margin-top:0;margin-bottom:24px;">Zarejestruj KONIEC procesowania</h3>
         {{ kroki('end', "otworzPanelIlosci('end')") }}
         {{ panel_ilosci('end',
-            '⚠️ Paczka NIE jest jeszcze zakończona — wpisz ilości i kliknij „Zapisz koniec" (albo Enter w ostatnim polu).',
+            '⚠️ Paczka NIE jest jeszcze zakończona — wpisz tylko to, co masz, i kliknij „Zapisz koniec" (albo Enter w ostatnim polu). Puste pole = 0.',
             '✅ Zapisz koniec') }}
         <div class="result-box" id="end-result"></div>
         <div class="recent-list" id="end-recent" style="display:none;">
@@ -330,13 +289,13 @@
 
 <!-- TAB: Paczka do dokonczenia — koniec zmiany, paczka zostaje otwarta -->
 <div id="tab-dok" class="tab-panel">
-    <div class="scan-card">
+    <div class="scan-card z-tabela">
         <h3 style="margin-top:0;margin-bottom:8px;">Paczka do dokończenia</h3>
-        <p class="tab-opis">Koniec zmiany, a paczka nieskończona: wpisz ilości, które przerobiłeś.
+        <p class="tab-opis">Koniec zmiany, a paczka nieskończona: wpisz sztuki, które przerobiłeś.
             Paczka <strong>nie zostanie zamknięta</strong> — następna osoba wbija zwykły „Start paczki".</p>
         {{ kroki('dok', "otworzPanelIlosci('dok')") }}
         {{ panel_ilosci('dok',
-            '📤 Wpisz tylko to, co TY przerobiłeś. Paczka zostanie otwarta dla następnej osoby.',
+            '📤 Wpisz tylko to, co TY przerobiłeś (każdą sztukę raz: pojedynczo, podwójnie, potrójnie albo uszkodzona). Paczka zostanie otwarta dla następnej osoby.',
             '📤 Zapisz i przekaż') }}
         <div class="result-box" id="dok-result"></div>
         <div class="recent-list" id="dok-recent" style="display:none;">
@@ -351,7 +310,7 @@
     <div class="scan-card">
         <h3 style="margin-top:0;margin-bottom:8px;">Pakowanie zespołowe</h3>
         <p class="tab-opis">Dołącz do paczki, którą już ktoś rozpoczął (decyzja lidera).
-            Na koniec <strong>każdy</strong> wbija „Koniec paczki" i wpisuje swoje ilości.</p>
+            Na koniec <strong>każdy</strong> wbija „Koniec paczki" i wpisuje swoje sztuki.</p>
         {{ kroki('zespol', 'submitDolacz()') }}
         <div class="result-box" id="zespol-result"></div>
         <div class="recent-list" id="zespol-recent" style="display:none;">
@@ -362,27 +321,9 @@
 </div>
 </div>
 
-<!-- Nadwyzka: wpisano wiecej sztuk niz jest w paczce -->
-<div class="modal-overlay" id="nadwyzkaModal" style="display:none;">
-    <div class="modal nadwyzka-okno">
-        <h3>⚠️ Ilość większa niż w paczce</h3>
-        <div class="liczby">
-            Wpisano <strong id="nadwyzka-wpisano"></strong> szt.,
-            w paczce jest <strong id="nadwyzka-w-paczce"></strong> szt.
-            (nadwyżka <strong id="nadwyzka-roznica"></strong> szt.)
-            <div id="nadwyzka-inni" class="nadwyzka-inni"></div>
-        </div>
-        <div>Czy na pewno są takie ilości? Czy akceptujesz nadwyżkę?</div>
-        <div class="modal-actions">
-            <button class="btn btn-ghost" id="nadwyzka-nie">✏️ Nie, poprawię ilości</button>
-            <button class="btn btn-primary" id="nadwyzka-tak">✅ Tak, akceptuję nadwyżkę</button>
-        </div>
-    </div>
-</div>
-
 <!-- Zespol: przy koncu inni jeszcze pracuja -->
 <div class="modal-overlay" id="zespolModal" style="display:none;">
-    <div class="modal nadwyzka-okno">
+    <div class="modal zespol-okno">
         <h3 style="color:var(--accent);">👥 Przy paczce pracują jeszcze</h3>
         <div class="liczby" id="zespol-pozostali"></div>
         <div>Zamknąć paczkę dla wszystkich? Pozostali skończą teraz, <strong>bez swoich ilości</strong>.</div>
@@ -393,19 +334,10 @@
     </div>
 </div>
 
-<!-- Po zaakceptowaniu nadwyzki: 5 s, znika sam -->
-<div class="modal-overlay" id="liderModal" style="display:none;">
-    <div class="modal poinformuj-lidera">
-        <div class="ikona">📣</div>
-        <h3>Poinformuj lidera</h3>
-        <div>o nadwyżce <strong id="lider-roznica"></strong> szt. w paczce
-            <strong id="lider-paczka"></strong></div>
-        <div class="odliczanie">Okno zamknie się samo za <span id="lider-sekundy">5</span> s</div>
-    </div>
-</div>
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ static_v('tabela_ilosci.js') }}"></script>
 <script>
 const TIMEOUT_MS = 300;
 const ZAKLADKI = ['start', 'end', 'dok', 'zespol'];
@@ -417,13 +349,12 @@ const recent = { start: [], end: [], dok: [], zespol: [] };
 const zajete = { start: false, end: false, dok: false, zespol: false };
 // Pracownik potwierdzony w kroku 1 (id z /api/employee-lookup).
 const pracownik = { start: null, end: null, dok: null, zespol: null };
-// Ilosc od tej wartosci to prawie na pewno kod kreskowy zeskanowany w pole
-// ilosci (najwieksza paczka na .31 ma 708 szt., kody paczek maja 10 cyfr).
-const ILOSC_WYGLADA_NA_KOD = 100000;
-// Otwarta paczka per panel: ilosc w paczce, co wpisali inni, kto jeszcze pracuje.
+// Liczba >= 100 000 w polu ilosci to prawie na pewno zeskanowany kod —
+// sprawdza to TabelaIlosci.odczytaj() (i serwer).
+// Otwarta paczka per panel: tabela (TabelaIlosci) i kto jeszcze pracuje.
+// Pytanie o nadwyzke i „Poinformuj lidera" usuniete 2026-10-15: nadwyzka jest
+// zwyklym wpisem w tabeli, a lider widzi ❗ na /paczki i na Dashboardzie.
 const paczkaPanelu = { end: null, dok: null };
-// Wpisana suma > ilosc w paczce: pytanie, a po „Tak" 5 s „Poinformuj lidera".
-const CZAS_INFO_LIDERA_MS = 5000;
 let pytanieOtwarte = false;
 
 function panelOtwarty(prefix) {
@@ -470,33 +401,15 @@ function resetSteps(prefix) {
     if (Z_PANELEM.includes(prefix)) ukryjPanelIlosci(prefix);
 }
 
-// ── Panel ilosci per kategoria (krok 3: koniec / do dokonczenia) ──────────────
-
-function poleIlosci(prefix) {
-    return Array.from(document.querySelectorAll(`#${prefix}-qty-panel input[data-kategoria]`));
-}
+// ── Panel ilosci (krok 3: koniec / do dokonczenia) ───────────────────────────
 
 function ukryjPanelIlosci(prefix) {
     const panel = document.getElementById(prefix + '-qty-panel');
     if (!panel) return;
     panel.style.display = 'none';
-    poleIlosci(prefix).forEach(i => { i.value = ''; });
-    document.getElementById(prefix + '-qty-sum').textContent = '0';
+    document.getElementById(prefix + '-qty-tabela').innerHTML = '';
     document.getElementById(prefix + '-qty-inni').innerHTML = '';
     paczkaPanelu[prefix] = null;
-}
-
-function przeliczSume(prefix) {
-    const suma = poleIlosci(prefix).reduce((acc, i) => acc + (parseInt(i.value, 10) || 0), 0);
-    document.getElementById(prefix + '-qty-sum').textContent = suma;
-}
-
-function qtyKey(event, idx, prefix) {
-    if (event.key !== 'Enter') return;
-    event.preventDefault();
-    const pola = poleIlosci(prefix);
-    if (idx < pola.length - 1) pola[idx + 1].focus();
-    else zapiszIlosci(prefix);
 }
 
 function wyczyscKroki(prefix) {
@@ -538,25 +451,23 @@ function bladWlasciciela(prefix, carton) {
     return null;
 }
 
-function pokazInnych(prefix, carton) {
+// Paczka kilku osob: tylko KTO jeszcze pracuje. Ilosci innych nie pokazujemy
+// (operacja 2026-10-15: kazdy deklaruje swoja czesc, rozbieznosc sprawdza lider).
+function pokazInnych(prefix, carton, tryb) {
     const ja = pracownik[prefix]?.id;
     const udzialy = carton.udzialy || [];
-    const wczesniej = udzialy.filter(u => !u.otwarty && u.suma > 0);
     const pracuja = udzialy.filter(u => u.otwarty && u.user_id !== ja);
     const box = document.getElementById(prefix + '-qty-inni');
     const linie = [];
-    if (wczesniej.length) {
-        const suma = wczesniej.reduce((a, u) => a + u.suma, 0);
-        linie.push('📝 Wpisane wcześniej: ' + wczesniej.map(u =>
-            `<strong>${escapeHtml(u.user_name)}</strong> ${u.suma} szt.`).join(', ')
-            + (carton.stueckzahl != null
-                ? ` — zostało <strong>${Math.max(carton.stueckzahl - suma, 0)}</strong> szt.` : ''));
+    if (tryb === 'zespol') {
+        linie.push('👥 Przy paczce pracuje kilka osób — wpisz <strong>tylko swoje</strong> sztuki. '
+            + 'Lider porówna sumę wszystkich z ilością w pliku.');
     }
     if (pracuja.length) {
-        linie.push('👥 Pracują jeszcze: ' + pracuja.map(u => `<strong>${escapeHtml(u.user_name)}</strong>`).join(', '));
+        linie.push('Pracują jeszcze: ' + pracuja.map(u => `<strong>${escapeHtml(u.user_name)}</strong>`).join(', '));
     }
     box.innerHTML = linie.map(l => `<div>${l}</div>`).join('');
-    return { wczesniej: wczesniej.reduce((a, u) => a + u.suma, 0), pracuja };
+    return { pracuja };
 }
 
 async function otworzPanelIlosci(prefix) {
@@ -597,20 +508,18 @@ async function otworzPanelIlosci(prefix) {
     const blad = bladWlasciciela(prefix, carton);
     if (blad) { showResult(prefix, '❌ ' + blad, 'error'); anulujKoniec(prefix); return; }
 
-    const inni = pokazInnych(prefix, carton);
-    paczkaPanelu[prefix] = {
-        barcode: pkg,
-        sztuk: (carton.stueckzahl === null || carton.stueckzahl === undefined) ? null : carton.stueckzahl,
-        wczesniej: inni.wczesniej,
-        pracuja: inni.pracuja,
-    };
+    // Przekazanie zawsze tworzy udzial osoby → tabela „zespol" (swoje sztuki wprost).
+    const tryb = prefix === 'dok' ? 'zespol' : (carton.tryb_tabeli || 'wzor');
+    const inni = pokazInnych(prefix, carton, tryb);
+    const sztuk = Number.isFinite(carton.stueckzahl) ? carton.stueckzahl : null;
+    const tabela = TabelaIlosci.zbuduj(document.getElementById(prefix + '-qty-tabela'), {
+        tryb, stueckzahl: sztuk ?? 0, naKoniec: () => zapiszIlosci(prefix),
+    });
+    paczkaPanelu[prefix] = { barcode: pkg, sztuk, tryb, tabela, pracuja: inni.pracuja };
     document.getElementById(prefix + '-qty-barcode').textContent = pkg;
-    document.getElementById(prefix + '-qty-stueckzahl').textContent =
-        paczkaPanelu[prefix].sztuk === null ? '?' : paczkaPanelu[prefix].sztuk;
-    poleIlosci(prefix).forEach(i => { i.value = ''; });
-    document.getElementById(prefix + '-qty-sum').textContent = '0';
+    document.getElementById(prefix + '-qty-stueckzahl').textContent = sztuk === null ? '?' : sztuk;
     document.getElementById(prefix + '-qty-panel').style.display = 'block';
-    const pierwsze = poleIlosci(prefix)[0];
+    const pierwsze = tabela.pierwszePole();
     if (pierwsze) pierwsze.focus();
 }
 
@@ -751,40 +660,8 @@ function zapytaj(modalId, przyciski, bezpieczny) {
     });
 }
 
-// Pytanie o nadwyzke → bool. Suma liczy tez to, co wpisali wczesniej inni.
-async function zapytajONadwyzke(wpisano, wPaczce, wczesniej) {
-    document.getElementById('nadwyzka-wpisano').textContent = wpisano;
-    document.getElementById('nadwyzka-w-paczce').textContent = wPaczce;
-    document.getElementById('nadwyzka-roznica').textContent = wpisano - wPaczce;
-    document.getElementById('nadwyzka-inni').textContent = wczesniej
-        ? `(w tym ${wczesniej} szt. wpisane wcześniej przez inne osoby)` : '';
-    return await zapytaj('nadwyzkaModal',
-        { 'nadwyzka-tak': true, 'nadwyzka-nie': false }, 'nadwyzka-nie') === true;
-}
-
-// Informacja po zaakceptowaniu nadwyzki: znika sama po 5 s, nic nie trzeba
-// klikac (klik zamyka wczesniej). Fokus zostaje w polu skanu pod spodem.
-let liderTimer = null;
-function pokazPoinformujLidera(roznica, paczka) {
-    const modal = document.getElementById('liderModal');
-    const sek = document.getElementById('lider-sekundy');
-    document.getElementById('lider-roznica').textContent = roznica;
-    document.getElementById('lider-paczka').textContent = paczka;
-    clearInterval(liderTimer);
-    let zostalo = CZAS_INFO_LIDERA_MS / 1000;
-    sek.textContent = zostalo;
-    modal.style.display = 'flex';
-    const zamknij = () => { clearInterval(liderTimer); modal.style.display = 'none'; };
-    modal.onclick = zamknij;
-    liderTimer = setInterval(() => {
-        zostalo -= 1;
-        sek.textContent = zostalo;
-        if (zostalo <= 0) zamknij();
-    }, 1000);
-}
-
 function przywrocFokus(prefix) {
-    const pierwsze = poleIlosci(prefix)[0];
+    const pierwsze = paczkaPanelu[prefix]?.tabela.pierwszePole();
     if (pierwsze) pierwsze.focus();
 }
 
@@ -796,29 +673,16 @@ async function zapiszIlosci(prefix) {
     const paczka = paczkaPanelu[prefix];
     if (!emp || !pkg || !paczka) return;
 
-    const kategorie = {};
-    for (const i of poleIlosci(prefix)) {
-        const n = parseInt(i.value, 10);
-        if (n >= ILOSC_WYGLADA_NA_KOD) {
-            showResult(prefix, `❌ Ilość ${n} wygląda na zeskanowany kod, nie liczbę sztuk — popraw pole.`, 'error');
-            i.focus();
-            i.select();
-            return;
-        }
-        if (n > 0) kategorie[i.dataset.kategoria] = n;
-    }
-
-    // Wiecej niz w paczce (razem z tym, co wpisali wczesniej inni): operator
-    // potwierdza, a lider ma sie dowiedziec. Serwer sumy nie waliduje.
-    const moje = Object.values(kategorie).reduce((a, b) => a + b, 0);
-    const razem = moje + paczka.wczesniej;
-    const nadwyzka = paczka.sztuk !== null && razem > paczka.sztuk;
-    if (nadwyzka && !await zapytajONadwyzke(razem, paczka.sztuk, paczka.wczesniej)) {
-        przywrocFokus(prefix);
+    const odczyt = paczka.tabela.odczytaj();
+    if (odczyt.blad) {
+        showResult(prefix, '❌ ' + odczyt.blad, 'error');
+        if (odczyt.pole) { odczyt.pole.focus(); odczyt.pole.select(); }
         return;
     }
+    const moje = odczyt.wyliczone.sztuk;
 
-    const body = { employee_barcode: emp, package_barcode: pkg, categories: kategorie };
+    const body = { employee_barcode: emp, package_barcode: pkg,
+                   tabela: odczyt.tabela, tryb: paczka.tryb };
     if (prefix === 'end' && paczka.pracuja.length) {
         document.getElementById('zespol-pozostali').textContent =
             paczka.pracuja.map(u => u.user_name).join(', ');
@@ -856,10 +720,11 @@ async function zapiszIlosci(prefix) {
             .filter(Boolean).join(' · ');
         showResult(prefix, '✅ ' + data.message, 'success');
         addRecent(prefix, pkg, pracownik[prefix]?.display_name || emp, opis || null);
-        // Dopiero po udanym zapisie — blad ma byc widoczny, nie pod oknem.
-        if (nadwyzka) pokazPoinformujLidera(razem - paczka.sztuk, pkg);
     } else {
         showResult(prefix, '❌ ' + data.error, 'error');
+        // Blad w tabeli (np. ujemne „Pojedynczo") — zostaw panel z wpisanymi
+        // liczbami do poprawy. Inny blad (paczka zamknieta, zmiana skladu) — od nowa.
+        if (res.status === 400) { przywrocFokus(prefix); return; }
     }
     wyczyscKroki(prefix);
 }

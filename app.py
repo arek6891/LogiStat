@@ -579,10 +579,252 @@ def etykiety_kategorii():
     return {k: etykieta_kategorii(k, nazwy) for k in STAT_CATEGORIES}
 
 
-# Total Amount w Statystykach ogolnych liczy WYLACZNIE te kategorie. Suma
-# wszystkich kategorii zliczala te same sztuki wielokrotnie (paczka przechodzi
-# przez kilka czynnosci), wiec „total" wychodzil wielokrotnoscia zawartosci paczki.
-TOTAL_AMOUNT_CATEGORY = 'labelling_on'
+# Total Amount w Statystykach ogolnych = suma WSZYSTKICH kategorii poza tymi
+# (operacja, 2026-10-15). Do tej daty liczyl wylacznie Labelling one. Twice
+# i triple to te same sztuki biżuterii z dodatkowymi etykietami (×1,5 / ×2),
+# wiec w sumie sztuk liczylyby sie drugi raz. Ta sama regula w obu wierszach
+# (zwyklym i zoltym double rate) — trzy miejsca: Jinja w general_stats.html,
+# JS po edycji w tym samym pliku, write_data_row() w eksporcie Excela.
+TOTAL_AMOUNT_BEZ = ('labelling_tvl', 'labelling_try')
+
+
+def liczba(wartosc):
+    """Ilosc w rozliczeniu: int, gdy calkowita, inaczej float (×1,5 daje polowki)."""
+    try:
+        v = round(float(wartosc or 0), 2)
+    except (TypeError, ValueError):
+        return 0
+    return int(v) if v.is_integer() else v
+
+
+def total_amount_wiersza(category_data):
+    """Total Amount wiersza — patrz TOTAL_AMOUNT_BEZ."""
+    return liczba(sum(
+        (category_data.get(kat) or {}).get('amount', 0) or 0
+        for kat in STAT_CATEGORIES if kat not in TOTAL_AMOUNT_BEZ))
+
+
+# ── Tabela ilosci na koniec paczki (Post Processing, 2026-10-15) ──────────────
+# Operator wpisuje tabele: wiersze = grupy artykulowe, kolumny = Brak /
+# Nadwyzka / Uszkodzone / Podwojnie / Potrojnie; „Pojedynczo" liczy system.
+# Pelna tabela zostaje na kartonie (tabela_ilosci), a do rozliczenia idzie
+# z niej `scan_category_data` — reszta toru (scan_category_totals,
+# recompute_general_stat) bez zmian. Decyzje operacji: docs/ARCHITEKTURA.md.
+GRUPY_ARTYKULOWE = [
+    ('bizuteria', 'Biżuteria'),
+    ('akcesoria', 'Akcesoria'),
+    ('okulary', 'Okulary'),
+    ('tekstylia', 'Tekstylia'),
+]
+NAZWY_GRUP = dict(GRUPY_ARTYKULOWE)
+# Plik importu ma jedna ilosc na karton, bez podzialu na grupy: cala idzie do
+# Biżuterii, operator wpisuje ile jest pozostalych grup, system odejmuje.
+GRUPA_GLOWNA = 'bizuteria'
+# Grupy poza biżuteria → kolumna rozliczenia (kazda ma swoja stawke).
+KATEGORIA_GRUPY = {'akcesoria': 'accessoire', 'okulary': 'sunglasses', 'tekstylia': 'textile'}
+POLA_GRUPY = ['ilosc', 'brak', 'nadwyzka', 'uszkodzone', 'podwojnie', 'potrojnie', 'pojedynczo']
+# Co operator wpisuje: przy paczce jednej osoby „Pojedynczo" wynika ze wzoru,
+# przy paczce kilku osob kazdy wpisuje wprost swoje sztuki (Brak i Nadwyzka
+# wychodza dopiero z porownania sumy wszystkich z iloscia w pliku).
+TRYB_WZOR = 'wzor'
+TRYB_ZESPOL = 'zespol'
+WPISYWANE_WZOR = ['brak', 'nadwyzka', 'uszkodzone', 'podwojnie', 'potrojnie']
+WPISYWANE_ZESPOL = ['pojedynczo', 'podwojnie', 'potrojnie', 'uszkodzone']
+DODATKI_TABELI = [
+    ('sortowanie_inne', 'Sortowanie inne'),
+    ('karta_uszkodzona', 'Podmiana karty uszkodzonej'),
+    ('karta_algorytm', 'Podmiana karty ze względu na algorytm'),
+    ('worki', 'Etykietowanie worków'),
+]
+# LOGIKA_KLEJENIA.xlsx: pierwsza etykieta = 1, kazda kolejna = 0,5.
+MNOZNIK_PODWOJNIE = 1.5
+MNOZNIK_POTROJNIE = 2
+# Liczba od tej wartosci to prawie na pewno zeskanowany kod, nie ilosc sztuk
+# (ta sama granica co ILOSC_WYGLADA_NA_KOD w scan_paczki.html).
+ILOSC_WYGLADA_NA_KOD = 100000
+
+
+def _pusta_grupa():
+    return {pole: 0 for pole in POLA_GRUPY}
+
+
+def normalizuj_tabele(surowe, tryb, stueckzahl):
+    """Waliduje tabele z ekranu i liczy pola systemowe. Zwraca (tabela, blad).
+
+    Liczy ZAWSZE serwer — wynik nie zalezy od przegladarki. Tryb `wzor`:
+    Ilosc biżuterii = Stückzahl − pozostale grupy, Pojedynczo = Ilosc − Brak
+    + Nadwyzka − Uszkodzone − Podwojnie − Potrojnie; ujemne → blad z nazwa
+    wiersza. Tryb `zespol`: wpisane wprost, Ilosc = suma sztuk osoby.
+    """
+    if not isinstance(surowe, dict):
+        return None, 'Nieprawidłowy format tabeli ilości.'
+    grupy_we = surowe.get('grupy') or {}
+    dodatki_we = surowe.get('dodatki') or {}
+    if not isinstance(grupy_we, dict) or not isinstance(dodatki_we, dict):
+        return None, 'Nieprawidłowy format tabeli ilości.'
+
+    def wartosc(slownik, pole, opis):
+        v = slownik.get(pole)
+        if v in (None, ''):
+            return 0, None
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            return None, f'{opis}: wpisz liczbę całkowitą.'
+        if n < 0:
+            return None, f'{opis}: ilość nie może być ujemna.'
+        if n >= ILOSC_WYGLADA_NA_KOD:
+            return None, f'{opis}: {n} wygląda na zeskanowany kod, nie liczbę sztuk.'
+        return n, None
+
+    wpisywane = WPISYWANE_WZOR if tryb == TRYB_WZOR else WPISYWANE_ZESPOL
+    grupy = {}
+    for g, nazwa in GRUPY_ARTYKULOWE:
+        we = grupy_we.get(g) or {}
+        if not isinstance(we, dict):
+            return None, 'Nieprawidłowy format tabeli ilości.'
+        wiersz = _pusta_grupa()
+        pola = list(wpisywane)
+        if tryb == TRYB_WZOR and g != GRUPA_GLOWNA:
+            pola.append('ilosc')
+        for pole in pola:
+            n, blad = wartosc(we, pole, nazwa)
+            if blad:
+                return None, blad
+            wiersz[pole] = n
+        grupy[g] = wiersz
+
+    if tryb == TRYB_WZOR:
+        pozostale = sum(grupy[g]['ilosc'] for g in grupy if g != GRUPA_GLOWNA)
+        w_paczce = int(stueckzahl or 0)
+        if pozostale > w_paczce:
+            return None, (f'Akcesoria, okulary i tekstylia razem ({pozostale} szt.) to więcej niż '
+                          f'w paczce ({w_paczce} szt.). Popraw kolumnę „Ilość” — sztuki ponad '
+                          'plik wpisz jako „Nadwyżka”.')
+        grupy[GRUPA_GLOWNA]['ilosc'] = w_paczce - pozostale
+        for g, nazwa in GRUPY_ARTYKULOWE:
+            w = grupy[g]
+            w['pojedynczo'] = (w['ilosc'] - w['brak'] + w['nadwyzka'] - w['uszkodzone']
+                               - w['podwojnie'] - w['potrojnie'])
+            if w['pojedynczo'] < 0:
+                return None, (f'{nazwa}: „Pojedynczo” wychodzi {w["pojedynczo"]} — wpisano więcej '
+                              'braków, uszkodzonych, podwójnych i potrójnych niż sztuk w tym wierszu.')
+    else:
+        for w in grupy.values():
+            w['ilosc'] = w['pojedynczo'] + w['podwojnie'] + w['potrojnie'] + w['uszkodzone']
+
+    dodatki = {}
+    for pole, nazwa in DODATKI_TABELI:
+        n, blad = wartosc(dodatki_we, pole, nazwa)
+        if blad:
+            return None, blad
+        dodatki[pole] = n
+    return {'tryb': tryb, 'grupy': grupy, 'dodatki': dodatki}, None
+
+
+# Dymek „ⓘ" przy kolumnie w Statystykach ogolnych: skad sie bierze ilosc.
+# Musi sie zgadzac z kategorie_z_tabeli() — zmiana tam = zmiana tu.
+ZRODLO_KATEGORII = {
+    'labelling_on': 'Biżuteria → „Pojedynczo”. Pojedynczo = Ilość − Brak + Nadwyżka − Uszkodzone − Podwójnie − Potrójnie.',
+    'labelling_tvl': 'Biżuteria → „Podwójnie” × 1,5. Pierwsza etykieta liczy się jako 1, każda kolejna jako 0,5 (2 sztuki = 3).',
+    'labelling_try': 'Biżuteria → „Potrójnie” × 2. Pierwsza etykieta liczy się jako 1, każda kolejna jako 0,5 (3 sztuki = 6).',
+    'textile': 'Tekstylia: wszystkie sztuki grupy (także klejone podwójnie i potrójnie) bez uszkodzonych, czyli Ilość − Brak + Nadwyżka − Uszkodzone.',
+    'accessoire': 'Akcesoria: wszystkie sztuki grupy (także klejone podwójnie i potrójnie) bez uszkodzonych, czyli Ilość − Brak + Nadwyżka − Uszkodzone.',
+    'sunglasses': 'Okulary: wszystkie sztuki grupy (także klejone podwójnie i potrójnie) bez uszkodzonych, czyli Ilość − Brak + Nadwyżka − Uszkodzone. Jedna stawka za oklejanie i czynności poboczne.',
+    'card_facture': '„Podmiana karty uszkodzonej” + „Podmiana karty ze względu na algorytm”. Liczba kart.',
+    'labelling_polybag': '„Etykietowanie worków”. Liczba worków.',
+    'sorting': 'Kolumna „Uszkodzone” ze wszystkich grup + „Sortowanie inne”.',
+}
+
+
+def kategorie_z_tabeli(tabela):
+    """Tabela → kolumny rozliczenia {kategoria: ilosc} (bez zer).
+
+    Labelling one/twice/triple = TYLKO biżuteria (twice ×1,5, triple ×2);
+    pozostale grupy = wszystkie ich sztuki bez uszkodzonych, kazda do swojej
+    kolumny; Sorting = uszkodzone ze wszystkich grup + sortowanie inne.
+    """
+    if not tabela:
+        return {}
+    grupy = tabela.get('grupy') or {}
+    dod = tabela.get('dodatki') or {}
+
+    def pole(g, p):
+        return (grupy.get(g) or {}).get(p, 0) or 0
+
+    wynik = {
+        'labelling_on': pole(GRUPA_GLOWNA, 'pojedynczo'),
+        'labelling_tvl': pole(GRUPA_GLOWNA, 'podwojnie') * MNOZNIK_PODWOJNIE,
+        'labelling_try': pole(GRUPA_GLOWNA, 'potrojnie') * MNOZNIK_POTROJNIE,
+        'sorting': sum(pole(g, 'uszkodzone') for g, _ in GRUPY_ARTYKULOWE)
+                   + (dod.get('sortowanie_inne') or 0),
+        'card_facture': (dod.get('karta_uszkodzona') or 0) + (dod.get('karta_algorytm') or 0),
+        'labelling_polybag': dod.get('worki') or 0,
+    }
+    for g, kat in KATEGORIA_GRUPY.items():
+        wynik[kat] = pole(g, 'pojedynczo') + pole(g, 'podwojnie') + pole(g, 'potrojnie')
+    return {k: liczba(v) for k, v in wynik.items() if v}
+
+
+def sztuki_tabeli(tabela):
+    """Sztuki przerobione wg tabeli: Pojedynczo + Podwojnie + Potrojnie +
+    Uszkodzone ze wszystkich grup. Tyle osoba dostaje do Norm przy paczce
+    kilku osob. Brak, karty, worki i sortowanie inne nie sa sztukami."""
+    if not tabela:
+        return 0
+    return sum((w.get('pojedynczo', 0) or 0) + (w.get('podwojnie', 0) or 0)
+               + (w.get('potrojnie', 0) or 0) + (w.get('uszkodzone', 0) or 0)
+               for w in (tabela.get('grupy') or {}).values())
+
+
+def suma_tabel(tabele):
+    """Tabele kilku osob → jedna tabela kartonu (tryb zespol), pole po polu."""
+    wynik = {'tryb': TRYB_ZESPOL,
+             'grupy': {g: _pusta_grupa() for g, _ in GRUPY_ARTYKULOWE},
+             'dodatki': {p: 0 for p, _ in DODATKI_TABELI}}
+    for t in tabele:
+        for g, w in (t.get('grupy') or {}).items():
+            if g in wynik['grupy']:
+                for p in POLA_GRUPY:
+                    wynik['grupy'][g][p] += w.get(p, 0) or 0
+        for p, v in (t.get('dodatki') or {}).items():
+            if p in wynik['dodatki']:
+                wynik['dodatki'][p] += v or 0
+    return wynik
+
+
+def roznice_tabeli(tabela, stueckzahl, osob=1):
+    """Powody wykrzyknika ❗ (lider potwierdza). Pusta lista = brak roznicy.
+
+    Bez progow procentowych (operacja, 2026-10-15): kazdy Brak, Nadwyzka
+    i Uszkodzone; przy paczce kilku osob — suma wpisanych sztuk ≠ Stückzahl.
+    """
+    if not tabela:
+        return []
+    powody = []
+    grupy = tabela.get('grupy') or {}
+    if tabela.get('tryb') == TRYB_ZESPOL:
+        sztuk = sztuki_tabeli(tabela)
+        w_paczce = int(stueckzahl or 0)
+        if sztuk != w_paczce:
+            powody.append(f'{osob} os. wpisało razem {sztuk} szt. przy {w_paczce} w paczce')
+        pola = [('uszkodzone', 'uszkodzone')]
+    else:
+        pola = [('brak', 'brak'), ('nadwyzka', 'nadwyżka'), ('uszkodzone', 'uszkodzone')]
+    for g, nazwa in GRUPY_ARTYKULOWE:
+        w = grupy.get(g) or {}
+        czesci = [f'{opis} {w.get(p)}' for p, opis in pola if w.get(p)]
+        if czesci:
+            powody.append(f'{nazwa}: ' + ', '.join(czesci))
+    return powody
+
+
+def wczytaj_json_dict(tekst):
+    try:
+        dane = json.loads(tekst) if tekst else None
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return dane if isinstance(dane, dict) else None
 
 
 def empty_category_data():
@@ -619,6 +861,16 @@ class ImportedCarton(db.Model):
     # Ilosci per kategoria wpisane przy skanie konca paczki (JSON {kategoria: sztuki}).
     # Zrodlo prawdy dla GeneralStat.category_data linii oznaczonych category_source='scan'.
     scan_category_data = db.Column(db.Text, default='{}')
+    # Pelna tabela ilosci z konca paczki (2026-10-15) — JSON, tylko przez
+    # get_tabela()/set_tabela(). NULL = paczka sprzed tabeli (stary formularz
+    # kategorii, stare reguly bledow). `scan_category_data` jest z niej liczone.
+    tabela_ilosci = db.Column(db.Text, nullable=True)
+    # ❗ Roznica do potwierdzenia przez lidera (Brak / Nadwyzka / Uszkodzone /
+    # suma kilku osob ≠ plik) — kolumna, a nie wyliczenie, zeby licznik na
+    # Dashboardzie byl jednym COUNT-em. Liczona w odswiez_roznice().
+    roznica = db.Column(db.Boolean, nullable=False, default=False)
+    roznica_potwierdzona_at = db.Column(db.DateTime, nullable=True)
+    roznica_potwierdzona_przez = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
 
     __table_args__ = (
         db.Index('ix_carton_ziel_datum',    'ziel_datum'),
@@ -635,6 +887,36 @@ class ImportedCarton(db.Model):
     scan_end_by_user = db.relationship('User', foreign_keys=[scan_end_by])
     imported_by_user = db.relationship('User', foreign_keys=[imported_by])
     modified_by_user = db.relationship('User', foreign_keys=[modified_by])
+    potwierdzajacy = db.relationship('User', foreign_keys=[roznica_potwierdzona_przez])
+
+    def get_tabela(self):
+        return wczytaj_json_dict(self.tabela_ilosci)
+
+    def set_tabela(self, tabela):
+        self.tabela_ilosci = json.dumps(tabela) if tabela else None
+
+    def tryb_tabeli(self):
+        """Paczka kilku osob → kazdy wpisuje swoje sztuki wprost (zespol)."""
+        return TRYB_ZESPOL if self.udzialy else TRYB_WZOR
+
+    def powody_roznicy(self):
+        osob = len({u.user_id for u in self.udzialy}) or 1
+        return roznice_tabeli(self.get_tabela(), self.stueckzahl, osob)
+
+    def roznica_do_potwierdzenia(self):
+        return bool(self.roznica) and not self.roznica_potwierdzona_at
+
+    def edytor_ilosci(self):
+        """Ktore okno „✎ Ilosci" na /paczki: 'tabela' (paczka jednej osoby),
+        'zespol' (kazda osoba osobno) albo 'stary' (paczka sprzed tabeli)."""
+        if self.udzialy:
+            zamkniete = [u for u in self.udzialy if u.end_at and not u.zamkniete_przez]
+            if all(u.tabela for u in zamkniete):
+                return 'zespol'
+            return 'stary'
+        if self.tabela_ilosci or not self.scan_end_at:
+            return 'tabela'
+        return 'stary'
 
     def processing_seconds(self):
         # Paczka kilku osob: czas pracy przy niej = zlaczone okresy udzialow
@@ -649,8 +931,10 @@ class ImportedCarton(db.Model):
 
     def udzialy_krotko(self):
         """Kto ile wpisal — do okna „✎ Ilosci" na /paczki."""
-        return [{'kto': u.user.display_name if u.user else '?', 'suma': u.suma(),
-                 'otwarty': u.end_at is None} for u in self.udzialy]
+        return [{'id': u.id, 'kto': u.user.display_name if u.user else '?', 'suma': u.suma(),
+                 'sztuki': u.sztuki(), 'tabela': u.get_tabela(),
+                 'otwarty': u.end_at is None,
+                 'bez_ilosci': bool(u.zamkniete_przez)} for u in self.udzialy]
 
     def do_dokonczenia(self):
         """Przekazana przez poprzednia osobe, nikt jej jeszcze nie przejal."""
@@ -665,12 +949,14 @@ class ImportedCarton(db.Model):
             return {}
         if not isinstance(dane, dict):
             return {}
-        return {k: int(v) for k, v in dane.items()
+        return {k: liczba(v) for k, v in dane.items()
                 if k in STAT_CATEGORIES and isinstance(v, (int, float))}
 
     def set_scan_categories(self, dane):
+        # liczba(), nie int(): Labelling twice ×1,5 daje polowki — int() po
+        # cichu ucinalby 4,5 do 4 w rozliczeniu.
         self.scan_category_data = json.dumps(
-            {k: int(v) for k, v in (dane or {}).items() if k in STAT_CATEGORIES})
+            {k: liczba(v) for k, v in (dane or {}).items() if k in STAT_CATEGORIES})
 
     def has_scan_categories(self):
         return bool(self.get_scan_categories())
@@ -702,6 +988,10 @@ class ImportedCarton(db.Model):
             'modified_at': iso_z(self.modified_at),
             'modified_by_login': self.modified_by_user.username if self.modified_by_user else None,
             'scan_categories': self.get_scan_categories(),
+            'tabela': self.get_tabela(),
+            'tryb_tabeli': self.tryb_tabeli(),
+            'roznica': bool(self.roznica),
+            'roznica_potwierdzona_at': iso_z(self.roznica_potwierdzona_at),
             # Wiele osob przy paczce (przekazanie / zespol) — to_dict jest
             # wolane tylko dla pojedynczych paczek, wiec bez N+1.
             'do_dokonczenia': self.do_dokonczenia(),
@@ -733,6 +1023,9 @@ class UdzialPaczki(db.Model):
     end_at = db.Column(db.DateTime, nullable=True)
     # JSON {kategoria: sztuki} — tylko przez get_ilosci()/set_ilosci().
     ilosci = db.Column(db.Text, default='{}')
+    # Tabela ilosci tej osoby (tryb zespol, 2026-10-15); `ilosci` jest z niej
+    # liczone. NULL = udzial sprzed tabeli — Normy biora wtedy suma().
+    tabela = db.Column(db.Text, nullable=True)
     # Kto zamknal CUDZY udzial (kolega „zamknij dla wszystkich" albo lider) —
     # taki udzial nie ma ilosci i nie wchodzi do norm.
     zamkniete_przez = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
@@ -751,15 +1044,28 @@ class UdzialPaczki(db.Model):
             return {}
         if not isinstance(dane, dict):
             return {}
-        return {k: int(v) for k, v in dane.items()
+        return {k: liczba(v) for k, v in dane.items()
                 if k in STAT_CATEGORIES and isinstance(v, (int, float))}
 
     def set_ilosci(self, dane):
         self.ilosci = json.dumps(
-            {k: int(v) for k, v in (dane or {}).items() if k in STAT_CATEGORIES})
+            {k: liczba(v) for k, v in (dane or {}).items() if k in STAT_CATEGORIES})
+
+    def get_tabela(self):
+        return wczytaj_json_dict(self.tabela)
+
+    def set_tabela(self, tabela):
+        self.tabela = json.dumps(tabela) if tabela else None
+        self.set_ilosci(kategorie_z_tabeli(tabela))
 
     def suma(self):
-        return sum(self.get_ilosci().values())
+        return liczba(sum(self.get_ilosci().values()))
+
+    def sztuki(self):
+        """Sztuki do Norm: z tabeli (Pojedynczo + Podwojnie + Potrojnie +
+        Uszkodzone), a dla udzialu sprzed tabeli — suma wpisanych kategorii."""
+        tabela = self.get_tabela()
+        return sztuki_tabeli(tabela) if tabela else self.suma()
 
     def to_dict(self):
         return {
@@ -772,6 +1078,8 @@ class UdzialPaczki(db.Model):
             'otwarty': self.end_at is None,
             'ilosci': self.get_ilosci(),
             'suma': self.suma(),
+            'sztuki': self.sztuki(),
+            'tabela': self.get_tabela(),
             'zamkniete_przez': self.zamykajacy.display_name if self.zamykajacy else None,
         }
 
@@ -1700,10 +2008,20 @@ class StroniceLista:
 
 
 def bledy_paczki(carton):
-    """Lista bledow paczki: brak zakonczenia, przekroczona ilosc per kategoria."""
+    """Lista bledow paczki: brak zakonczenia, przekroczona ilosc per kategoria.
+
+    Paczka z tabela ilosci (od 2026-10-15): bez progow — blad to tylko
+    niepotwierdzony ❗ (Brak / Nadwyzka / Uszkodzone / suma kilku osob ≠
+    plik). Paczki sprzed tabeli zachowuja stare reguly ponizej, inaczej
+    historia bledow zmienilaby sie wstecz.
+    """
     bledy = []
     if carton.scan_start_at and not carton.scan_end_at:
         bledy.append('Rozpoczęta, ale nie zakończona')
+    if carton.tabela_ilosci:
+        if carton.roznica_do_potwierdzenia():
+            bledy.append('❗ Do potwierdzenia: ' + '; '.join(carton.powody_roznicy()))
+        return bledy
 
     limit = (carton.stueckzahl or 0) * TOLERANCJA_ILOSCI
     ilosci = carton.get_scan_categories()
@@ -1746,6 +2064,9 @@ def paczki_view():
     if status not in PACZKI_STATUSY:
         status = 'wszystkie' if request.args.get('pokaz_zrobione') == '1' else 'niezrobione'
     tylko_bledy = request.args.get('bledy') == '1'
+    # ❗ niepotwierdzone — cel kafelka na Dashboardzie. Osobny filtr SQL, bo
+    # `bledy=1` niesie tez stare reguly i „bez konca" z calej historii.
+    do_potwierdzenia = request.args.get('do_potwierdzenia') == '1'
     page = request.args.get('page', 1, type=int)
 
     query = ImportedCarton.query
@@ -1813,7 +2134,10 @@ def paczki_view():
     # „Zrobiona" to paczka z zarejestrowanym koncem skanu (ta sama definicja,
     # co `finished` na /scan-package). Filtr bledow ignoruje status: blad ilosci
     # siedzi na zakonczonej paczce, a „bez konca" na niezakonczonej.
-    if not tylko_bledy:
+    if do_potwierdzenia:
+        query = query.filter(ImportedCarton.roznica.is_(True),
+                             ImportedCarton.roznica_potwierdzona_at.is_(None))
+    elif not tylko_bledy:
         if status == 'niezrobione':
             query = query.filter(ImportedCarton.scan_end_at.is_(None))
         elif status == 'zrobione':
@@ -1825,7 +2149,8 @@ def paczki_view():
 
     # Udzialy (i ich osoby) jednym zapytaniem — bledy_paczki() i komorka
     # „Pracownik" czytaja je per paczka.
-    query = query.options(selectinload(ImportedCarton.udzialy).joinedload(UdzialPaczki.user))
+    query = query.options(selectinload(ImportedCarton.udzialy).joinedload(UdzialPaczki.user),
+                          joinedload(ImportedCarton.potwierdzajacy))
     query = query.order_by(ImportedCarton.imported_at.desc())
 
     if tylko_bledy:
@@ -1855,10 +2180,13 @@ def paczki_view():
                            brak_daty_dla_zrobionych=brak_daty_dla_zrobionych,
                            filtr_po_koncu=filtr_po_koncu,
                            tylko_bledy=tylko_bledy,
+                           do_potwierdzenia=do_potwierdzenia,
                            bledy_map={c.id: bledy_paczki(c) for c in pagination.items},
                            users=users,
                            country_mappings=country_mappings,
-                           kategorie=list(etykiety_kategorii().items()))
+                           kategorie=list(etykiety_kategorii().items()),
+                           grupy=GRUPY_ARTYKULOWE,
+                           dodatki=DODATKI_TABELI)
 
 
 @app.route('/general-stats/export')
@@ -1954,18 +2282,13 @@ def general_stats_export():
     ws.row_dimensions[1].height = 28
     ws.row_dimensions[2].height = 18
 
-    def write_data_row(ri, s, cd, dr_label, row_fill, amounts_val, is_double_rate=False):
+    def write_data_row(ri, s, cd, dr_label, row_fill, amounts_val):
         """Write one data row (normal or yellow double-rate) at Excel row ri."""
         ym = (s.loading_date.year, s.loading_date.month)
         rates = rates_by_ym.get(ym, {})
 
-        # Zwykly wiersz: Total Amount = tylko Labelling one (patrz TOTAL_AMOUNT_CATEGORY).
-        # Zolty wiersz double rate zostaje na sumie wszystkich kategorii —
-        # decyzja do ustalenia z operacja, notatka w docs/TODO.md.
-        if is_double_rate:
-            total_amount = sum(cd.get(cat, {}).get('amount', 0) for cat in STAT_CATEGORIES)
-        else:
-            total_amount = cd.get(TOTAL_AMOUNT_CATEGORY, {}).get('amount', 0)
+        # Total Amount: wszystko poza twice/triple, w obu wierszach (TOTAL_AMOUNT_BEZ).
+        total_amount = total_amount_wiersza(cd)
         total_cost = sum(cd.get(cat, {}).get('amount', 0) * rates.get(cat, 0.0)
                          for cat in STAT_CATEGORIES)
 
@@ -2020,7 +2343,7 @@ def general_stats_export():
         dr_amount = dr_amounts.get((s.list_id, s.country_ledger, s.loading_date), 0)
         if dr_amount > 0:
             write_data_row(ri, s, s.get_double_rate_category_data(),
-                           'DOUBLE RATE', dr_fill_row, dr_amount, is_double_rate=True)
+                           'DOUBLE RATE', dr_fill_row, dr_amount)
             ri += 1
 
     # Column widths
@@ -2086,8 +2409,8 @@ def scan_category_totals(uebergabe_nr, land, data_pliku):
     suma = {kat: 0 for kat in STAT_CATEGORIES}
     for karton in kartony:
         for kat, ile in karton.get_scan_categories().items():
-            suma[kat] = suma.get(kat, 0) + int(ile or 0)
-    return {kat: {'amount': suma.get(kat, 0), 'cost': 0.0} for kat in STAT_CATEGORIES}
+            suma[kat] = suma.get(kat, 0) + (ile or 0)
+    return {kat: {'amount': liczba(suma.get(kat, 0)), 'cost': 0.0} for kat in STAT_CATEGORIES}
 
 
 def ma_reczne_ilosci(stat):
@@ -2182,7 +2505,8 @@ def general_stats_page():
                            stats=stats,
                            category_labels=STAT_CATEGORY_LABELS,
                            category_labels_pl=nazwy_kategorii_pl(),
-                           total_amount_category=TOTAL_AMOUNT_CATEGORY,
+                           total_amount_bez=list(TOTAL_AMOUNT_BEZ),
+                           zrodlo_kategorii=ZRODLO_KATEGORII,
                            categories=STAT_CATEGORIES,
                            date_from=date_from_str,
                            date_to=date_to_str,
@@ -2675,7 +2999,9 @@ def prace_osob(date_from=None, date_to=None, user_ids=None):
     - paczka jednej osoby (bez `udzial_paczki`): kto zakonczyl, start–koniec,
       sztuk = Stückzahl — jak zawsze;
     - paczka wielu osob (przekazana / zespol): kazdy swoj udzial — jego czas
-      i jego WPISANE ilosci (decyzja operacji 2026-10-13), liczony po koncu
+      i jego WPISANE ilosci (decyzja operacji 2026-10-13; od 2026-10-15 z tabeli:
+      Pojedynczo + Podwojnie + Potrojnie + Uszkodzone — UdzialPaczki.sztuki()),
+      liczony po koncu
       udzialu, takze gdy paczke dokonczy ktos inny pozniej. Udzial zamkniety
       przez kogos innego (bez ilosci) pomijamy — nie ma czego liczyc.
     Zakres po DOBIE LOKALNEJ konca, polotwarty.
@@ -2711,7 +3037,7 @@ def prace_osob(date_from=None, date_to=None, user_ids=None):
     for uid, start, koniec, sztuk in q.all():
         per_osoba.setdefault(uid, []).append((start, koniec, sztuk or 0))
     for u in uq.all():
-        per_osoba.setdefault(u.user_id, []).append((u.start_at, u.end_at, u.suma()))
+        per_osoba.setdefault(u.user_id, []).append((u.start_at, u.end_at, u.sztuki()))
     return per_osoba
 
 
@@ -4151,6 +4477,12 @@ def api_dashboard():
     remaining_pieces = db.session.query(func.sum(ImportedCarton.stueckzahl))\
         .filter(ImportedCarton.scan_end_at.is_(None)).scalar() or 0
 
+    # ❗ Paczki z roznica w tabeli ilosci, ktorej lider jeszcze nie potwierdzil
+    # (wszystkie dni — zalegle potwierdzenie nie znika o polnocy).
+    do_potwierdzenia = ImportedCarton.query.filter(
+        ImportedCarton.roznica.is_(True),
+        ImportedCarton.roznica_potwierdzona_at.is_(None)).count()
+
     # Paczki zakończone dziś
     dzis = and_(ImportedCarton.scan_end_at >= today_start,
                 ImportedCarton.scan_end_at < today_end)
@@ -4231,6 +4563,7 @@ def api_dashboard():
         'remaining_pieces': int(remaining_pieces),
         'done_today': done_today,
         'pieces_today': int(pieces_today),
+        'do_potwierdzenia': do_potwierdzenia,
         'progress_pct': progress_pct,
         'present_count': len(present_ids),
         'workers_today': workers_today,
@@ -4798,9 +5131,7 @@ def api_cost_mapping_save(year, month):
 @app.route('/scan-paczki')
 @leader_required
 def scan_paczki():
-    return render_template(
-        'scan_paczki.html',
-        kategorie=list(etykiety_kategorii().items()))
+    return render_template('scan_paczki.html')
 
 
 def parse_scan_categories(surowe):
@@ -4838,15 +5169,52 @@ def lista_osob(udzialy):
 
 def przelicz_ilosci_udzialow(carton, actor_id):
     """Karton = SUMA ilosci wszystkich udzialow (z sumy, nigdy delta) → linia
-    rozliczenia, jak przy zwyklym koncu paczki."""
+    rozliczenia, jak przy zwyklym koncu paczki. Tabela kartonu = suma tabel
+    osob (tryb zespol); ❗ liczy sie dopiero po zamknieciu paczki."""
     suma = {}
     for u in carton.udzialy:
         for kat, ile in u.get_ilosci().items():
             suma[kat] = suma.get(kat, 0) + ile
+    tabele = [t for t in (u.get_tabela() for u in carton.udzialy) if t]
+    if tabele:
+        carton.set_tabela(suma_tabel(tabele))
     poprzednie = carton.get_scan_categories()
     carton.set_scan_categories(suma)
+    odswiez_roznice(carton)
     if suma or poprzednie:
         recompute_general_stat(*klucz_linii(carton), actor_id=actor_id, from_scan=True)
+
+
+def odswiez_roznice(carton):
+    """Flaga ❗ z tabeli zakonczonej paczki. Paczka bez tabeli (sprzed
+    2026-10-15) ma stare reguly w bledy_paczki() i flagi nie dostaje."""
+    carton.roznica = bool(carton.scan_end_at and carton.tabela_ilosci
+                          and carton.powody_roznicy())
+
+
+def zapisz_tabele_kartonu(carton, tabela, actor_id):
+    """Paczka jednej osoby: tabela → kolumny rozliczenia → linia (z sumy)."""
+    carton.set_tabela(tabela)
+    carton.set_scan_categories(kategorie_z_tabeli(tabela))
+    odswiez_roznice(carton)
+    recompute_general_stat(*klucz_linii(carton), actor_id=actor_id, from_scan=True)
+
+
+def tabela_z_body(data, carton, oczekiwany_tryb):
+    """(tabela, odpowiedz_bledu) z `tabela` + `tryb` w body stanowiska.
+
+    Tryb wybiera ekran przy otwarciu panelu (z `tryb_tabeli` paczki). Gdy
+    w miedzyczasie ktos dolaczyl, tabela ma inny ksztalt — 409, panel od nowa.
+    """
+    if data.get('tryb') != oczekiwany_tryb:
+        return None, (jsonify({
+            'error': 'Przy paczce zmienił się skład osób (ktoś dołączył albo przekazał paczkę). '
+                     'Zeskanuj paczkę jeszcze raz i wpisz ilości od nowa.',
+            'zmiana_trybu': True}), 409)
+    tabela, blad = normalizuj_tabele(data.get('tabela'), oczekiwany_tryb, carton.stueckzahl)
+    if blad:
+        return None, (jsonify({'error': blad}), 400)
+    return tabela, None
 
 
 def zamknij_paczke_wielu_osob(carton, kto_id, teraz):
@@ -4911,9 +5279,16 @@ def api_package_time_przekaz():
     elif carton.scan_start_by != user.id:
         return blad_wlasciciela(carton)
 
-    kategorie, blad = parse_scan_categories(data.get('categories'))
-    if blad:
-        return jsonify({'error': blad}), 400
+    tabela = None
+    if 'tabela' in data:
+        tabela, blad = tabela_z_body(data, carton, TRYB_ZESPOL)
+        if blad:
+            return blad
+    else:
+        # Stary formularz kategorii — karta stanowiska otwarta przed wdrozeniem.
+        kategorie, blad = parse_scan_categories(data.get('categories'))
+        if blad:
+            return jsonify({'error': blad}), 400
 
     teraz = datetime.utcnow()
     if not moj:
@@ -4921,14 +5296,17 @@ def api_package_time_przekaz():
                            start_at=carton.scan_start_at)
         db.session.add(moj)
     moj.end_at = teraz
-    moj.set_ilosci(kategorie)
+    if tabela:
+        moj.set_tabela(tabela)
+    else:
+        moj.set_ilosci(kategorie)
     carton.scan_start_at = None
     carton.scan_start_by = None
     przelicz_ilosci_udzialow(carton, user.id)
     db.session.commit()
 
     return jsonify({
-        'message': f'Paczka {carton.barcode} czeka na dokończenie — wpisano {moj.suma()} szt. '
+        'message': f'Paczka {carton.barcode} czeka na dokończenie — wpisano {moj.sztuki()} szt. '
                    'Następna osoba wbija zwykły „Start paczki".',
         'carton': carton.to_dict()
     }), 200
@@ -4972,7 +5350,7 @@ def api_package_time_dolacz():
     }), 200
 
 
-def koniec_udzialu(carton, user, kategorie, zamknij_wszystkich):
+def koniec_udzialu(carton, user, kategorie, zamknij_wszystkich, tabela=None):
     """Koniec paczki wielu osob: zamyka udzial tej osoby; paczka konczy sie,
     gdy nie zostal nikt otwarty (albo „zamknij dla wszystkich")."""
     otwarte = otwarte_udzialy(carton)
@@ -4989,7 +5367,10 @@ def koniec_udzialu(carton, user, kategorie, zamknij_wszystkich):
 
     teraz = datetime.utcnow()
     moj.end_at = teraz
-    moj.set_ilosci(kategorie)
+    if tabela:
+        moj.set_tabela(tabela)
+    else:
+        moj.set_ilosci(kategorie)
     if zamknij_wszystkich:
         for u in otwarte_udzialy(carton):
             u.end_at = teraz
@@ -5001,7 +5382,7 @@ def koniec_udzialu(carton, user, kategorie, zamknij_wszystkich):
     db.session.commit()
 
     if pozostali:
-        msg = (f'Zakończono Twój udział ({moj.suma()} szt.). Przy paczce pracują jeszcze: '
+        msg = (f'Zakończono Twój udział ({moj.sztuki()} szt.). Przy paczce pracują jeszcze: '
                f'{lista_osob(pozostali)} — paczka zamknie się po ich końcu.')
     else:
         secs = carton.processing_seconds() or 0
@@ -5093,7 +5474,7 @@ def api_package_time_start():
 
     po_kim = ''
     if dokonczenie:
-        po_kim = f' Dokończenie po: {lista_osob(carton.udzialy)} (wpisano {sum(u.suma() for u in carton.udzialy)} szt.).'
+        po_kim = f' Dokończenie po: {lista_osob(carton.udzialy)} (wpisano {sum(u.sztuki() for u in carton.udzialy)} szt.).'
     return jsonify({
         'message': f'Start zarejestrowany dla paczki {package_barcode} — {user.display_name}.{po_kim}',
         'carton': carton.to_dict()
@@ -5129,6 +5510,12 @@ def api_package_time_end():
         return jsonify({'error': 'Paczka jest już zakończona.'}), 409
 
     if carton.udzialy:
+        if 'tabela' in data:
+            tabela, blad = tabela_z_body(data, carton, TRYB_ZESPOL)
+            if blad:
+                return blad
+            return koniec_udzialu(carton, user, None, bool(data.get('zamknij_wszystkich')),
+                                  tabela=tabela)
         kategorie, blad = parse_scan_categories(data.get('categories'))
         if blad:
             return jsonify({'error': blad}), 400
@@ -5141,13 +5528,22 @@ def api_package_time_end():
             'error': f'Paczkę rozpoczął {starter.display_name if starter else "inny pracownik"} — tylko on może ją zakończyć.'
         }), 403
 
-    kategorie, blad = parse_scan_categories(data.get('categories'))
-    if blad:
-        return jsonify({'error': blad}), 400
+    tabela = None
+    if 'tabela' in data:
+        tabela, blad = tabela_z_body(data, carton, TRYB_WZOR)
+        if blad:
+            return blad
+    else:
+        # Stary formularz kategorii (karta otwarta przed wdrozeniem tabeli).
+        kategorie, blad = parse_scan_categories(data.get('categories'))
+        if blad:
+            return jsonify({'error': blad}), 400
 
     carton.scan_end_at = datetime.utcnow()
     carton.scan_end_by = user.id
-    if kategorie:
+    if tabela:
+        zapisz_tabele_kartonu(carton, tabela, user.id)
+    elif kategorie:
         carton.set_scan_categories(kategorie)
         # Ilosci ze skanu staja sie zrodlem rozliczenia tej linii.
         recompute_general_stat(*klucz_linii(carton),
@@ -5186,6 +5582,69 @@ def api_package_categories_update(carton_id):
     carton.modified_by = current_user.id
     recompute_general_stat(*klucz_linii(carton),
                            actor_id=current_user.id, from_scan=True)
+    db.session.commit()
+    return jsonify(carton.to_dict()), 200
+
+
+@app.route('/api/packages/<int:carton_id>/tabela', methods=['PUT'])
+@leader_required
+def api_package_tabela_update(carton_id):
+    """Lider poprawia tabele ilosci („✎ Ilosci" na /paczki).
+
+    Paczka jednej osoby: cala tabela kartonu (tryb wzor). Paczka kilku osob:
+    tabela jednej osoby (`udzial_id`, tryb zespol), karton = suma. Zapis
+    lidera = potwierdzenie ❗ — sprawdzil i poprawil.
+    """
+    carton = (db.session.query(ImportedCarton).filter_by(id=carton_id)
+              .with_for_update().first())
+    if not carton:
+        abort(404)
+    data = json_body()
+    udzial_id = data.get('udzial_id')
+    if carton.udzialy:
+        if carton.edytor_ilosci() != 'zespol':
+            abort(400, 'Paczka sprzed tabeli ilości — popraw ją w starym oknie kategorii.')
+        udzial = next((u for u in carton.udzialy if u.id == udzial_id), None)
+        if not udzial:
+            abort(400, 'Wybierz osobę, której ilości poprawiasz.')
+        if not udzial.end_at:
+            abort(409, 'Ta osoba jeszcze pracuje przy paczce — poczekaj na jej koniec.')
+        tabela, blad = normalizuj_tabele(data.get('tabela'), TRYB_ZESPOL, carton.stueckzahl)
+        if blad:
+            abort(400, blad)
+        udzial.set_tabela(tabela)
+        # Zamkniety przez kogos innego = bez ilosci; od teraz ma ilosci lidera.
+        udzial.zamkniete_przez = None
+        przelicz_ilosci_udzialow(carton, current_user.id)
+    else:
+        if carton.edytor_ilosci() != 'tabela':
+            abort(400, 'Paczka sprzed tabeli ilości — popraw ją w starym oknie kategorii.')
+        tabela, blad = normalizuj_tabele(data.get('tabela'), TRYB_WZOR, carton.stueckzahl)
+        if blad:
+            abort(400, blad)
+        zapisz_tabele_kartonu(carton, tabela, current_user.id)
+
+    teraz = datetime.utcnow()
+    carton.modified_at = teraz
+    carton.modified_by = current_user.id
+    if carton.roznica:
+        carton.roznica_potwierdzona_at = teraz
+        carton.roznica_potwierdzona_przez = current_user.id
+    db.session.commit()
+    return jsonify(carton.to_dict()), 200
+
+
+@app.route('/api/packages/<int:carton_id>/potwierdz-roznice', methods=['POST'])
+@leader_required
+def api_package_potwierdz_roznice(carton_id):
+    """Lider potwierdza ❗ (rozmowa z pracownikiem / przeliczenie kartonu)."""
+    carton = db.get_or_404(ImportedCarton, carton_id)
+    if not carton.roznica:
+        abort(400, 'Ta paczka nie ma różnicy do potwierdzenia.')
+    if carton.roznica_potwierdzona_at:
+        return jsonify(carton.to_dict()), 200
+    carton.roznica_potwierdzona_at = datetime.utcnow()
+    carton.roznica_potwierdzona_przez = current_user.id
     db.session.commit()
     return jsonify(carton.to_dict()), 200
 
@@ -6130,6 +6589,12 @@ def migrate_columns():
             ("worker_time_event", "training_lead_id", 'INTEGER REFERENCES "user"(id)'),
             ("historia_celu", "zmienil_id", 'INTEGER REFERENCES "user"(id)'),
             ("historia_celu", "zmieniono_at", "TIMESTAMP"),
+            # Tabela ilosci na koniec paczki (2026-10-15).
+            ("imported_carton", "tabela_ilosci", "TEXT"),
+            ("imported_carton", "roznica", "BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("imported_carton", "roznica_potwierdzona_at", "TIMESTAMP"),
+            ("imported_carton", "roznica_potwierdzona_przez", 'INTEGER REFERENCES "user"(id)'),
+            ("udzial_paczki", "tabela", "TEXT"),
         ]
 
         for table, column, col_def in migrations:
