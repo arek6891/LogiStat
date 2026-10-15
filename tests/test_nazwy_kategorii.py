@@ -19,12 +19,14 @@ def test_domyslnie_polska_nazwa_a_w_nawiasie_angielska(flask_app):
     assert logistat.etykieta_kategorii('labelling_on') == 'Etykietowanie pojedyncze (Labelling one)'
 
 
-def test_admin_zmienia_nazwe_widoczna_przy_koncu_paczki(admin_client):
+def test_admin_zmienia_nazwe_kategorii(admin_client):
+    # Od 2026-10-15 stanowisko pokazuje tabele grup artykulowych, nie kategorie —
+    # nazwy kategorii widac w starym oknie „✎ Ilosci" (paczki sprzed tabeli).
     r = ustaw(admin_client, sorting='Niesprocesowane')
 
     assert r.status_code == 200
     assert r.get_json()['etykiety']['sorting'] == 'Niesprocesowane (Sorting)'
-    html = admin_client.get('/scan-paczki').get_data(as_text=True)
+    html = admin_client.get('/paczki').get_data(as_text=True)
     assert 'Niesprocesowane (Sorting)' in html
     assert 'Sortowanie (Sorting)' not in html
 
@@ -115,7 +117,7 @@ def test_zle_cialo_daje_400(admin_client):
 def test_nazwa_jest_escapowana_na_ekranie(admin_client):
     ustaw(admin_client, sorting='<b>X</b>')
 
-    html = admin_client.get('/scan-paczki').get_data(as_text=True)
+    html = admin_client.get('/paczki').get_data(as_text=True)
 
     assert '<b>X</b> (Sorting)' not in html
     assert '&lt;b&gt;X&lt;/b&gt; (Sorting)' in html

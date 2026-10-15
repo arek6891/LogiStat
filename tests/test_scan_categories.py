@@ -282,13 +282,14 @@ def test_api_pokazuje_ile_paczek_zeskanowano(admin_client, acting_admin):
 
 # ── ekrany ──────────────────────────────────────────────────────────────────
 
-def test_ekran_skanowania_ma_pola_wszystkich_kategorii(leader_client):
+def test_ekran_skanowania_ma_tabele_ilosci(leader_client):
+    # Od 2026-10-15 krok ilosci to tabela grup (static/tabela_ilosci.js),
+    # nie lista kategorii — patrz tests/test_tabela_ilosci.py.
     html = leader_client.get('/scan-paczki').get_data(as_text=True)
 
-    for kat in logistat.STAT_CATEGORIES:
-        assert f'id="end-qty-{kat}"' in html
+    assert 'id="end-qty-tabela"' in html and 'id="dok-qty-tabela"' in html
+    assert 'tabela_ilosci.js' in html
     assert 'end-qty-stueckzahl' in html          # ilosc sztuk pokazana pracownikowi
-    assert 'Labelling one' in html               # nowe etykiety
     assert 'Carton labeling' not in html
 
 

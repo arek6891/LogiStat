@@ -1,9 +1,9 @@
-"""Total Amount w Statystykach ogolnych = wylacznie „Labelling one".
+"""Total Amount w Statystykach ogolnych = suma wszystkich kategorii OPROCZ
+Labelling twice i triple (operacja, 2026-10-15) — w obu wierszach, takze
+zoltym double rate. Do tej daty byl to sam „Labelling one".
 
-Suma wszystkich kategorii liczyla te same sztuki wielokrotnie — jedna sztuka
-przechodzi przez kilka czynnosci, wiec „total" wychodzil wielokrotnoscia
-zawartosci paczki i przebijal Amounts. Zolty wiersz double rate ZOSTAJE na
-sumie wszystkich kategorii — decyzja do ustalenia z operacja (docs/TODO.md).
+Twice i triple to te same sztuki biżuterii z dodatkowymi etykietami (×1,5 / ×2),
+wiec w sumie liczylyby sie drugi raz.
 """
 import io
 from datetime import date
@@ -42,31 +42,33 @@ def eksport(admin_client):
 
 # ── stala ────────────────────────────────────────────────────────────────────
 
-def test_kategoria_total_amount_jest_w_liscie_kategorii():
-    assert logistat.TOTAL_AMOUNT_CATEGORY in logistat.STAT_CATEGORIES
+def test_kategorie_poza_total_amount_sa_w_liscie_kategorii():
+    assert set(logistat.TOTAL_AMOUNT_BEZ) == {'labelling_tvl', 'labelling_try'}
+    assert set(logistat.TOTAL_AMOUNT_BEZ) <= set(logistat.STAT_CATEGORIES)
 
 
 # ── eksport Excel ────────────────────────────────────────────────────────────
 
-def test_eksport_liczy_total_amount_tylko_z_labelling_one(admin_client):
+def test_eksport_liczy_total_amount_bez_twice_i_triple(admin_client):
     linia()
 
     ws = eksport(admin_client)
 
-    assert ws.cell(row=3, column=KOLUMNA_TOTAL_AMOUNT).value == 40, \
-        'suma wszystkich kategorii dalaby 55'
+    assert ws.cell(row=3, column=KOLUMNA_TOTAL_AMOUNT).value == 48, \
+        '40 + 3 + 5; z twice (7) wyszloby 55'
 
 
-def test_eksport_total_amount_zero_gdy_brak_labelling_one(admin_client):
-    linia(ilosci={'sorting': 12, 'textile': 8})
+def test_eksport_total_amount_bez_labelling_one(admin_client):
+    linia(ilosci={'sorting': 12, 'textile': 8, 'labelling_try': 4})
 
     ws = eksport(admin_client)
 
-    assert ws.cell(row=3, column=KOLUMNA_TOTAL_AMOUNT).value == 0
+    assert ws.cell(row=3, column=KOLUMNA_TOTAL_AMOUNT).value == 20
 
 
-def test_zolty_wiersz_double_rate_zostaje_na_sumie(admin_client, acting_admin):
-    """Swiadoma niespojnosc — do decyzji z operacja, patrz docs/TODO.md."""
+def test_zolty_wiersz_double_rate_liczy_tak_samo(admin_client, acting_admin):
+    """Do 2026-10-15 zolty wiersz byl suma wszystkich kategorii (TODO czekalo
+    na operacje) — teraz ta sama regula co zwykly wiersz."""
     logistat.process_import_rows([{
         'barcode': 'B-DR', 'land': 'PL', 'stueckzahl': 10, 'kategorie': 'textile',
         'ziel_datum': LADOWANIE, 'uebergabe_nr': 'UB-1', 'double_rate': True,
@@ -78,22 +80,33 @@ def test_zolty_wiersz_double_rate_zostaje_na_sumie(admin_client, acting_admin):
 
     ws = eksport(admin_client)
 
-    assert ws.cell(row=3, column=KOLUMNA_TOTAL_AMOUNT).value == 40, 'zwykly wiersz'
+    assert ws.cell(row=3, column=KOLUMNA_TOTAL_AMOUNT).value == 48, 'zwykly wiersz'
     assert ws.cell(row=4, column=2).value == 'DOUBLE RATE'
-    assert ws.cell(row=4, column=KOLUMNA_TOTAL_AMOUNT).value == 55, 'zolty wiersz: suma'
+    assert ws.cell(row=4, column=KOLUMNA_TOTAL_AMOUNT).value == 48, 'zolty wiersz: ta sama regula'
 
 
 # ── ekran ────────────────────────────────────────────────────────────────────
 
-def test_strona_pokazuje_total_amount_z_labelling_one(admin_client):
+def test_strona_pokazuje_total_amount_bez_twice_i_triple(admin_client):
     linia()
 
     html = admin_client.get(
         f'/general-stats?date_from={LADOWANIE}&date_to={LADOWANIE}').get_data(as_text=True)
 
     assert 'class="row-total-amount"' in html
-    assert 'data-val="40"' in html
+    assert 'data-val="48"' in html
     assert 'data-val="55"' not in html
+    assert 'TOTAL_AMOUNT_BEZ = ["labelling_tvl", "labelling_try"]' in html, 'JS po edycji'
+
+
+def test_strona_pokazuje_polowki_z_labelling_twice(admin_client):
+    # 3 sztuki podwojnie × 1,5 = 4,5 — nie moze zostac uciete do 4.
+    linia(ilosci={'labelling_on': 10, 'labelling_tvl': 4.5})
+
+    html = admin_client.get(
+        f'/general-stats?date_from={LADOWANIE}&date_to={LADOWANIE}').get_data(as_text=True)
+
+    assert 'value="4.5"' in html
 
 
 def test_strona_ma_dymek_wyjasniajacy_total_amount(admin_client):
