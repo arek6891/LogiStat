@@ -448,7 +448,7 @@
             style="margin-left:4px;font-size:.7rem;padding:1px 6px;border-radius:8px;background:var(--bg-secondary);color:var(--text-muted);">🎓 szkolony/a ${r.paczek_jako_szkolony}</span>`;
         }
         if (!r.paczek_szkolenia) return html;
-        return html + ` <span title="Paczek zrobionych w czasie szkolenia: ${r.paczek_szkolenia} (${r.godzin_szkolenia.toLocaleString('pl')} h) — liczone jako 100% celu dnia"
+        return html + ` <span title="Paczek zahaczających o szkolenie: ${r.paczek_szkolenia} — liczone w całości jako 100% celu. ${r.godzin_szkolenia.toLocaleString('pl')} h to czas tych paczek (od startu do końca), nie sam czas szkolenia"
             style="margin-left:4px;font-size:.7rem;padding:1px 6px;border-radius:8px;background:var(--info-bg);color:var(--info);">🎓 ${r.paczek_szkolenia}</span>`;
     }
 

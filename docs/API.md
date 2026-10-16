@@ -203,7 +203,7 @@ Liczba całkowita ≥ 0; **0 wyłącza** kolumnę celu. Zapis trafia też do `hi
 
 Zakres dat filtruje `scan_end_at` przez `local_day_bounds()`, górna granica półotwarta.
 
-**Szkolenie (🎓):** czas paczki nakładający się na szkolenie osoby szkolącej liczy się jako 100% celu z dnia paczki; reszta paczki — proporcjonalny ułamek prawdziwych sztuk. Te fragmenty nie wchodzą do `srednia_szt_h`. Wiersz (i punkty wykresów `/api/stats/user`) ma `paczek_szkolenia` i `godzin_szkolenia`; `sztuk` zostaje prawdziwe, więc u szkolącego `szt_h` ≠ `sztuk / godzin`.
+**Szkolenie (🎓, od 2026-10-14):** paczka, która choć częściowo przypada na szkolenie osoby szkolącej, liczy się **cała** jako 100% celu (czas × cel z dnia końca). Zaliczony czas = suma złączonych okresów takich paczek w całym zakresie; zwykła paczka równoległa liczy tylko czas poza nim. Te paczki nie wchodzą do `srednia_szt_h`. Wiersz (i punkty wykresów `/api/stats/user`) ma `paczek_szkolenia` i `godzin_szkolenia` (czas tych paczek, nie sam czas szkolenia); `sztuk` zostaje prawdziwe, więc u szkolącego `szt_h` ≠ `sztuk / godzin`.
 
 **Osoba szkolona (🎓):** czas jej paczek z czasu bycia szkoloną wypada w całości (czas + proporcjonalne sztuki), niezależnie od celu; poza średnią. Pola `paczek_jako_szkolony`, `godzin_jako_szkolony`, `paczek_do_oceny` (to od niej zależy próg `min_packages_rank`). Wszystko wyłączone → `powod_braku_oceny: "szkolony"`.
 
