@@ -8,7 +8,7 @@ zadana z gory norma (takiej system nie ma). Do 2026-09-28 byla to mediana.
 from datetime import date, datetime, timedelta
 
 import app as logistat
-from conftest import make_user
+from conftest import make_user, strona_z_js
 
 ZIEL = date(2026, 9, 10)
 
@@ -298,7 +298,7 @@ def test_zdezaktywowana_osoba_jest_widoczna_i_oznaczona(leader_client):
 
 
 def test_szablon_oznacza_nieaktywnych(leader_client):
-    html = leader_client.get('/stats').get_data(as_text=True)
+    html = strona_z_js(leader_client, '/stats')
 
     assert 'plakietkaNieaktywna' in html, 'plakietka musi byc renderowana'
     assert 'is_active_user' in html
@@ -456,9 +456,9 @@ def test_link_do_paczek_pokazuje_paczki_tej_osoby(leader_client):
     godziny_pracy(a, 3, 40, 30, dzien=dzis)
     godziny_pracy(b, 3, 40, 30, dzien=dzis)
 
-    html = leader_client.get(
+    html = strona_z_js(leader_client, 
         f'/paczki?osoba={a.id}&date_typ=koniec&date_from={dzis}&date_to={dzis}'
-    ).get_data(as_text=True)
+    )
 
     # Pelne barcody, nie prefiks: `'ala-' in html` trafiloby tez w atrybut albo
     # klase i test przechodzilby niezaleznie od dzialania filtra.
@@ -469,7 +469,7 @@ def test_link_do_paczek_pokazuje_paczki_tej_osoby(leader_client):
 
 
 def test_szablon_buduje_link_do_paczek(leader_client):
-    html = leader_client.get('/stats').get_data(as_text=True)
+    html = strona_z_js(leader_client, '/stats')
 
     assert 'linkDoPaczek' in html
     assert "date_typ: 'koniec'" in html
@@ -484,7 +484,7 @@ def test_operator_nie_zobaczy_przegladu(client):
 
 
 def test_ekran_statystyk_ma_zakladke_przegladu(leader_client):
-    html = leader_client.get('/stats').get_data(as_text=True)
+    html = strona_z_js(leader_client, '/stats')
 
     assert 'Przegląd ogólny' in html
     assert 'id="przegladBody"' in html

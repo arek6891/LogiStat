@@ -60,4 +60,4 @@ jobs:
         with:
           node-version: '20'
       # Bez testow JS — przynajmniej blad skladni w static/*.js nie przejdzie.
-      - run: for f in static/*.js; do node --check "$f" || exit 1; done
+      - run: for f in static/js/*.js; do node --check "$f" || exit 1; done

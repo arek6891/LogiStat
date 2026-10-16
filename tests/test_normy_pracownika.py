@@ -8,7 +8,7 @@ na `.31` ma 3 wiersze — byl pusty niemal u kazdego.
 from datetime import date, timedelta
 
 import app as logistat
-from conftest import make_user
+from conftest import make_user, strona_z_js
 
 ZIEL = date(2026, 9, 10)
 
@@ -164,7 +164,7 @@ def test_nakladajace_sie_paczki_w_wykresie_nie_licza_czasu_dwa_razy(leader_clien
 
 
 def test_szablon_rysuje_wykresy_z_paczek(leader_client):
-    html = leader_client.get('/stats').get_data(as_text=True)
+    html = strona_z_js(leader_client, '/stats')
 
     assert 'wykres_dzienny' in html and 'wykres_miesieczny' in html
     assert 'id="monthlyChart"' in html
@@ -192,13 +192,13 @@ def test_nieprzypisany_w_zmianach_ma_id(leader_client):
 
 
 def test_dashboard_linkuje_do_norm(leader_client):
-    html = leader_client.get('/dashboard').get_data(as_text=True)
+    html = strona_z_js(leader_client, '/dashboard')
 
     assert '/stats?user=${w.user_id}' in html
     assert '/stats?user=${w.id}' in html
 
 
 def test_normy_otwieraja_osobe_z_linku(leader_client):
-    html = leader_client.get('/stats').get_data(as_text=True)
+    html = strona_z_js(leader_client, '/stats')
 
     assert "q.get('user')" in html

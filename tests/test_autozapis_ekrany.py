@@ -5,6 +5,8 @@ wskaznik stanu i wspolny helper. Zachowanie sprawdzone w przegladarce.
 """
 import pytest
 
+from conftest import strona_z_js
+
 EKRANY_AUTOZAPISU = {
     '/assignment': 'saveAssignments()">',
     '/data-entry': 'saveEntries()">',
@@ -15,7 +17,7 @@ EKRANY_AUTOZAPISU = {
 
 @pytest.mark.parametrize('url,stary_przycisk', EKRANY_AUTOZAPISU.items())
 def test_ekran_wsadowy_ma_autozapis_zamiast_przycisku(admin_client, url, stary_przycisk):
-    html = admin_client.get(url).get_data(as_text=True)
+    html = strona_z_js(admin_client, url)
 
     assert 'id="autoZapisStatus"' in html
     assert 'autoZapis.zaplanuj(' in html
@@ -25,11 +27,11 @@ def test_ekran_wsadowy_ma_autozapis_zamiast_przycisku(admin_client, url, stary_p
 @pytest.mark.parametrize('url', ['/data-entry', '/forecast', '/general-stats'])
 def test_pola_zapisuja_sie_po_pauzie_w_pisaniu(admin_client, url):
     """Sam `change` gubil ostatnia liczbe przy zamknieciu karty z kursorem w polu."""
-    assert 'autoZapis.poWpisaniu(' in admin_client.get(url).get_data(as_text=True)
+    assert 'autoZapis.poWpisaniu(' in strona_z_js(admin_client, url)
 
 
 def test_helper_autozapisu_i_straznik_modali_sa_w_base(admin_client):
-    html = admin_client.get('/dashboard').get_data(as_text=True)
+    html = strona_z_js(admin_client, '/dashboard')
 
     assert 'const autoZapis' in html
     assert 'async function zapiszJson' in html
@@ -45,12 +47,12 @@ def test_helper_autozapisu_i_straznik_modali_sa_w_base(admin_client):
     ('/worker-times', 'id="eventModal" data-modal-guard'),
 ])
 def test_modal_z_formularzem_jest_chroniony(admin_client, url, modal):
-    assert modal in admin_client.get(url).get_data(as_text=True)
+    assert modal in strona_z_js(admin_client, url)
 
 
 @pytest.mark.parametrize('nr', [1, 2])
 def test_skaner_oznacza_zmiane_kolorem(admin_client, nr):
-    html = admin_client.get(f'/scanner/{nr}').get_data(as_text=True)
+    html = strona_z_js(admin_client, f'/scanner/{nr}')
 
     assert f'class="scanner-page" data-shift="{nr}"' in html
     assert f'class="scanner-shift-badge" data-shift="{nr}"' in html

@@ -13,7 +13,7 @@ import time
 from datetime import date
 
 import app as logistat
-from conftest import login, make_user
+from conftest import login, make_user, strona_z_js
 
 ZIEL = date(2026, 9, 10)
 
@@ -199,7 +199,7 @@ def test_dwa_rownolegle_konce_przechodzi_tylko_jeden(flask_app, leader, monkeypa
 # ── Ekran ────────────────────────────────────────────────────────────────────
 
 def test_panel_ilosci_mowi_ze_paczka_nie_jest_zakonczona(leader_client):
-    html = leader_client.get('/scan-paczki').get_data(as_text=True)
+    html = strona_z_js(leader_client, '/scan-paczki')
 
     assert 'Paczka NIE jest jeszcze zakończona' in html
     assert '/api/employee-lookup' in html
@@ -208,7 +208,7 @@ def test_panel_ilosci_mowi_ze_paczka_nie_jest_zakonczona(leader_client):
 def test_bez_pytania_o_nadwyzke_i_bez_poinformuj_lidera(leader_client):
     """Operacja 2026-10-15: nadwyzka to zwykly wpis w tabeli (polegamy na
     deklaracji pracownika), lider widzi ❗ na /paczki i na Dashboardzie."""
-    html = leader_client.get('/scan-paczki').get_data(as_text=True)
+    html = strona_z_js(leader_client, '/scan-paczki')
 
     assert 'nadwyzkaModal' not in html
     assert 'Czy akceptujesz nadwyżkę?' not in html
@@ -217,7 +217,7 @@ def test_bez_pytania_o_nadwyzke_i_bez_poinformuj_lidera(leader_client):
 
 
 def test_zakladki_do_dokonczenia_i_zespol(leader_client):
-    html = leader_client.get('/scan-paczki').get_data(as_text=True)
+    html = strona_z_js(leader_client, '/scan-paczki')
 
     assert 'Paczka do dokończenia' in html and 'Pakowanie zespołowe' in html
     assert '/api/package-time/przekaz' in html and '/api/package-time/dolacz' in html
