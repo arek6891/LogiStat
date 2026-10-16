@@ -8,7 +8,7 @@ pracownikow, nie tylko obecnych na zmianie. `Post Processing` = skany paczek
 from datetime import date, timedelta
 
 import app as logistat
-from conftest import make_user
+from conftest import make_user, strona_z_js
 
 DZIEN = date(2026, 9, 20)
 
@@ -117,6 +117,6 @@ def test_estymacja_takze_bez_utworzonej_zmiany(leader_client):
 
 
 def test_tablica_rysuje_estymacje(leader_client):
-    html = leader_client.get('/assignment').get_data(as_text=True)
+    html = strona_z_js(leader_client, '/assignment')
     assert 'data-est-for=' in html
     assert 'pokazEstymacje' in html

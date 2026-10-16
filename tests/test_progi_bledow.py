@@ -5,6 +5,7 @@ pilnujemy kontraktu: ustawienia zapisuja sie, maja sensowne domyslne wartosci
 i trafiaja do szablonu jako stale JS.
 """
 import app as logistat
+from conftest import strona_z_js
 
 
 def test_domyslne_progi(flask_app):
@@ -45,9 +46,9 @@ def test_lider_nie_zmieni_progow(leader_client):
 def test_progi_trafiaja_na_ekran_czasow(admin_client):
     admin_client.put('/api/settings', json={'max_work_minutes': 540, 'min_break_minutes': 25})
 
-    html = admin_client.get('/worker-times').get_data(as_text=True)
+    html = strona_z_js(admin_client, '/worker-times')
 
-    assert 'MAX_WORK_MINUTES  = 540' in html
+    assert 'MAX_WORK_MINUTES = 540' in html
     assert 'MIN_BREAK_MINUTES = 25' in html
 
 

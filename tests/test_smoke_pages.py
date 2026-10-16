@@ -3,6 +3,7 @@ helper w base.html) i regresje uprawnien na trasach."""
 import pytest
 
 import app as logistat
+from conftest import strona_z_js
 
 # Trasy renderujace strony (bez API i eksportow)
 STRONY_ADMINA = [
@@ -63,7 +64,7 @@ def test_login_renderuje_sie(client):
 def test_cache_buster_wstawia_mtime(admin_client):
     """base.html ma `static_v('style.css')` — wersja z mtime pliku, nie recznie
     wpisane ?v=6."""
-    html = admin_client.get('/dashboard').get_data(as_text=True)
+    html = strona_z_js(admin_client, '/dashboard')
 
     assert 'style.css?v=' in html
     wersja = html.split('style.css?v=')[1].split('"')[0]
@@ -72,12 +73,12 @@ def test_cache_buster_wstawia_mtime(admin_client):
 
 def test_escapehtml_jest_dostepny_wszedzie(admin_client):
     for url in ('/dashboard', '/scan-package', '/worker-times'):
-        html = admin_client.get(url).get_data(as_text=True)
+        html = strona_z_js(admin_client, url)
         assert 'function escapeHtml' in html, url
 
 
 def test_lider_nie_widzi_opcji_admina_w_formularzu(leader_client):
-    html = leader_client.get('/admin/users').get_data(as_text=True)
+    html = strona_z_js(leader_client, '/admin/users')
 
     assert '<option value="admin">' not in html
     assert '<option value="leader">' not in html
@@ -85,7 +86,7 @@ def test_lider_nie_widzi_opcji_admina_w_formularzu(leader_client):
 
 
 def test_admin_widzi_wszystkie_role(admin_client):
-    html = admin_client.get('/admin/users').get_data(as_text=True)
+    html = strona_z_js(admin_client, '/admin/users')
 
     assert '<option value="admin">' in html
 

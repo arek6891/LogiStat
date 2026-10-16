@@ -1,5 +1,14 @@
 # LogiStat — Changelog
 
+## 2026-10-16 (4) — Krok 1: JavaScript z szablonów do plików
+
+### Zmienione
+- ~4 600 linii JavaScriptu przeniesione z 21 szablonów do `static/js/<strona>.js`
+  (bez zmian w działaniu). W szablonie zostaje tylko mały blok danych z serwera.
+- CI sprawdza składnię wszystkich plików `static/js/*.js`, a skan XSS (`tests/test_xss.py`)
+  obejmuje teraz także je — wcześniej ~95% JS nie było sprawdzane wcale.
+- Nowy test pilnuje, żeby logika JS nie wróciła do szablonów.
+
 ## 2026-10-16 (3) — Poprawki z przeglądu architektury
 
 ### Poprawione
