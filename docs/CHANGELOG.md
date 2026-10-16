@@ -1,5 +1,21 @@
 # LogiStat — Changelog
 
+## 2026-10-16 — Motyw: ciemnoszary grafit w barwach Logwin
+
+### Zmienione
+- Cała aplikacja w ciemnoszarym graficie z zielonym akcentem Logwin (menu, przyciski,
+  logo); nagłówki fontem Montserrat jak na stronie Logwin. Tekst jasnoszary zamiast
+  białego — mniej męczy oczy.
+- Statusy we własnych odcieniach: „OK / spełnia” turkus, błąd czerwony, ostrzeżenie
+  bursztyn, double rate pomarańczowy. Kolory zmian 1/2 bez zmian.
+- Wykresy (Forecast, Normy) w kolorach motywu.
+
+### Poprawione
+- Przyciski `btn-secondary` (np. zakładka w Normach, stronicowanie Paczek) wyglądały jak
+  białe przyciski przeglądarki.
+- Wiersz sumy w Statystykach ogólnych i tło dymków odwoływały się do nieistniejących
+  kolorów.
+
 ## 2026-10-15 — Tabela ilości na koniec paczki, Total Amount, ❗ do potwierdzenia
 
 Nowe kolumny `imported_carton.tabela_ilosci`, `roznica`, `roznica_potwierdzona_at`,

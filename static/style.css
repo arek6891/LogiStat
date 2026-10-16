@@ -2,46 +2,89 @@
    LogiStat — Design System
    ══════════════════════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Montserrat:wght@600;700;800&display=swap');
 
+/* Motyw: ciemnoszary grafit w barwach Logwin (2026-10-16).
+   Barwy z arkusza www.logwin-logistics.com: zielony #8BC640 (akcent), grafit
+   #50554F, niebieski #325C96, czerwony #CC1122. Tlo to grafit z lekko zielonym
+   odcieniem logwinowskiej szarosci, tekst nie bialy (#E4E6E2) — caly dzien
+   przed ekranem mniej meczy niz czern z biela. Zielen tylko jako akcent;
+   statusy maja wlasne odcienie (turkus = OK), zeby przycisk nie wygladal jak
+   „spelnia". Kolory TYLKO stad: `var(--x)`, a z przezroczystoscia
+   `rgb(var(--x-rgb) / .12)`. Wykresy czytaja je przez `motyw()` (base.html). */
 :root {
-    /* Colors */
-    --bg-primary: #0f1117;
-    --bg-secondary: #1a1d27;
-    --bg-card: #22263280;
-    --bg-card-solid: #222632;
-    --bg-hover: #2a2e3a;
-    --bg-input: #181b24;
-    --border: #2e3340;
-    --border-focus: #6c63ff;
+    /* Natywne kontrolki (kalendarz, przewijanie) tez ciemne */
+    color-scheme: dark;
+    accent-color: var(--accent);
+    /* Tla i ramki — grafit Logwin */
+    --bg-primary: #232622;
+    --bg-secondary: #2b2e2a;
+    --bg-card: #333732d9;
+    --bg-card-solid: #333732;
+    --bg-hover: #3c403a;
+    --bg-input: #282b27;
+    --border: #4a4f48;
+    --border-rgb: 74 79 72;
+    --border-focus: #8bc640;
 
-    --text-primary: #e8eaed;
-    --text-secondary: #9aa0b0;
-    --text-muted: #5f6577;
+    --text-primary: #e4e6e2;
+    --text: var(--text-primary);
+    --text-secondary: #b3b7af;
+    --text-secondary-rgb: 179 183 175;
+    --text-muted: #8c9188;
 
-    --accent: #6c63ff;
-    --accent-hover: #7b73ff;
-    --accent-glow: rgba(108, 99, 255, 0.25);
-    --success: #34d399;
-    --success-bg: rgba(52, 211, 153, 0.12);
-    --warning: #fbbf24;
-    --warning-bg: rgba(251, 191, 36, 0.12);
-    --danger: #f87171;
-    --danger-bg: rgba(248, 113, 113, 0.12);
-    --info: #60a5fa;
-    --info-bg: rgba(96, 165, 250, 0.12);
+    /* Akcent — zielen Logwin; tekst na zielonym tle ciemny (biel ma 2:1) */
+    --accent: #8bc640;
+    --accent-rgb: 139 198 64;
+    --accent-hover: #9dd257;
+    --accent-glow: rgb(139 198 64 / 0.22);
+    --on-accent: #1c2018;
+    /* Drugi kolor marki — niebieski Logwin rozjasniony na ciemne tlo */
+    --accent-2: #6f9bd6;
+    --accent-2-rgb: 111 155 214;
+    --brand-blue: #325c96;
+    --brand-red: #cc1122;
+
+    /* Statusy — odcienie inne niz akcent */
+    --success: #4cc3a5;
+    --success-rgb: 76 195 165;
+    --success-bg: rgb(76 195 165 / 0.14);
+    --warning: #e7b343;
+    --warning-rgb: 231 179 67;
+    --warning-bg: rgb(231 179 67 / 0.14);
+    --danger: #ec5a5f;
+    --danger-rgb: 236 90 95;
+    --danger-bg: rgb(236 90 95 / 0.14);
+    --info: #6f9bd6;
+    --info-rgb: 111 155 214;
+    --info-bg: rgb(111 155 214 / 0.14);
+    /* Double rate — pomaranczowy z palety Logwin */
+    --double-rate: #f0a04b;
+    --double-rate-rgb: 240 160 75;
+
+    /* Toasty — ciemne tlo w kolorze statusu, jasny tekst */
+    --toast-success-bg: #1f4239;
+    --toast-success-fg: #d5f3ea;
+    --toast-danger-bg: #4d2224;
+    --toast-danger-fg: #fbd7d8;
+    --toast-warning-bg: #4a3c18;
+    --toast-warning-fg: #f8ecc8;
+    --toast-info-bg: #22385a;
+    --toast-info-fg: #d8e6f8;
 
     /* Zmiany 1 / 2 — niebieski vs pomaranczowy: para czytelna takze dla
        daltonistow i nie zajeta przez inne znaczenia (zolty = double rate /
-       ostrzezenia, zielony/czerwony = statusy, fiolet = akcent). Kolor zawsze
+       ostrzezenia, turkus/czerwony = statusy, zielony = akcent). Kolor zawsze
        idzie w parze z napisem „Zmiana N", nigdy sam. */
     --shift-1: #38bdf8;
     --shift-1-bg: rgba(56, 189, 248, 0.14);
     --shift-2: #f97316;
     --shift-2-bg: rgba(249, 115, 22, 0.14);
 
-    /* Typography */
+    /* Typography — tresc Inter (czytelne cyfry w tabelach), naglowki
+       Montserrat jak na stronie Logwin */
     --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-head: 'Montserrat', 'Inter', -apple-system, 'Segoe UI', sans-serif;
 
     /* Spacing */
     --radius: 12px;
@@ -101,7 +144,7 @@ html, body {
 .sidebar-logo h1 {
     font-size: 1.4rem;
     font-weight: 700;
-    background: linear-gradient(135deg, var(--accent), #a78bfa);
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -122,7 +165,7 @@ html, body {
     overflow-y: auto;
     overflow-x: hidden;
     scrollbar-width: thin;
-    scrollbar-color: #6c63ff transparent;
+    scrollbar-color: var(--accent) transparent;
 }
 
 .sidebar-nav::-webkit-scrollbar {
@@ -134,7 +177,7 @@ html, body {
 }
 
 .sidebar-nav::-webkit-scrollbar-thumb {
-    background: #6c63ff;
+    background: var(--accent);
     border-radius: 4px;
 }
 
@@ -204,7 +247,7 @@ html, body {
     justify-content: center;
     font-weight: 600;
     font-size: 0.8rem;
-    color: white;
+    color: var(--on-accent);
 }
 
 .main-content {
@@ -242,7 +285,7 @@ html, body {
 }
 
 .card:hover {
-    border-color: rgba(108, 99, 255, 0.3);
+    border-color: rgb(var(--accent-rgb) / 0.3);
 }
 
 .card-header {
@@ -277,7 +320,7 @@ html, body {
 
 .btn-primary {
     background: var(--accent);
-    color: white;
+    color: var(--on-accent);
     box-shadow: 0 2px 12px var(--accent-glow);
 }
 
@@ -289,7 +332,7 @@ html, body {
 
 .btn-success {
     background: var(--success);
-    color: #0f1117;
+    color: var(--bg-primary);
 }
 
 .btn-success:hover {
@@ -307,13 +350,17 @@ html, body {
     transform: translateY(-1px);
 }
 
-.btn-ghost {
+/* `btn-secondary` nie mial stylu (rysowal sie jak bialy przycisk przegladarki)
+   — od motywu grafitowego wyglada jak `btn-ghost`. */
+.btn-ghost,
+.btn-secondary {
     background: transparent;
     color: var(--text-secondary);
     border: 1px solid var(--border);
 }
 
-.btn-ghost:hover {
+.btn-ghost:hover,
+.btn-secondary:hover {
     background: var(--bg-hover);
     color: var(--text-primary);
     border-color: var(--text-muted);
@@ -442,27 +489,27 @@ tr:last-child td {
 }
 
 .toast-success {
-    background: #065f46;
+    background: var(--toast-success-bg);
     border: 1px solid var(--success);
-    color: #d1fae5;
+    color: var(--toast-success-fg);
 }
 
 .toast-error {
-    background: #7f1d1d;
+    background: var(--toast-danger-bg);
     border: 1px solid var(--danger);
-    color: #fecaca;
+    color: var(--toast-danger-fg);
 }
 
 .toast-warning {
-    background: #78350f;
+    background: var(--toast-warning-bg);
     border: 1px solid var(--warning);
-    color: #fef3c7;
+    color: var(--toast-warning-fg);
 }
 
 .toast-info {
-    background: #1e3a5f;
+    background: var(--toast-info-bg);
     border: 1px solid var(--info);
-    color: #dbeafe;
+    color: var(--toast-info-fg);
 }
 
 @keyframes slideInRight {
@@ -492,7 +539,7 @@ tr:last-child td {
     display: inline-block;
     font-size: 4rem;
     font-weight: 800;
-    background: linear-gradient(135deg, var(--accent), #a78bfa);
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -554,13 +601,13 @@ tr:last-child td {
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--accent), #a78bfa);
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 700;
     font-size: 0.9rem;
-    color: white;
+    color: var(--on-accent);
     flex-shrink: 0;
 }
 
@@ -715,7 +762,7 @@ a.js-osoba {
 }
 
 .assignment-user-card.bez-szkolenia {
-    border-color: var(--warning, #f59e0b);
+    border-color: var(--warning);
 }
 
 .assignment-user-card.bez-szkolenia > span::after {
@@ -731,13 +778,13 @@ a.js-osoba {
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--accent), #a78bfa);
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 700;
     font-size: 0.7rem;
-    color: white;
+    color: var(--on-accent);
     flex-shrink: 0;
 }
 
@@ -760,7 +807,7 @@ a.js-osoba {
 
 .assignment-user-card.selected .checkbox::after {
     content: '✓';
-    color: white;
+    color: var(--on-accent);
     font-size: 0.7rem;
     font-weight: 700;
 }
@@ -991,7 +1038,7 @@ a.js-osoba {
 .login-card h1 {
     font-size: 2rem;
     font-weight: 800;
-    background: linear-gradient(135deg, var(--accent), #a78bfa);
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -1065,7 +1112,7 @@ a.js-osoba {
 
 .shift-tab.active {
     background: var(--accent);
-    color: white;
+    color: var(--on-accent);
     box-shadow: 0 2px 8px var(--accent-glow);
 }
 
@@ -1124,11 +1171,11 @@ a.js-osoba {
     width: 320px;
     max-width: 80vw;
     padding: .75rem .9rem;
-    background: var(--bg-card-solid, #1e293b);
-    border: 1px solid var(--border, #334155);
+    background: var(--bg-card-solid);
+    border: 1px solid var(--border);
     border-radius: var(--radius-sm, 6px);
-    box-shadow: var(--shadow-lg, 0 10px 25px rgba(0,0,0,.45));
-    color: var(--text, #e2e8f0);
+    box-shadow: var(--shadow-lg);
+    color: var(--text);
     font-size: .8rem;
     font-weight: 400;
     line-height: 1.45;
@@ -1324,3 +1371,9 @@ input.autozapis-blad {
     background: var(--danger-bg); color: var(--danger);
 }
 .roznica-paczki.potwierdzona { background: transparent; color: var(--text-muted); }
+
+/* ── Naglowki: Montserrat jak na www.logwin-logistics.com ───────────────── */
+h1, h2, h3, .page-title, .sidebar-logo h1, .login-card h1 {
+    font-family: var(--font-head);
+    letter-spacing: -0.01em;
+}

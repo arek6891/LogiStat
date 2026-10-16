@@ -167,7 +167,7 @@
             {% for user in users %}
             <div class="user-list-item" data-user-id="{{ user.id }}" data-user-name="{{ user.display_name }}">
                 <div class="mini-avatar"
-                    style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#a78bfa);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.7rem;color:white;flex-shrink:0;">
+                    style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.7rem;color:white;flex-shrink:0;">
                     {{ user.display_name[0] }}
                 </div>
                 <span>{{ user.display_name }}</span>
@@ -310,12 +310,12 @@
 
     // Jedno zrodlo kolorow oceny dla rankingu i karty pracownika.
     const STYL_OCENY = {
-        dobra: { tlo: 'rgba(34,197,94,.12)', kolor: '#22c55e', tekst: '🟢 dobra' },
+        dobra: { tlo: 'rgb(var(--success-rgb) / .12)', kolor: 'var(--success)', tekst: '🟢 dobra' },
         ok:    { tlo: '',                    kolor: 'var(--text-secondary)', tekst: '⚪ w normie' },
-        slaba: { tlo: 'rgba(239,68,68,.12)', kolor: 'var(--danger)', tekst: '🔴 do dopracowania' },
+        slaba: { tlo: 'rgb(var(--danger-rgb) / .12)', kolor: 'var(--danger)', tekst: '🔴 do dopracowania' },
     };
     const STYL_CELU = {
-        spelnia: { kolor: '#22c55e', tekst: '🟢 spełnia' },
+        spelnia: { kolor: 'var(--success)', tekst: '🟢 spełnia' },
         ponizej: { kolor: 'var(--danger)', tekst: '🔴 poniżej celu' },
     };
 
@@ -401,7 +401,7 @@
                         'var(--accent)')
                   + (d.spelnia_cel !== null
                       ? kafel('Spełnia cel', `${d.spelnia_cel} / ${s.w_rankingu}`,
-                              d.spelnia_cel === s.w_rankingu ? '#22c55e' : 'var(--danger)')
+                              d.spelnia_cel === s.w_rankingu ? 'var(--success)' : 'var(--danger)')
                       : kafel('Spełnia cel', '—'))
                 : '')
             + '</div>';
@@ -675,7 +675,7 @@
             if (d.is_package) {
                 // Wiersz paczek — wyliczany automatycznie, tylko do odczytu
                 return `
-        <tr style="background:rgba(251,146,60,.06);">
+        <tr style="background:rgb(var(--double-rate-rgb) / .06);">
             <td>${d.date}</td>
             <td style="color:var(--text-muted);">—</td>
             <td>${escapeHtml(d.activity)}</td>
@@ -769,25 +769,25 @@
             {
                 type: 'bar', label: 'Sztuk', yAxisID: 'ySzt',
                 data: punkty.map(p => p.sztuk),
-                backgroundColor: 'rgba(108, 99, 255, 0.45)',
-                borderColor: 'rgba(108, 99, 255, 1)', borderWidth: 1, borderRadius: 4,
+                backgroundColor: motyw('--accent', 0.45),
+                borderColor: motyw('--accent', 1), borderWidth: 1, borderRadius: 4,
             },
             {
                 type: 'line', label: 'Szt./h', yAxisID: 'yWyd',
                 data: punkty.map(p => p.szt_h),
-                borderColor: '#f59e0b', backgroundColor: '#f59e0b',
+                borderColor: motyw('--warning'), backgroundColor: motyw('--warning'),
                 borderWidth: 2, pointRadius: 3, spanGaps: false, tension: 0.2,
             },
         ];
-        if (norma.srednia_szt_h !== null) zbiory.push(linia(norma.srednia_szt_h, 'Średnia zespołu szt./h', '#22c55e'));
+        if (norma.srednia_szt_h !== null) zbiory.push(linia(norma.srednia_szt_h, 'Średnia zespołu szt./h', motyw('--success')));
         // Cel ze swojego dnia/miesiaca — po zmianie celu linia robi schodek.
         if (punkty.some(p => p.cel !== null)) zbiory.push({
-            ...linia(null, 'Cel szt./h', '#ef4444'),
+            ...linia(null, 'Cel szt./h', motyw('--danger')),
             data: punkty.map(p => p.cel), stepped: 'middle', spanGaps: true,
         });
 
-        const siatka = { color: 'rgba(46,51,64,0.5)' };
-        const tekst = { color: '#9aa0b0' };
+        const siatka = { color: motyw('--border', 0.5) };
+        const tekst = { color: motyw('--text-secondary') };
         return new Chart(canvas, {
             data: { labels, datasets: zbiory },
             options: {
@@ -808,9 +808,9 @@
                 scales: {
                     x: { ticks: tekst, grid: siatka },
                     ySzt: { position: 'left', beginAtZero: true, ticks: tekst, grid: siatka,
-                            title: { display: true, text: 'Sztuk', color: '#9aa0b0' } },
+                            title: { display: true, text: 'Sztuk', color: motyw('--text-secondary') } },
                     yWyd: { position: 'right', beginAtZero: true, ticks: tekst, grid: { drawOnChartArea: false },
-                            title: { display: true, text: 'Szt./h', color: '#9aa0b0' } },
+                            title: { display: true, text: 'Szt./h', color: motyw('--text-secondary') } },
                 }
             }
         });

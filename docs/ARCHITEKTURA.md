@@ -119,6 +119,20 @@ Quantities entered at package end are the **source of truth for `category_data`*
 - **Static assets:** `{{ static_v('style.css') }}` appends the file's mtime — no manual `?v=` bump.
 - **`escapeHtml()` in `base.html`** — everything interpolated into `innerHTML` from the DB (display names, activity names, barcodes, countries) goes through it. Barcodes arrive from CSV imports, so the risk is *stored* XSS.
 
+## Motyw: ciemnoszary grafit w barwach Logwin (2026-10-16)
+
+**Zgloszenie.** Operacja chce aplikacje w barwach Logwin, z dominujaca szaroscia, „zeby nie meczylo oczu". Do wyboru byly jasnoszary i ciemnoszary grafit — wybrany **ciemnoszary grafit**.
+
+**Barwy** wziete z arkusza stylow www.logwin-logistics.com (liczba wystapien): zielony `#8BC640` (83), grafit `#50554F` (46), czerwony `#CC1122` (33), niebieski `#325C96` (15), szarosci `#929491`/`#CBCBCB`/`#F3F3F3`; fonty Montserrat i Zilla Slab.
+
+**Decyzje.**
+- Tla to grafit z zielonkawym odcieniem logwinowskiej szarosci (`#232622` → `#3C403A`), nie czysta szarosc i nie czern. Tekst `#E4E6E2`, nie biel — mniejszy kontrast niz biel na czerni, mniej meczy przez cala zmiane.
+- Zielen Logwin to **akcent** (aktywne menu, glowne przyciski, logo). Bo akcentem jest zielen, „OK / spelnia" dostal **turkus** (`--success`), zeby przycisk nie wygladal jak status. Czerwien Logwin `#CC1122` jest za ciemna na tekst na grafitowym tle (~3:1) — `--danger` to jej rozjasnienie; samo `--brand-red` czeka na logo. Niebieski Logwin rozjasniony do `--info`/`--accent-2` (linki, drugi kolor gradientow).
+- Biel na `#8BC640` ma kontrast 2:1 → tekst na zielonym tle ciemny (`--on-accent`).
+- Kolory zmian (niebieski/pomaranczowy) bez zmian; zasada „nigdy kolorem statusu ani akcentu" przepisana na nowe barwy.
+
+**Sprzatanie.** Szablony mialy ~140, a `style.css` ~50 kolorow wpisanych na sztywno (fiolet starego akcentu, zielenie/czerwienie Tailwinda) — przy zmianie palety zostalyby fioletowe plamy. Zamienione mechanicznie wg mapy na tokeny; kazdy token z przezroczystoscia ma blizniaka `-rgb`, wiec `rgba(…, .12)` → `rgb(var(--x-rgb) / .12)`. Fallbacki `var(--x, #literal)` usuniete — przy okazji wyszlo, ze `var(--text)` (dymki) i `var(--surface)` (wiersz sumy w Statystykach) nie istnialy; `--text` jest teraz aliasem, `--surface` → `--bg-hover`. Chart.js rysuje na canvasie i `var()` nie rozumie — wykresy (Forecast, Normy) biora kolory przez `motyw()`. `btn-secondary` nie mial zadnego stylu (bialy przycisk przegladarki) — teraz wyglada jak `btn-ghost`. `color-scheme: dark` + `accent-color`: natywne checkboxy i kalendarze tez ciemne/zielone.
+
 ## Tabela ilosci na koniec paczki, Total Amount, ❗ do potwierdzenia (2026-10-15)
 
 **Zgloszenie (operacje, 2026-10-14).** Krok ilosci na „Czasy paczek → Koniec" zastapic tabela z Excela: wiersze = grupy artykulowe (Biżuteria, Akcesoria, Okulary, Tekstylia), kolumny Brak / Nadwyzka / Uszkodzone / Podwojnie / Potrojnie, „Pojedynczo" liczy system; pod spodem sortowanie inne, podmiany kart, worki. Odpowiedzi na 20 pytan zebrane w dokumencie dla operacji (artifact `BJwtkhwQrFjQQQJg9kGYkY`, wersje 1–5).
