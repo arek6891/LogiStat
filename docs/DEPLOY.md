@@ -91,6 +91,17 @@ ich nie nadpisuje. **Nowe kolumny w modelach: obowiązkowo dopisz je do
 do tabeli, która już istnieje, więc bez tego po wdrożeniu każde zapytanie na tym
 modelu kończy się `UndefinedColumn`. Pilnuje tego `tests/test_migracje.py`.
 
+**Po każdym wdrożeniu — kontrola spójności** (tylko odczyt):
+
+```bash
+ssh testowy 'docker exec -w /app logistat-test python scripts/sprawdz_spojnosc.py'
+```
+
+`Spójność: OK.` = rozliczenie zgadza się z paczkami (Amounts, linie ze skanów, tabele
+ilości, flagi ❗, udziały). `BLAD` = rozjechane dane, kod wyjścia 1 — wyjaśnić przed dalszą
+pracą. `UWAGA` = sprawy dla liderów (paczki wiszące bez końca, niepotwierdzone ❗,
+niezamknięte przerwy).
+
 **Jednorazowe migracje danych** biegną w `init_db()` pod tym samym
 `pg_advisory_lock` (jeden worker) i są oznaczane znacznikiem w `app_setting`, więc kolejne
 starty ich nie powtarzają. Obecnie: `migruj_date_pliku()` (znacznik `migracja_data_pliku`,

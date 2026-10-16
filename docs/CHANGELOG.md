@@ -1,5 +1,19 @@
 # LogiStat — Changelog
 
+## 2026-10-16 (2) — CI, lista kontrolna przeglądu, kontrola spójności
+
+### Dodane
+- **CI na GitHubie** (`.github/workflows/testy.yml`): przy każdym PR testy na Postgresie 16
+  i Pythonie 3.11 (jak produkcja), pyright (0 błędów) i składnia JS.
+- **`docs/REVIEW.md`** — lista kontrolna przeglądu kodu (niezmienniki projektu) + szablon PR.
+- **`scripts/sprawdz_spojnosc.py`** — kontrola danych po wdrożeniu (rozliczenie vs paczki,
+  tabele ilości, ❗, udziały; uwagi dla liderów: wiszące paczki, niezamknięte przerwy).
+- Ikonka strony (favicon) — jedyny powtarzający się 404 w logach.
+
+### Poprawione
+- `parse_date()` z typem zwracanym — pyright bez 3 fałszywych błędów; pyright sprawdza
+  kod pod Pythona 3.11 (wersja produkcji), nie 3.12.
+
 ## 2026-10-16 — Motyw: ciemnoszary grafit w barwach Logwin
 
 ### Zmienione

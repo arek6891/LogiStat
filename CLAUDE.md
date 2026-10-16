@@ -15,15 +15,17 @@ docker compose down
 # Tests — need a Postgres; the compose file below provides one (port 55432, tmpfs)
 docker compose -f docker-compose.test.yml up -d
 pip install -r requirements-dev.txt
-pytest                               # 662 tests
+pytest                               # 666 tests
 docker compose -f docker-compose.test.yml down
 LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://u:p@host:5432/db pytest   # another DB
 # On .32 there is no pytest/venv — use the prebuilt runner image instead:
 docker run --rm --network host -v /opt/LogiStat:/app -w /app logistat-testrunner:latest pytest -q
 
-# Static check (npm i -g pyright; basic mode — pyrightconfig.json). The one remaining
-# error at the parse_date() call in api_assignment_suggestions is a false positive (abort() in except).
+# Static check (npm i -g pyright; basic mode — pyrightconfig.json) — must be 0 errors (CI blocks)
 pyright
+
+# Data consistency after every deploy (read-only; exit 1 = billing/data mismatch)
+ssh testowy 'docker exec -w /app logistat-test python scripts/sprawdz_spojnosc.py'
 
 # Local run without Docker (needs a reachable Postgres)
 DATABASE_URL=postgresql+psycopg2://logistat:pass@127.0.0.1:5432/logistat \
@@ -34,6 +36,10 @@ docker compose down -v && docker compose up -d      # re-creates + seeds
 ```
 
 Default admin after seed: `admin` / `admin123` — override with `ADMIN_PASSWORD` **before the first start** (`docs/DEPLOY.md`).
+
+## Review & CI
+
+Every PR: **green CI** (`.github/workflows/testy.yml` — pytest on Postgres 16 + Python 3.11 like production, pyright 0 errors, `node --check static/*.js`) and a review against **`docs/REVIEW.md`** (the project's invariants as a checklist) **before** merge and deploy. A fixed bug gets a failing test first. After a deploy run `scripts/sprawdz_spojnosc.py` (`tests/test_spojnosc.py` keeps it working).
 
 ## Architecture
 

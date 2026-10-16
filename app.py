@@ -15,7 +15,7 @@ from flask import (
     Flask, render_template, request, redirect, url_for,
     flash, jsonify, session, g, has_request_context, abort, make_response
 )
-from werkzeug.exceptions import HTTPException
+from werkzeug.exceptions import BadRequest, HTTPException
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import (
     LoginManager, UserMixin, login_user, login_required,
@@ -1453,7 +1453,7 @@ def parse_shift_number(value, default=1):
     return numer if numer in (1, 2) else default
 
 
-def parse_date(value, pole='date'):
+def parse_date(value, pole='date') -> date:
     """Data ISO z requestu. Puste -> dzis lokalnie, zle sformatowana -> 400.
 
     Dotad `date.fromisoformat()` lecialo bez zabezpieczenia i literowka w URL-u
@@ -1469,7 +1469,9 @@ def parse_date(value, pole='date'):
     try:
         return date.fromisoformat(str(value).strip())
     except ValueError:
-        abort(400, f'Nieprawidłowa data w "{pole}" (oczekiwano YYYY-MM-DD).')
+        # raise, nie abort(): pyright nie wie, ze abort() nie wraca, i widzial
+        # tu `date | None` (3 falszywe bledy). Ta sama odpowiedz 400 w JSON.
+        raise BadRequest(f'Nieprawidłowa data w "{pole}" (oczekiwano YYYY-MM-DD).')
 
 
 def require_int(value, pole):
@@ -1493,6 +1495,13 @@ def get_or_create_shift(shift_date, shift_number):
 # ══════════════════════════════════════════════════════════════════════════════
 #  PAGE ROUTES
 # ══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/favicon.ico')
+def favicon():
+    # Przegladarki pytaja o /favicon.ico same, nawet z <link rel="icon"> —
+    # w logach .31 to byl jedyny powtarzajacy sie 404.
+    return redirect(url_for('static', filename='favicon.svg'), code=301)
+
 
 @app.route('/')
 def index():
