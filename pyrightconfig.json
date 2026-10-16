@@ -1,5 +1,5 @@
 {
-  "include": ["app.py", "tests", "scripts"],
+  "include": ["app.py", "logistat", "tests", "scripts"],
   "exclude": ["**/__pycache__", "instance", "venv", ".venv"],
   "typeCheckingMode": "basic",
   "pythonVersion": "3.11",
