@@ -1,5 +1,14 @@
 # LogiStat — Changelog
 
+## 2026-10-16 (5) — Krok 2: czysta logika w pakiecie `logistat/`
+
+### Zmienione (bez zmian w działaniu)
+- Czas (doba po Warszawie), kategorie rozliczenia, tabela ilości, scalanie okresów
+  i liczenie Norm (`policz_wydajnosc`) przeniesione z `app.py` do modułów `logistat/`.
+  `app.py` je re-eksportuje — serwer i testy bez zmian.
+- Scalanie okresów było napisane dwa razy — zostało jedno.
+- Test pilnuje, żeby moduły logiki nie zależały od Flaska ani bazy.
+
 ## 2026-10-16 (4) — Krok 1: JavaScript z szablonów do plików
 
 ### Zmienione
