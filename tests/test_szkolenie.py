@@ -1,11 +1,11 @@
 """Osoba szkolaca („Szkolacy", `User.is_trainer`) i kafelek „Szkolenie".
 
 Decyzja operacji (2026-10-06): szkolenie to czas pracy — nie pomniejsza czasu
-pracy jak przerwa / „Inne". W Normach paczki ZAKONCZONE W CZASIE szkolenia
-licza sie jako dokladnie 100% celu z dnia paczki (czas skanowania × cel), tylko
-one — paczka zahaczajaca o szkolenie cala (2026-10-14); reszta dnia idzie z
-prawdziwych sztuk, a samo szkolenie bez paczek niczego nie dolicza. Paczki ze
-szkolenia nie wchodza do sredniej zespolu.
+pracy jak przerwa / „Inne". W Normach paczka, ktora choc czesciowo przypada na
+prowadzone szkolenie, liczy sie CALA jako dokladnie 100% celu z dnia jej konca
+(czas skanowania × cel, 2026-10-14); reszta dnia idzie z prawdziwych sztuk,
+a samo szkolenie bez paczek niczego nie dolicza. Paczki ze szkolenia nie
+wchodza do sredniej zespolu.
 """
 from datetime import date, datetime, timedelta
 
@@ -509,6 +509,69 @@ def test_paczka_w_szkoleniu_rownolegle_z_inna_nie_liczy_czasu_dwa_razy(leader_cl
 
     assert r['godzin'] == 1.0
     assert r['szt_h'] == 100                   # cel, nie 2 × cel
+
+
+def test_zwykla_paczka_rownolegle_z_zaliczona_nie_dubluje_minut(leader_client):
+    """Code review 2026-10-16: paczka B zahacza o szkolenie i dostaje caly
+    czas po celu, a rownolegla zwykla paczka dokladala za te same minuty swoje
+    prawdziwe sztuki → 180 % celu. Zwykla liczy tylko czas poza zaliczonym."""
+    ustaw_cel(100)
+    t = szkolacy()
+    szkolenie(t, DZIEN, chwila(DZIEN, 10), chwila(DZIEN, 12))
+    paczka(t, 200, chwila(DZIEN, 8), chwila(DZIEN, 10))             # nie dotyka szkolenia
+    paczka(t, 10, chwila(DZIEN, 8), chwila(DZIEN, 10, 30))          # zahacza → cala po celu
+
+    r = wiersz(przeglad(leader_client), 'Trener')
+
+    assert r['godzin'] == 2.5
+    assert r['szt_h'] == 100                    # 2,5 h × 100 / 2,5 h, nie 180
+
+
+def test_zwykla_paczka_wystajaca_poza_zaliczona_liczy_reszte(leader_client):
+    ustaw_cel(100)
+    t = szkolacy()
+    szkolenie(t, DZIEN, chwila(DZIEN, 9), chwila(DZIEN, 9, 30))
+    paczka(t, 0, chwila(DZIEN, 9), chwila(DZIEN, 10))               # zahacza: 1 h po celu = 100
+    paczka(t, 300, chwila(DZIEN, 9, 30), chwila(DZIEN, 11))         # zwykla 1,5 h; poza 10–11 → 200 szt.
+
+    r = wiersz(przeglad(leader_client), 'Trener')
+
+    assert r['godzin'] == 2.0
+    assert r['szt_h'] == 150                    # (100 + 200) / 2 h
+
+
+def test_paczki_przez_polnoc_nie_dostaja_wspolnych_minut_dwa_razy(leader_client):
+    ustaw_cel(100)
+    t = szkolacy()
+    dzien2 = DZIEN + timedelta(days=1)
+    szkolenie(t, DZIEN, chwila(DZIEN, 22), chwila(DZIEN, 23, 30))
+    paczka(t, 0, chwila(DZIEN, 22), chwila(DZIEN, 24, 30))          # konczy sie dnia 2
+    paczka(t, 0, chwila(DZIEN, 23), chwila(DZIEN, 23, 50))          # konczy sie dnia 1
+
+    r = wiersz(przeglad(leader_client, od=DZIEN, do=dzien2), 'Trener')
+
+    assert r['godzin'] == 2.5
+    assert r['szt_h'] == 100
+
+
+def test_wynik_szkolacego_nie_zalezy_od_zakresu_dat(leader_client):
+    """Paczka zaczeta w szkoleniu 3 dni przed poczatkiem zakresu (zakres liczy
+    sie po koncu paczki) — szkolenie musi sie znalezc, inaczej paczka szla
+    z prawdziwych sztuk tylko dlatego, ze zakres zaczynal sie pozniej."""
+    ustaw_cel(100)
+    t = szkolacy()
+    start = DZIEN - timedelta(days=3)
+    szkolenie(t, start, chwila(start, 8), chwila(start, 9))
+    paczka(t, 0, chwila(start, 8), chwila(DZIEN, 8))
+
+    waski = wiersz(przeglad(leader_client, od=DZIEN, do=DZIEN), 'Trener')
+    szeroki = wiersz(przeglad(leader_client, od=start, do=DZIEN), 'Trener')
+
+    assert waski['szt_h'] == szeroki['szt_h'] == 100
+    osoba = leader_client.get(
+        f'/api/stats/user/{t.id}?date_from={DZIEN}&date_to={DZIEN}').get_json()
+    assert osoba['norma']['wiersz']['szt_h'] == 100
+    assert [pkt['szt_h'] for pkt in osoba['wykres_dzienny']] == [100]
 
 
 # ── Normy: osoba szkolona wypada z oceny w czasie szkolenia ─────────────────

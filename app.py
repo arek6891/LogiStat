@@ -226,8 +226,8 @@ class User(UserMixin, db.Model):
     worker_type = db.relationship('UserOption', foreign_keys=[worker_type_id])
     shift_group = db.relationship('UserOption', foreign_keys=[shift_group_id])
     # „Szkolacy" — osoba szkolaca nowych. Tylko ona moze wbic sie na kafelek
-    # „Szkolenie" w Czasie pracy, a paczki zakonczone W CZASIE szkolenia licza
-    # sie jej w Normach jako 100% celu z dnia paczki (`policz_wydajnosc()`).
+    # „Szkolenie" w Czasie pracy, a paczka, ktora choc czesciowo przypada na
+    # szkolenie, liczy sie jej w Normach cala jako 100% celu (`policz_wydajnosc()`).
     is_trainer = db.Column(db.Boolean, default=False, nullable=False)
 
     def set_password(self, password):
@@ -1269,8 +1269,8 @@ EVENT_TYPES = ('break_start', 'break_end', 'other_start', 'other_end',
 # 'other_*' — czas poza stanowiskiem inny niz przerwa (np. wyjscie do HR).
 # Liczony jak przerwa: pomniejsza czas pracy, ale raportowany osobno.
 # 'training_*' — szkolenie prowadzone przez osobe szkolaca (`User.is_trainer`).
-# To CZAS PRACY: niczego nie pomniejsza, raportowane osobno; w Normach paczki
-# zakonczone w trakcie szkolenia = 100% celu (`policz_wydajnosc()`).
+# To CZAS PRACY: niczego nie pomniejsza, raportowane osobno; w Normach paczka
+# zahaczajaca o szkolenie = cala po 100% celu (`policz_wydajnosc()`).
 # 'trainee_*' — osoba SZKOLONA na szkoleniu prowadzonym przez `training_lead_id`.
 # Tez czas pracy; jej paczki z tego czasu wypadaja z Norm i sredniej.
 # Szkolenie zaczyna sie dopiero od pierwszej osoby szkolonej, a konczy je
@@ -3060,7 +3060,7 @@ def wydajnosc_pracownikow(date_from=None, date_to=None):
 MAKS_OTWARTEGO_SZKOLENIA = timedelta(hours=12)
 
 
-def okresy_szkolen(user_ids, date_from=None, date_to=None):
+def okresy_szkolen(user_ids, date_from=None, date_to=None, najwczesniej=None):
     """`(prowadzone, jako_szkolony)` — dwa `{uid: [(start, koniec)]}` (naive UTC).
 
     `prowadzone` = szkolenia, ktore osoba prowadzila (`training_*`),
@@ -3068,7 +3068,9 @@ def okresy_szkolen(user_ids, date_from=None, date_to=None):
     zapytanie na oba rodzaje. Pary start/koniec skladamy w obrebie (osoba,
     zmiana), tak samo jak `_compute_worker_times()`. Margines doby przy
     granicach zakresu: paczka zakonczona tuz po polnocy moze lezec w szkoleniu
-    zaczetym wieczorem.
+    zaczetym wieczorem. `najwczesniej` = najwczesniejszy start paczki w
+    zakresie (naive UTC): paczka zaczeta dni przed `date_from` liczy sie cala,
+    gdy zahaczyla o szkolenie — bez tego wynik zalezal od wybranego zakresu.
     """
     if not user_ids:
         return {}, {}
@@ -3078,7 +3080,10 @@ def okresy_szkolen(user_ids, date_from=None, date_to=None):
             ('training_start', 'training_end', 'trainee_start', 'trainee_end')))
     margines = timedelta(days=1)
     if date_from:
-        q = q.filter(WorkerTimeEvent.timestamp >= local_day_bounds(date_from)[0] - margines)
+        od = local_day_bounds(date_from)[0]
+        if najwczesniej and najwczesniej < od:
+            od = najwczesniej
+        q = q.filter(WorkerTimeEvent.timestamp >= od - margines)
     if date_to:
         q = q.filter(WorkerTimeEvent.timestamp < local_day_bounds(date_to)[1] + margines)
 
@@ -3170,7 +3175,9 @@ def policz_wydajnosc(paczki, szkolenia=(), cel_dnia=None, jako_szkolony=()):
     szkolenie liczy sie CALA jako czas × cel z dnia zakonczenia paczki
     (dokladnie 100%) — takze minuty przed/po szkoleniu i w przerwie miedzy
     blokami szkolenia. Zaliczony czas to suma ZLACZONYCH okresow takich paczek
-    per dzien (dwie paczki naraz nie dostana tej samej minuty dwa razy). Samo
+    dla calego zakresu (dwie paczki naraz nie dostana tej samej minuty dwa
+    razy — takze przez polnoc), a zwykla paczka rownolegla do zaliczonej
+    liczy tylko czas poza zaliczonym (code review 2026-10-16). Samo
     szkolenie bez paczek nic nie dolicza; dzien bez celu (0) — normalnie.
     Paczka bez „Start" zakonczona w szkoleniu nie ma czasu, wiec nie wchodzi
     do szt./h (nie udajemy ani zera, ani celu).
@@ -3184,7 +3191,8 @@ def policz_wydajnosc(paczki, szkolenia=(), cel_dnia=None, jako_szkolony=()):
     wszystkie_okresy = []
     zwykle_okresy = []         # czas liczony normalnie
     sztuk_zwykle = 0.0         # prawdziwe sztuki liczone normalnie
-    w_szkoleniu_dnia = {}      # dzien -> fragmenty paczek w prowadzonym szkoleniu
+    zwykle_paczki = []         # (okresy, sztuki) — przyciete dopiero po zaliczonych
+    zaliczone_fragmenty = []   # okresy paczek zaliczonych po celu (cale paczki)
     paczek_szkolenia = 0
     paczek_jako_szkolony = 0
     paczek_wylaczonych = 0     # w calosci z czasu bycia szkolonym
@@ -3223,21 +3231,36 @@ def policz_wydajnosc(paczki, szkolenia=(), cel_dnia=None, jako_szkolony=()):
                        and any(min(b, k) > max(a, s)
                                for a, b in pozostale for s, k in szkolenia))
         if not w_szkoleniu:
-            sztuk_zwykle += sztuk * (sek_pozostale / trwanie)
-            zwykle_okresy.extend(pozostale)
+            zwykle_paczki.append((pozostale, sztuk * (sek_pozostale / trwanie)))
             continue
         # Paczka zahaczajaca o szkolenie liczy sie CALA (operacje, 2026-10-14):
         # szkolacy konczy szkolenie na kazda przerwe, a paczka zostaje otwarta —
         # czas przerwy szedl z prawdziwych sztuk i trener wychodzil ponizej celu.
         paczek_szkolenia += 1
-        w_szkoleniu_dnia.setdefault(dzien, []).extend(pozostale)
+        zaliczone_fragmenty.extend(pozostale)
 
+    # Zaliczony czas = JEDNA suma zlaczonych okresow dla calego zakresu, nie
+    # per dzien konca paczki — dwie paczki przez polnoc dostawaly wspolne
+    # minuty dwa razy. Kazdy zlaczony okres po celu z dnia swojego konca.
+    zaliczone = _zlacz_okresy(zaliczone_fragmenty)
     sekundy_szkolenia = 0.0
     sztuk_zaliczonych = 0.0
-    for dzien, fragmenty in w_szkoleniu_dnia.items():
-        sek = suma_zlaczonych_okresow(fragmenty)
+    for start, koniec in zaliczone:
+        sek = (koniec - start).total_seconds()
         sekundy_szkolenia += sek
-        sztuk_zaliczonych += sek / 3600.0 * cel_dnia(dzien)
+        sztuk_zaliczonych += sek / 3600.0 * cel_dnia(utc_to_local(koniec).date())
+
+    # Zwykla paczka rownolegle do zaliczonej: jej minuty sa juz zaliczone po
+    # celu, wiec liczy tylko czesc POZA zaliczonymi — inaczej ta sama minuta
+    # wchodzila dwa razy (cel + prawdziwe sztuki), szt./h ponad 100 % celu.
+    # Sztuki proporcjonalnie do czasu, ktory zostal.
+    for okresy, sztuk in zwykle_paczki:
+        sek = sum((k - s).total_seconds() for s, k in okresy)
+        poza = [fragment for s, k in okresy for fragment in _odejmij_okresy(s, k, zaliczone)]
+        sek_poza = sum((k - s).total_seconds() for s, k in poza)
+        if sek > 0:
+            sztuk_zwykle += sztuk * (sek_poza / sek)
+        zwykle_okresy.extend(poza)
 
     sekundy = suma_zlaczonych_okresow(wszystkie_okresy)
     # Cel obowiazujacy w dniu pracy (2026-10-13): kazda godzina skanowania
@@ -3373,15 +3396,17 @@ def przeglad_zespolu(date_from, date_to):
     wyniku, jak zrobilaby to zwykla srednia z wynikow osob (2 570 zamiast 292).
     Prog paczek nadal decyduje tylko o tym, kto jest w rankingu i dostaje ocene.
 
-    Paczki zakonczone w czasie szkolenia (osoba szkolaca) licza sie jej jako
-    100% celu dnia i nie wchodza do sredniej — patrz `policz_wydajnosc()`.
+    Paczki zahaczajace o szkolenie (osoba szkolaca) licza sie jej cale jako
+    100% celu i nie wchodza do sredniej — patrz `policz_wydajnosc()`.
     """
     prog_dobry = get_setting_int('norm_good_pct', 110)
     prog_slaby = get_setting_int('norm_weak_pct', 90)
     min_paczek = get_setting_int('min_packages_rank', 3)
 
     dane = wydajnosc_pracownikow(date_from, date_to)
-    szkolenia, szkoleni = okresy_szkolen(dane.keys(), date_from, date_to)
+    szkolenia, szkoleni = okresy_szkolen(
+        dane.keys(), date_from, date_to,
+        najwczesniej=min((p[0] for ps in dane.values() for p in ps if p[0]), default=None))
     # Cel z dnia pracy (2026-10-13): kazdy liczony celem, ktory obowiazywal,
     # gdy skanowal — zmiana celu nie przelicza starych dni.
     cel_dnia = cele_dzienne()
@@ -3664,7 +3689,9 @@ def api_stats_user(user_id):
         paczka = (scan_start_at, scan_end_at, stueckzahl or 0)
         paczki_dnia.setdefault(d, []).append(paczka)
         paczki_miesiaca.setdefault(d[:7], []).append(paczka)
-    szkolenia, szkoleni = okresy_szkolen([user_id], date_from, date_to)
+    szkolenia, szkoleni = okresy_szkolen(
+        [user_id], date_from, date_to,
+        najwczesniej=min((p[0] for p in praca if p[0]), default=None))
     szkolenia = szkolenia.get(user_id, ())
     szkoleni = szkoleni.get(user_id, ())
     cel_dnia = cele_dzienne()
