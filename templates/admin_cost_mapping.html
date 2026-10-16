@@ -45,7 +45,7 @@
     </div>
 
     <div class="card-footer"
-        style="display:none; justify-content:space-between; padding:1rem 1.5rem; background:rgba(99,102,241,0.03); border-top:1px solid var(--border);"
+        style="display:none; justify-content:space-between; padding:1rem 1.5rem; background:rgb(var(--accent-rgb) / 0.03); border-top:1px solid var(--border);"
         id="ratesFooter">
         <button class="btn btn-ghost" onclick="copyFromPreviousMonth()">📄 Skopiuj z poprzedniego miesiąca</button>
         <div style="display:flex;gap:12px;align-items:center;">
@@ -158,8 +158,8 @@
             input.dataset.original = input.value;
             input.addEventListener('input', function () {
                 if (this.value !== this.dataset.original) {
-                    this.style.borderColor = '#fbbf24';
-                    this.style.backgroundColor = 'rgba(251,191,36,0.1)';
+                    this.style.borderColor = 'var(--warning)';
+                    this.style.backgroundColor = 'rgb(var(--warning-rgb) / 0.1)';
                 } else {
                     this.style.borderColor = '';
                     this.style.backgroundColor = '';
@@ -238,8 +238,8 @@
                         input.value = formattedPrev;
                         // Trigger highlight indicating unsaved changes
                         if (input.value !== input.dataset.original) {
-                            input.style.borderColor = '#fbbf24';
-                            input.style.backgroundColor = 'rgba(251,191,36,0.1)';
+                            input.style.borderColor = 'var(--warning)';
+                            input.style.backgroundColor = 'rgb(var(--warning-rgb) / 0.1)';
                         } else {
                             input.style.borderColor = '';
                             input.style.backgroundColor = '';

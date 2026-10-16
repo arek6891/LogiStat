@@ -99,8 +99,8 @@
         outline: none;
         border-color: var(--accent);
     }
-    .diff-positive { color: #f59e0b; font-weight: 600; }
-    .diff-negative { color: #ef4444; font-weight: 600; }
+    .diff-positive { color: var(--warning); font-weight: 600; }
+    .diff-negative { color: var(--danger); font-weight: 600; }
     .diff-zero     { color: var(--text-muted); }
     .badge-actual {
         display: inline-block;
@@ -108,8 +108,8 @@
         border-radius: 99px;
         font-size: 0.8rem;
         font-weight: 600;
-        background: rgba(39,174,96,0.15);
-        color: #27ae60;
+        background: rgb(var(--success-rgb) / 0.15);
+        color: var(--success);
     }
     .summary-bar {
         display: flex;
@@ -135,9 +135,9 @@
         font-size: 1.6rem;
         font-weight: 700;
     }
-    .summary-card.fc  .value { color: #4a6fd9; }
-    .summary-card.act .value { color: #27ae60; }
-    .summary-card.dif .value { color: #f59e0b; }
+    .summary-card.fc  .value { color: var(--info); }
+    .summary-card.act .value { color: var(--success); }
+    .summary-card.dif .value { color: var(--warning); }
 </style>
 {% endblock %}
 
@@ -301,7 +301,7 @@ function renderSummary(data) {
     document.getElementById('sumActual').textContent   = sumAct.toLocaleString('pl');
     const el = document.getElementById('sumDiff');
     el.textContent = (sumDif > 0 ? '+' : '') + sumDif.toLocaleString('pl');
-    el.style.color = sumDif > 0 ? '#f59e0b' : sumDif < 0 ? '#ef4444' : 'var(--text-muted)';
+    el.style.color = sumDif > 0 ? 'var(--warning)' : sumDif < 0 ? 'var(--danger)' : 'var(--text-muted)';
     document.getElementById('summaryBar').style.display = 'flex';
 }
 
@@ -310,7 +310,7 @@ function renderCharts(data) {
     const fcVals   = data.map(r => r.forecast);
     const actVals  = data.map(r => r.actual);
     const diffVals = data.map(r => r.diff);
-    const diffColors = diffVals.map(v => v >= 0 ? 'rgba(245,158,11,0.7)' : 'rgba(239,68,68,0.7)');
+    const diffColors = diffVals.map(v => v >= 0 ? motyw('--warning', 0.7) : motyw('--danger', 0.7));
 
     document.getElementById('chartsSection').style.display = '';
 
@@ -320,16 +320,16 @@ function renderCharts(data) {
         data: {
             labels,
             datasets: [
-                { label: 'Forecast', data: fcVals,  backgroundColor: 'rgba(74,111,217,0.75)', borderRadius: 4 },
-                { label: 'Actual',   data: actVals, backgroundColor: 'rgba(39,174,96,0.75)',  borderRadius: 4 }
+                { label: 'Forecast', data: fcVals,  backgroundColor: motyw('--info', 0.75), borderRadius: 4 },
+                { label: 'Actual',   data: actVals, backgroundColor: motyw('--success', 0.75),  borderRadius: 4 }
             ]
         },
         options: {
             responsive: true,
-            plugins: { legend: { labels: { color: '#9aa0b0' } } },
+            plugins: { legend: { labels: { color: motyw('--text-secondary') } } },
             scales: {
-                x: { ticks: { color: '#9aa0b0', maxRotation: 45 }, grid: { color: '#2e3340' } },
-                y: { ticks: { color: '#9aa0b0' }, grid: { color: '#2e3340' }, beginAtZero: true }
+                x: { ticks: { color: motyw('--text-secondary'), maxRotation: 45 }, grid: { color: motyw('--border') } },
+                y: { ticks: { color: motyw('--text-secondary') }, grid: { color: motyw('--border') }, beginAtZero: true }
             }
         }
     });
@@ -348,10 +348,10 @@ function renderCharts(data) {
         },
         options: {
             responsive: true,
-            plugins: { legend: { labels: { color: '#9aa0b0' } } },
+            plugins: { legend: { labels: { color: motyw('--text-secondary') } } },
             scales: {
-                x: { ticks: { color: '#9aa0b0', maxRotation: 45 }, grid: { color: '#2e3340' } },
-                y: { ticks: { color: '#9aa0b0' }, grid: { color: '#2e3340' } }
+                x: { ticks: { color: motyw('--text-secondary'), maxRotation: 45 }, grid: { color: motyw('--border') } },
+                y: { ticks: { color: motyw('--text-secondary') }, grid: { color: motyw('--border') } }
             }
         }
     });

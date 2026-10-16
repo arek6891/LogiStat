@@ -53,7 +53,7 @@
                 <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;white-space:nowrap;font-size:.85rem;">
                     <input type="checkbox" name="double_rate" value="1" {% if tylko_double %}checked{% endif %}
                            style="width:16px;height:16px;cursor:pointer;">
-                    <span style="color:#fb923c;">tylko double rate</span>
+                    <span style="color:var(--double-rate);">tylko double rate</span>
                 </label>
                 <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;white-space:nowrap;font-size:.85rem;"
                        title="Paczka rozpoczęta i nigdy nie zakończona, albo ilość w kategorii przekracza Stückzahl o ponad 10%">
@@ -185,7 +185,7 @@
                 <th>Loading date</th>
                 <th>Ziel-Datum</th>
                 <th>Übergabe Nr.</th>
-                <th style="text-align:center;background:rgba(251,146,60,.10);color:#fb923c;">Double rate</th>
+                <th style="text-align:center;background:rgb(var(--double-rate-rgb) / .10);color:var(--double-rate);">Double rate</th>
                 <th>Pracownik</th>
                 <th>Start paczki</th>
                 <th>Koniec paczki</th>
@@ -202,7 +202,7 @@
                        onclick="otworzQty(this.closest('tr').querySelector('[data-cats]')); return false;"
                        title="Pokaż ilości wpisane przez pracownika">{{ item.barcode }}</a>
                     {% for blad in bledy_map.get(item.id, []) if not blad.startswith('❗') %}
-                    <div style="margin-top:3px;font-family:inherit;font-size:.7rem;background:rgba(248,113,113,.15);
+                    <div style="margin-top:3px;font-family:inherit;font-size:.7rem;background:rgb(var(--danger-rgb) / .15);
                                 color:var(--danger);padding:2px 6px;border-radius:6px;display:inline-block;">⚠️ {{ blad }}</div>
                     {% endfor %}
                     {% if item.roznica %}
@@ -290,7 +290,7 @@
                     {% if proc_secs is not none %}
                     {% set mins = (proc_secs // 60) %}
                     {% set secs = (proc_secs % 60) %}
-                    <span style="color:{% if proc_secs > 3600 %}#ef4444{% elif proc_secs > 600 %}#f59e0b{% else %}#22c55e{% endif %};">
+                    <span style="color:{% if proc_secs > 3600 %}var(--danger){% elif proc_secs > 600 %}var(--warning){% else %}var(--success){% endif %};">
                         {% if mins > 0 %}{{ mins }}m {% endif %}{{ secs }}s
                     </span>
                     {% else %}
@@ -302,7 +302,7 @@
                     {% if item.imported_by_user %}<div title="Kto dodał (login)">👤 {{ item.imported_by_user.username }}</div>{% endif %}
                     {% if item.added_manually %}
                     <div style="margin-top:.35rem;display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;">
-                        <span style="background:rgba(99,102,241,.15);color:var(--accent);padding:1px 6px;border-radius:6px;font-size:.7rem;">ręczna</span>
+                        <span style="background:rgb(var(--accent-rgb) / .15);color:var(--accent);padding:1px 6px;border-radius:6px;font-size:.7rem;">ręczna</span>
                         <button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:.75rem;"
                             data-id="{{ item.id }}"
                             data-barcode="{{ item.barcode }}"

@@ -50,7 +50,7 @@
         </div>
         <div class="card" style="text-align:center;">
             <div class="dash-label">Obecni dziś</div>
-            <div id="presentVal" class="dash-val" style="color:#a78bfa;">—</div>
+            <div id="presentVal" class="dash-val" style="color:var(--accent-2);">—</div>
             <div class="dash-sub">pracowników</div>
         </div>
         <a class="card" href="/paczki?do_potwierdzenia=1" style="text-align:center;text-decoration:none;color:inherit;"
@@ -213,7 +213,7 @@
                 <span style="font-weight:700;color:var(--accent);">${p.procent}%</span>
             </div>
             <div style="background:var(--bg-hover);border-radius:8px;height:14px;overflow:hidden;">
-                <div style="height:100%;border-radius:8px;background:linear-gradient(90deg,var(--accent),#a78bfa);width:${p.procent}%;transition:width .6s ease;"></div>
+                <div style="height:100%;border-radius:8px;background:linear-gradient(90deg,var(--accent),var(--accent-2));width:${p.procent}%;transition:width .6s ease;"></div>
             </div>
             <div style="display:flex;justify-content:space-between;font-size:.75rem;color:var(--text-muted);margin-top:.5rem;">
                 <span>${num(p.zrobione)} zrobionych</span><span>${num(p.paczek)} paczek</span>
@@ -325,7 +325,7 @@
             <div style="font-size:.75rem;color:var(--text-muted);">${num(sztuk)} szt.</div>`;
         const pasek = p => `<div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;">
                 <div style="background:var(--bg-hover);border-radius:6px;height:8px;width:90px;overflow:hidden;">
-                    <div style="height:100%;background:linear-gradient(90deg,var(--accent),#a78bfa);width:${p}%;"></div>
+                    <div style="height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-2));width:${p}%;"></div>
                 </div><span style="font-weight:700;min-width:48px;">${p}%</span></div>`;
         const wiersz = (r, etykieta, styl = '') => `<tr style="border-top:1px solid var(--border);${styl}">
                 <td style="padding:10px 16px;">${etykieta}</td>
@@ -460,9 +460,9 @@
                             <td style="padding:10px 16px;">
                                 <div style="display:flex;align-items:center;gap:10px;">
                                     <div style="width:28px;height:28px;border-radius:50%;
-                                        background:linear-gradient(135deg,var(--accent),#a78bfa);
+                                        background:linear-gradient(135deg,var(--accent),var(--accent-2));
                                         display:flex;align-items:center;justify-content:center;
-                                        font-size:.75rem;font-weight:700;color:#fff;flex-shrink:0;">${escapeHtml(w.name[0])}</div>
+                                        font-size:.75rem;font-weight:700;color:var(--on-accent);flex-shrink:0;">${escapeHtml(w.name[0])}</div>
                                     <div>
                                         <div style="font-weight:600;font-size:.9rem;"><a href="/stats?user=${w.user_id}" title="Otwórz normy pracownika">${escapeHtml(w.name)}</a></div>
                                         <div style="height:4px;background:var(--bg-hover);border-radius:2px;width:100px;margin-top:4px;overflow:hidden;">
@@ -523,9 +523,9 @@
                         <div style="padding:14px 18px;background:var(--bg-secondary);border-bottom:1px solid var(--border);
                                     display:flex;align-items:center;gap:12px;">
                             <div style="width:40px;height:40px;border-radius:50%;flex-shrink:0;
-                                background:linear-gradient(135deg,var(--accent),#a78bfa);
+                                background:linear-gradient(135deg,var(--accent),var(--accent-2));
                                 display:flex;align-items:center;justify-content:center;
-                                font-weight:700;font-size:1rem;color:#fff;">${escapeHtml(w.name[0])}</div>
+                                font-weight:700;font-size:1rem;color:var(--on-accent);">${escapeHtml(w.name[0])}</div>
                             <div style="flex:1;min-width:0;">
                                 <div style="font-weight:700;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><a href="/stats?user=${w.id}" title="Otwórz normy pracownika">${escapeHtml(w.name)}</a></div>
                                 <div style="font-size:.75rem;color:var(--text-muted);">na zmianie dziś</div>

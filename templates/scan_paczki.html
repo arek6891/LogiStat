@@ -74,7 +74,7 @@
         flex-shrink: 0;
     }
     .scan-step-num.done { background: var(--accent-glow); color: var(--accent); }
-    .scan-step-num.active { background: var(--accent); color: #fff; }
+    .scan-step-num.active { background: var(--accent); color: var(--on-accent); }
     .scan-step-num.waiting { background: var(--bg-hover); color: var(--text-muted); }
     .scan-input-wrap {
         position: relative;
@@ -105,8 +105,8 @@
         font-size: .95rem;
         display: none;
     }
-    .result-box.success { background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.3); color: #22c55e; }
-    .result-box.error   { background: rgba(239,68,68,.12);  border: 1px solid rgba(239,68,68,.3);  color: #ef4444; }
+    .result-box.success { background: rgb(var(--success-rgb) / .12); border: 1px solid rgb(var(--success-rgb) / .3); color: var(--success); }
+    .result-box.error   { background: rgb(var(--danger-rgb) / .12);  border: 1px solid rgb(var(--danger-rgb) / .3);  color: var(--danger); }
 
     .recent-list {
         margin-top: 28px;
@@ -134,7 +134,7 @@
     .emp-name {
         margin-top: 6px;
         font-size: .85rem;
-        color: #22c55e;
+        color: var(--success);
         min-height: 1.1em;
     }
 
@@ -144,9 +144,9 @@
         margin-bottom: 16px;
         padding: 10px 14px;
         border-radius: var(--radius-sm);
-        background: rgba(245,158,11,.12);
-        border: 1px solid rgba(245,158,11,.4);
-        color: #f59e0b;
+        background: rgb(var(--warning-rgb) / .12);
+        border: 1px solid rgb(var(--warning-rgb) / .4);
+        color: var(--warning);
         font-weight: 600;
     }
 
@@ -592,7 +592,7 @@ function addRecent(prefix, barcode, workerName, extraInfo) {
             <div>
                 <span class="barcode">${escapeHtml(r.barcode)}</span>
                 <span style="color:var(--text-muted);margin-left:8px;font-size:.8rem;">${escapeHtml(r.workerName)}</span>
-                ${r.extraInfo ? `<span style="color:#22c55e;margin-left:8px;font-size:.8rem;">${escapeHtml(r.extraInfo)}</span>` : ''}
+                ${r.extraInfo ? `<span style="color:var(--success);margin-left:8px;font-size:.8rem;">${escapeHtml(r.extraInfo)}</span>` : ''}
             </div>
             <span class="time">${r.time}</span>
         </div>`).join('');

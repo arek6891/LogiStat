@@ -52,7 +52,7 @@
                         </span>
                     </span>
                 </th>
-                <th rowspan="2" style="min-width:70px;background:rgba(96,165,250,.08);color:#60a5fa;">
+                <th rowspan="2" style="min-width:70px;background:rgb(var(--info-rgb) / .08);color:var(--info);">
                     Total Amount
                     <span class="podpowiedz" tabindex="0" aria-label="Skąd się bierze Total Amount">ⓘ
                         <span class="podpowiedz-tresc">
@@ -71,7 +71,7 @@
                 </th>
                 {% for cat in categories %}
                 <th colspan="{{ 2 if pokaz_koszty else 1 }}"
-                    style="text-align:center;background:rgba(99,102,241,.08);border-bottom:2px solid var(--accent);min-width:160px;">
+                    style="text-align:center;background:rgb(var(--accent-rgb) / .08);border-bottom:2px solid var(--accent);min-width:160px;">
                     {{ category_labels[cat] }}
                     <span class="podpowiedz" tabindex="0" aria-label="Skąd się bierze {{ category_labels[cat] }}">ⓘ
                         <span class="podpowiedz-tresc" style="text-align:left;font-weight:400;">
@@ -94,7 +94,7 @@
                 </th>
                 {% endfor %}
                 {% if pokaz_koszty %}
-                <th rowspan="2" style="min-width:100px;background:rgba(34,197,94,.08);">Total cost (EUR)
+                <th rowspan="2" style="min-width:100px;background:rgb(var(--success-rgb) / .08);">Total cost (EUR)
                     <span class="podpowiedz" tabindex="0" aria-label="Skąd się bierze Total cost">ⓘ
                         <span class="podpowiedz-tresc" style="font-weight:400;">
                             <strong>Total cost</strong> = suma kolumn Cost w wierszu, czyli dla każdej
@@ -117,19 +117,19 @@
         </thead>
         <tbody>
             <!-- PODSUMOWANIE (SUM ROW) -->
-            <tr style="background: var(--surface); border-bottom: 2px solid var(--border); font-weight: bold;">
+            <tr style="background: var(--bg-hover); border-bottom: 2px solid var(--border); font-weight: bold;">
                 <td colspan="5" style="text-align:right; padding-right:1rem;">SUMA DLA WIDOCZNYCH ZAKRESÓW:</td>
                 <td id="sumAmounts" style="color:var(--accent);">0</td>
-                <td id="sumTotalAmounts" style="color:#60a5fa; font-weight:bold;">0</td>
+                <td id="sumTotalAmounts" style="color:var(--info); font-weight:bold;">0</td>
                 {% for cat in categories %}
-                <td id="sum-{{ cat }}-amount" style="text-align:right; font-size:.85rem; color:#60a5fa;">0</td>
+                <td id="sum-{{ cat }}-amount" style="text-align:right; font-size:.85rem; color:var(--info);">0</td>
                 {% if pokaz_koszty %}
-                <td id="sum-{{ cat }}-cost" style="text-align:right; font-size:.85rem; color:#4ade80;">0.00 €
+                <td id="sum-{{ cat }}-cost" style="text-align:right; font-size:.85rem; color:var(--success);">0.00 €
                 </td>
                 {% endif %}
                 {% endfor %}
                 {% if pokaz_koszty %}
-                <td id="sumTotalCost" style="color:var(--success,#22c55e);">0.00 €</td>
+                <td id="sumTotalCost" style="color:var(--success);">0.00 €</td>
                 {% endif %}
             </tr>
             {% for s in stats %}
@@ -176,7 +176,7 @@
                 {% set row_total_amount.val = row_total_amount.val + (cd.get(cat, {}).get('amount', 0) or 0) %}
                 {% endfor %}
                 {% set row_total_amount = row_total_amount.val | round(2) %}
-                <td class="row-total-amount" style="font-weight:700; color:#60a5fa;"
+                <td class="row-total-amount" style="font-weight:700; color:var(--info);"
                     data-val="{{ row_total_amount }}">{{ row_total_amount }}</td>
 
                 {% for cat in categories %}
@@ -197,12 +197,12 @@
                 <td>
                     <input type="text" class="inline-input cat-cost" data-cat="{{ cat }}" data-field="cost"
                         value="{{ '%.2f'|format(computed_cost) }}" readonly tabindex="-1"
-                        style="width:75px; background:rgba(255,255,255,0.08); border-color:transparent; color:#cbd5e1; border-radius:4px;">
+                        style="width:75px; background:rgba(255,255,255,0.08); border-color:transparent; color:var(--text-primary); border-radius:4px;">
                 </td>
                 {% endif %}
                 {% endfor %}
                 {% if pokaz_koszty %}
-                <td class="total-cost" style="font-weight:700;color:var(--success,#22c55e);">
+                <td class="total-cost" style="font-weight:700;color:var(--success);">
                     {{ '%.2f'|format(row_total.val) }} €
                 </td>
                 {% endif %}
@@ -220,11 +220,11 @@
             <tr data-id="{{ s.id }}" data-ym="{{ row_ym }}" data-dr-row="true" class="dr-row">
                 <td>{{ s.loading_date.strftime('%d.%m.%Y') }}</td>
                 <td>{{ s.week_number }}</td>
-                <td>{{ s.list_id }} <span style="color:#f59e0b;font-weight:700;">(2×)</span></td>
+                <td>{{ s.list_id }} <span style="color:var(--warning);font-weight:700;">(2×)</span></td>
                 <td>{{ s.country_of_destination or '—' }}</td>
                 <td>{{ s.country_ledger }}</td>
-                <td style="font-weight:600;color:#f59e0b;" title="Suma Stückzahl paczek oznaczonych jako double rate">{{ s.dr_amount }}</td>
-                <td class="row-total-amount" style="font-weight:700; color:#60a5fa;"
+                <td style="font-weight:600;color:var(--warning);" title="Suma Stückzahl paczek oznaczonych jako double rate">{{ s.dr_amount }}</td>
+                <td class="row-total-amount" style="font-weight:700; color:var(--info);"
                     data-val="{{ dr_total_amount.val }}">{{ dr_total_amount.val }}</td>
                 {% for cat in categories %}
                 {% set amt = dcd.get(cat, {}).get('amount', 0) %}
@@ -239,12 +239,12 @@
                 <td>
                     <input type="text" class="inline-input cat-cost" data-cat="{{ cat }}" data-field="cost"
                         value="{{ '%.2f'|format(computed_cost) }}" readonly tabindex="-1"
-                        style="width:75px; background:rgba(255,255,255,0.08); border-color:transparent; color:#cbd5e1; border-radius:4px;">
+                        style="width:75px; background:rgba(255,255,255,0.08); border-color:transparent; color:var(--text-primary); border-radius:4px;">
                 </td>
                 {% endif %}
                 {% endfor %}
                 {% if pokaz_koszty %}
-                <td class="total-cost" style="font-weight:700;color:var(--success,#22c55e);">
+                <td class="total-cost" style="font-weight:700;color:var(--success);">
                     {{ '%.2f'|format(dr_total.val) }} €
                 </td>
                 {% endif %}
@@ -268,16 +268,16 @@
         margin-top: 3px;
         font-size: .7rem;
         font-weight: 600;
-        color: #22c55e;
+        color: var(--success);
         white-space: nowrap;
     }
-    .scan-cov.niepelne { color: #f59e0b; }
+    .scan-cov.niepelne { color: var(--warning); }
     .cat-amount.locked {
         width: 65px;
         background: rgba(255,255,255,.05);
         border: 1px solid transparent;
         border-radius: 4px;
-        color: #94a3b8;
+        color: var(--text-secondary);
         text-align: right;
         padding: 4px 6px;
         cursor: not-allowed;
@@ -295,7 +295,7 @@
 
     .inline-input:focus {
         border-color: var(--accent);
-        background: rgba(99, 102, 241, .05);
+        background: rgb(var(--accent-rgb) / .05);
         outline: none;
     }
 
@@ -304,8 +304,8 @@
     }
 
     .inline-input.modified {
-        background: rgba(251, 191, 36, .1);
-        border-color: #fbbf24;
+        background: rgb(var(--warning-rgb) / .1);
+        border-color: var(--warning);
     }
 
     #statsTable th {
@@ -321,11 +321,11 @@
     .tabela-statystyk { overflow-x: auto; min-height: 460px; }
 
     .dr-row {
-        background: rgba(251, 191, 36, .10);
+        background: rgb(var(--warning-rgb) / .10);
     }
 
     .dr-row td {
-        border-top: 1px dashed rgba(251, 191, 36, .45);
+        border-top: 1px dashed rgb(var(--warning-rgb) / .45);
     }
 </style>
 
