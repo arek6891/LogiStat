@@ -15,7 +15,7 @@ docker compose down
 # Tests — need a Postgres; the compose file below provides one (port 55432, tmpfs)
 docker compose -f docker-compose.test.yml up -d
 pip install -r requirements-dev.txt
-pytest                               # 666 tests
+pytest                               # 667 tests
 docker compose -f docker-compose.test.yml down
 LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://u:p@host:5432/db pytest   # another DB
 # On .32 there is no pytest/venv — use the prebuilt runner image instead:
@@ -43,7 +43,7 @@ Every PR: **green CI** (`.github/workflows/testy.yml` — pytest on Postgres 16 
 
 ## Architecture
 
-**Everything is in `app.py`** — models, routes, API, seed data (~5100 lines). No separate modules.
+**Everything is in `app.py`** — models, routes, API, seed data (~6800 lines — being split into modules, see docs/ARCHITEKTURA.md). No separate modules.
 
 **Tests:** `tests/` (pytest). `conftest.py` sets `DATABASE_URL` **before importing `app`** (it runs `init_db()` at import) → `…@127.0.0.1:55432/logistat_test`, overridable with `LOGISTAT_TEST_DATABASE_URL`; unreachable DB → import raises with the start command. Each test gets a fresh schema + seed. Coverage is concentrated on money paths (import aggregation, `recompute_general_stat`, double rate, cost math) plus permissions, day boundaries, validation, page smoke test. `IsolatedClient` clears `g._login_user` / `g._rates_cache` per request — Flask reuses the test's app context, so two clients would otherwise share the cached login.
 

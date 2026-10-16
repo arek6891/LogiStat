@@ -68,6 +68,20 @@ def test_wiszaca_paczka_to_uwaga(leader_client, acting_admin):
     assert any('niezakończone' in o for o in opisy(uwagi))
 
 
+def test_import_z_flaga_nie_dotyka_bazy():
+    """Skrypt „tylko do odczytu" importuje app z LOGISTAT_BEZ_INIT=1 — wtedy
+    import nie moze robic DDL / migracji / seeda. Dowod: baza nieosiagalna,
+    a import i tak przechodzi (bez flagi init_db() by na niej padl)."""
+    import subprocess
+    import sys
+    katalog = os.path.join(os.path.dirname(__file__), '..')
+    env = {**os.environ, 'LOGISTAT_BEZ_INIT': '1',
+           'DATABASE_URL': 'postgresql+psycopg2://nikt:nic@127.0.0.1:1/brak'}
+    wynik = subprocess.run([sys.executable, '-c', 'import app'], cwd=katalog, env=env,
+                           capture_output=True, text=True, timeout=60)
+    assert wynik.returncode == 0, wynik.stderr
+
+
 def test_main_zwraca_kod_bledu(leader_client, acting_admin, capsys):
     dane(leader_client)
     logistat.GeneralStat.query.one().amounts = 1

@@ -147,4 +147,8 @@ def main():
 
 
 if __name__ == '__main__':
+    # Bez init_db(): sam import app robi create_all, migracje i seed — skrypt
+    # „tylko do odczytu" nie moze ruszac schematu produkcji. Tylko tutaj, nie
+    # w main(): w procesie testow zmienna przeciekalaby do podprocesow.
+    os.environ.setdefault('LOGISTAT_BEZ_INIT', '1')
     sys.exit(main())

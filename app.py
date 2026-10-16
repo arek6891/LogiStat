@@ -6822,8 +6822,11 @@ def init_db():
             conn.commit()
 
 
-with app.app_context():
-    init_db()
+# LOGISTAT_BEZ_INIT=1: import bez DDL, migracji i seeda — dla narzedzi tylko
+# do odczytu (scripts/sprawdz_spojnosc.py). Aplikacja i testy zawsze z init_db().
+if os.environ.get('LOGISTAT_BEZ_INIT') != '1':
+    with app.app_context():
+        init_db()
 
 if __name__ == '__main__':
     # Debugger Werkzeuga pozwala wykonac dowolny kod, wiec domyslnie sluchamy
