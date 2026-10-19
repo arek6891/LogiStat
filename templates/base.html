@@ -39,8 +39,8 @@
                     </a></li>
 
                 <li class="nav-section">🧑‍💼 Lider</li>
-                <li><a href="{{ url_for('dashboard') }}"
-                        class="{% if request.endpoint == 'dashboard' %}active{% endif %}">
+                <li><a href="{{ url_for('dashboard.dashboard') }}"
+                        class="{% if request.endpoint == 'dashboard.dashboard' %}active{% endif %}">
                         <span class="icon">🏠</span> Dashboard
                     </a></li>
                 <li><a href="{{ url_for('forecast.forecast_page') }}"
