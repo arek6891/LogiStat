@@ -7,6 +7,7 @@ prowadzone szkolenie, liczy sie CALA jako dokladnie 100% celu z dnia jej konca
 a samo szkolenie bez paczek niczego nie dolicza. Paczki ze szkolenia nie
 wchodza do sredniej zespolu.
 """
+import importlib
 from datetime import date, datetime, timedelta
 
 import app as logistat
@@ -681,7 +682,10 @@ def test_dwie_stacje_naraz_daja_jeden_start_szkolenia(flask_app, leader, monkeyp
 
     t, _, _ = ekipa()
     nazwa_lidera = leader.username
-    oryginal = logistat.stan_czasu_dzis
+    # Trasa szukaje stan_czasu_dzis w swoim module (blueprint, krok 5) — tam podmieniamy.
+    # importlib: `import logistat.web…` przypisalby nazwe `logistat` (tu = modul app).
+    czas_web = importlib.import_module('logistat.web.czas_pracy')
+    oryginal = czas_web.stan_czasu_dzis
 
     wywolania = []
 
@@ -691,7 +695,7 @@ def test_dwie_stacje_naraz_daja_jeden_start_szkolenia(flask_app, leader, monkeyp
         time.sleep(0.3)
         return wynik
 
-    monkeypatch.setattr(logistat, 'stan_czasu_dzis', wolno)
+    monkeypatch.setattr(czas_web, 'stan_czasu_dzis', wolno)
     wyniki = []
 
     def zadanie(kod):
