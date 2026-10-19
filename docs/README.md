@@ -119,8 +119,10 @@ LogiStat/
 ├── docker-compose.test.yml # PostgreSQL pod pytest (port 55432, tmpfs)
 ├── .env.example            # Wzor konfiguracji lokalnej (SECRET_KEY, haslo bazy)
 ├── static/
-│   ├── style.css           # Design system (dark theme)
-│   └── tabela_ilosci.js    # Tabela ilości (stanowisko + okno „✎ Ilości”)
+│   ├── style.css           # Motyw: grafit Logwin, wszystkie kolory jako tokeny
+│   ├── favicon.svg
+│   └── js/                 # Skrypty stron (<strona>.js), base.js (wspólne), motyw.js,
+│                           # tabela_ilosci.js (stanowisko + okno „✎ Ilości”)
 ├── templates/
 │   ├── base.html           # Layout + sidebar + toasty
 │   ├── login.html          # Logowanie liderów/adminów

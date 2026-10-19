@@ -5,7 +5,7 @@ zaznacza raz `zaznacz_wszystkich_przeszkolonych()`. Zapisany przydzial zostaje,
 choc szkolenie potem odznaczono — blokada dotyczy tylko NOWYCH przydzialow.
 """
 import app as logistat
-from conftest import make_user
+from conftest import make_user, strona_z_js
 
 DZIEN = '2026-09-01'
 
@@ -204,7 +204,7 @@ def test_lider_nie_zmieni_szkolen_admina(leader_client):
 
 def test_strona_uzytkownikow_ma_checkboxy_czynnosci(leader_client):
     u = make_user('operator', przeszkolony=True)
-    html = leader_client.get('/admin/users').get_data(as_text=True)
+    html = strona_z_js(leader_client, '/admin/users')
 
     assert 'class="czynnosc-szkolenie"' in html
     n = logistat.Activity.query.filter_by(is_active=True).count()
@@ -213,7 +213,7 @@ def test_strona_uzytkownikow_ma_checkboxy_czynnosci(leader_client):
 
 
 def test_tablica_ma_okno_braku_szkolenia(leader_client):
-    html = leader_client.get('/assignment').get_data(as_text=True)
+    html = strona_z_js(leader_client, '/assignment')
 
     assert 'id="brakSzkoleniaModal"' in html
     assert 'moznaPrzydzielic' in html

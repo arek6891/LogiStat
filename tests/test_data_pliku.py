@@ -11,7 +11,7 @@ from datetime import date, datetime
 import openpyxl
 
 import app as logistat
-from conftest import login, make_user
+from conftest import login, make_user, strona_z_js
 from test_import_aggregation import gstat
 
 CSV = ('Barcode;Land;Stückzahl;Kategorie;Ziel-Datum;Übergabe Nr.\n'
@@ -74,9 +74,9 @@ def test_import_excel_tez_wymaga_daty_pliku(leader_client):
 
 
 def test_strona_importu_podpowiada_dzisiejsza_date(leader_client):
-    html = leader_client.get('/import-csv').get_data(as_text=True)
+    html = strona_z_js(leader_client, '/import-csv')
 
-    assert f"const DZIS = '{logistat.local_today().isoformat()}'" in html
+    assert f'const DZIS = "{logistat.local_today().isoformat()}"' in html
     assert 'id="dataPlikuModal"' in html
 
 
@@ -375,8 +375,8 @@ def test_forecast_actual_liczy_po_dacie_pliku(leader_client):
 def test_filtr_paczek_po_dacie_pliku(leader_client):
     _import(leader_client, '2026-09-10')
 
-    html = leader_client.get('/paczki?date_from=2026-09-10&date_to=2026-09-10').get_data(as_text=True)
-    pusto = leader_client.get('/paczki?date_from=2026-09-11&date_to=2026-09-11').get_data(as_text=True)
+    html = strona_z_js(leader_client, '/paczki?date_from=2026-09-10&date_to=2026-09-10')
+    pusto = strona_z_js(leader_client, '/paczki?date_from=2026-09-11&date_to=2026-09-11')
 
     assert 'C1' in html and 'C2' in html
     assert 'C1' not in pusto

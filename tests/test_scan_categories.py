@@ -283,7 +283,7 @@ def test_api_pokazuje_ile_paczek_zeskanowano(admin_client, acting_admin):
 # ── ekrany ──────────────────────────────────────────────────────────────────
 
 def test_ekran_skanowania_ma_tabele_ilosci(leader_client):
-    # Od 2026-10-15 krok ilosci to tabela grup (static/tabela_ilosci.js),
+    # Od 2026-10-15 krok ilosci to tabela grup (static/js/tabela_ilosci.js),
     # nie lista kategorii — patrz tests/test_tabela_ilosci.py.
     html = leader_client.get('/scan-paczki').get_data(as_text=True)
 

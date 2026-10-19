@@ -11,13 +11,18 @@ import re
 import pytest
 
 import app as logistat
-from conftest import make_user
+from conftest import make_user, strona_z_js
 
 ZLOSLIWA_NAZWA = '<img src=x onerror=alert(1)>'
 ZLOSLIWY_BARCODE = '"><script>alert(1)</script>'
 
-SZABLONY = sorted(glob.glob(os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'templates', '*.html')))
+KATALOG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Szablony I skrypty stron: od 2026-10-16 JS jest w static/js/, a to tam
+# skladane sa szablony HTML z danych — bez nich te reguly niczego by nie lapaly.
+SZABLONY = sorted(glob.glob(os.path.join(KATALOG, 'templates', '*.html'))
+                  + glob.glob(os.path.join(KATALOG, 'static', 'js', '*.js')))
+assert any(p.endswith('.js') for p in SZABLONY), 'brak static/js/*.js do sprawdzenia'
+
 
 
 # ── Regula statyczna: zaden inline handler nie sklada danych z bazy ──────────
@@ -54,10 +59,11 @@ def test_title_z_danych_jest_escapowany(sciezka):
 
 
 def test_escapehtml_zdefiniowany_raz_w_base():
-    base = open(os.path.join(os.path.dirname(SZABLONY[0]), 'base.html'),
-                encoding='utf-8').read()
+    # Jedna definicja dla wszystkich stron: static/js/base.js (z base.html).
+    definicje = [p for p in SZABLONY
+                 if 'function escapeHtml' in open(p, encoding='utf-8').read()]
 
-    assert base.count('function escapeHtml') == 1
+    assert [os.path.basename(p) for p in definicje] == ['base.js']
 
 
 # ── Szablony renderowane serwerowo (Jinja autoescape) ───────────────────────
@@ -65,7 +71,7 @@ def test_escapehtml_zdefiniowany_raz_w_base():
 def test_lista_uzytkownikow_escapuje_nazwe(admin_client):
     make_user('operator', username='zlosliwy', display_name=ZLOSLIWA_NAZWA)
 
-    html = admin_client.get('/admin/users').get_data(as_text=True)
+    html = strona_z_js(admin_client, '/admin/users')
 
     assert ZLOSLIWA_NAZWA not in html
     assert '&lt;img src=x onerror=alert(1)&gt;' in html
@@ -76,7 +82,7 @@ def test_lista_paczek_escapuje_barcode(leader_client):
         barcode=ZLOSLIWY_BARCODE, land='PL', stueckzahl=1))
     logistat.db.session.commit()
 
-    html = leader_client.get('/paczki').get_data(as_text=True)
+    html = strona_z_js(leader_client, '/paczki')
 
     assert '<script>alert(1)</script>' not in html
     assert '&lt;script&gt;' in html
@@ -87,7 +93,7 @@ def test_sidebar_escapuje_nazwe_zalogowanego(client):
     u = make_user('leader', username='zly-lider', display_name=ZLOSLIWA_NAZWA)
     login(client, u.username)
 
-    html = client.get('/dashboard').get_data(as_text=True)
+    html = strona_z_js(client, '/dashboard')
 
     assert ZLOSLIWA_NAZWA not in html
 
@@ -97,7 +103,7 @@ def test_lista_krajow_escapuje_nazwe(admin_client):
         country=ZLOSLIWA_NAZWA, innenauftrag='X1'))
     logistat.db.session.commit()
 
-    html = admin_client.get('/admin/country-mapping').get_data(as_text=True)
+    html = strona_z_js(admin_client, '/admin/country-mapping')
 
     assert ZLOSLIWA_NAZWA not in html
 

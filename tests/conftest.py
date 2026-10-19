@@ -184,3 +184,18 @@ def acting_admin(flask_app, admin):
     with flask_app.test_request_context():
         login_user(admin)
         yield admin
+
+
+def strona_z_js(client, url):
+    """HTML strony + tresc jej skryptow z `static/js/` (od 2026-10-16 JS nie
+    siedzi w szablonach). Do testow, ktore sprawdzaja, co robi skrypt strony."""
+    import re
+    r = client.get(url)
+    assert r.status_code == 200, (url, r.status_code)
+    html = r.get_data(as_text=True)
+    katalog = os.path.join(os.path.dirname(__file__), '..', 'static')
+    skrypty = []
+    for sciezka in re.findall(r'<script src="/static/(js/[^"?]+)', html):
+        with open(os.path.join(katalog, sciezka), encoding='utf-8') as f:
+            skrypty.append(f.read())
+    return html + '\n' + '\n'.join(skrypty)
