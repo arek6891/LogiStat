@@ -47,12 +47,12 @@
                         class="{% if request.endpoint == 'forecast.forecast_page' %}active{% endif %}">
                         <span class="icon">📈</span> Forecast
                     </a></li>
-                <li><a href="{{ url_for('assignment') }}"
-                        class="{% if request.endpoint == 'assignment' %}active{% endif %}">
+                <li><a href="{{ url_for('przydzial.assignment') }}"
+                        class="{% if request.endpoint == 'przydzial.assignment' %}active{% endif %}">
                         <span class="icon">📋</span> Przydzielanie
                     </a></li>
-                <li><a href="{{ url_for('data_entry') }}"
-                        class="{% if request.endpoint == 'data_entry' %}active{% endif %}">
+                <li><a href="{{ url_for('przydzial.data_entry') }}"
+                        class="{% if request.endpoint == 'przydzial.data_entry' %}active{% endif %}">
                         <span class="icon">✏️</span> Wpis ilości
                     </a></li>
                 <li><a href="{{ url_for('normy.stats') }}"
