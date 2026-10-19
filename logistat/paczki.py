@@ -1,8 +1,8 @@
 """Paczka jako agregat: udzialy osob, tabela ilosci kartonu, flaga ❗, bledy paczki."""
-from logistat.kategorie import STAT_CATEGORY_LABELS
+from logistat.kategorie import STAT_CATEGORIES, STAT_CATEGORY_LABELS
+from logistat.models import etykieta_kategorii
 from logistat.rozliczenie import klucz_linii, recompute_general_stat
 from logistat.tabela_ilosci import kategorie_z_tabeli, suma_tabel
-
 
 #  Prog tolerancji: ilosc wpisana per kategoria wieksza niz Stueckzahl o wiecej
 #  niz 10% traktujemy jako pomylke wpisujacego.
@@ -95,3 +95,28 @@ def bledy_paczki(carton):
             f'przy {carton.stueckzahl or 0} w paczce. Do wyjaśnienia przez lidera'
         )
     return bledy
+
+
+def parse_scan_categories(surowe):
+    """Waliduje ilosci per kategoria. Zwraca (dict, komunikat_bledu).
+
+    Suma NIE jest porownywana ze `stueckzahl` — rozbieznosc miedzy deklaracja
+    a zawartoscia paczki jest normalna i nie moze blokowac pracy.
+    """
+    if surowe is None:
+        return {}, None
+    if not isinstance(surowe, dict):
+        return None, 'Nieprawidłowy format ilości.'
+    wynik = {}
+    for kat, wartosc in surowe.items():
+        if kat not in STAT_CATEGORIES:
+            return None, f'Nieznana kategoria: {kat}.'
+        try:
+            ile = int(wartosc)
+        except (TypeError, ValueError):
+            return None, f'Ilość dla „{etykieta_kategorii(kat)}" musi być liczbą.'
+        if ile < 0:
+            return None, f'Ilość dla „{etykieta_kategorii(kat)}" nie może być ujemna.'
+        if ile:
+            wynik[kat] = ile
+    return wynik, None
