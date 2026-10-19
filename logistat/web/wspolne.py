@@ -23,7 +23,7 @@ def leader_required(f):
     def decorated(*args, **kwargs):
         if current_user.role not in PRIVILEGED_ROLES:
             flash('Brak uprawnień.', 'error')
-            return redirect(url_for('index'))
+            return redirect(url_for('auth.index'))
         return f(*args, **kwargs)
     return decorated
 
@@ -35,7 +35,7 @@ def admin_required(f):
     def decorated(*args, **kwargs):
         if current_user.role != 'admin':
             flash('Brak uprawnień.', 'error')
-            return redirect(url_for('index'))
+            return redirect(url_for('auth.index'))
         return f(*args, **kwargs)
     return decorated
 
