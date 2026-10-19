@@ -9,6 +9,7 @@ from flask_login import current_user, login_required
 from werkzeug.exceptions import BadRequest
 
 from logistat.czas import local_today
+from logistat.import_paczek import importuj_wiersze
 from logistat.models import PRIVILEGED_ROLES, User
 
 
@@ -112,3 +113,22 @@ def blad_nieznanej_paczki(barcode, komunikat='Nieznany kod paczki.'):
             'kod_pracownika': True,
         }), 400
     return jsonify({'error': komunikat}), 404
+
+
+def wymagana_data_pliku(wartosc):
+    """Data pliku z requestu — WYMAGANA. Nie przez parse_date(): ta dla pustej
+    wartosci zwraca dzis, a cichy domysl to dokladnie blad, przed ktorym
+    chroni okno z data przy imporcie."""
+    tekst = str(wartosc or '').strip()
+    if not tekst:
+        abort(400, 'Podaj Loading date (dzień, którego dotyczy plik).')
+    try:
+        return date.fromisoformat(tekst)
+    except ValueError:
+        abort(400, 'Nieprawidłowa Loading date (oczekiwano YYYY-MM-DD).')
+
+
+def process_import_rows(rows, data_pliku):
+    """Import w imieniu zalogowanego uzytkownika — `importuj_wiersze()` z
+    `logistat.import_paczek` dostaje autora jawnie (modul nie zna current_user)."""
+    return importuj_wiersze(rows, data_pliku, current_user.id)
