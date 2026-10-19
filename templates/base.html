@@ -71,8 +71,8 @@
                         class="{% if request.endpoint == 'imports.import_csv_page' %}active{% endif %}">
                         <span class="icon">📥</span> Import danych
                     </a></li>
-                <li><a href="{{ url_for('general_stats_page') }}"
-                        class="{% if request.endpoint == 'general_stats_page' %}active{% endif %}">
+                <li><a href="{{ url_for('rozliczenie.general_stats_page') }}"
+                        class="{% if request.endpoint == 'rozliczenie.general_stats_page' %}active{% endif %}">
                         <span class="icon">💶</span> Statystyki ogólne
                     </a></li>
                 <li><a href="{{ url_for('admin.admin_users') }}"

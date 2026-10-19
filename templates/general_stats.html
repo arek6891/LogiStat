@@ -21,10 +21,10 @@
             <input type="date" id="filtrDo" name="date_to" value="{{ date_to }}" class="form-control" style="width:160px;">
         </div>
         <button type="submit" class="btn btn-primary">🔍 Filtruj</button>
-        <a href="{{ url_for('general_stats_page') }}" class="btn btn-ghost" title="Wyczyść filtr">✖ Wyczyść</a>
+        <a href="{{ url_for('rozliczenie.general_stats_page') }}" class="btn btn-ghost" title="Wyczyść filtr">✖ Wyczyść</a>
     </form>
     <div style="width:1px;height:36px;background:var(--border);margin:0 .25rem;"></div>
-    <a id="exportBtn" href="{{ url_for('general_stats_export', date_from=date_from, date_to=date_to) }}"
+    <a id="exportBtn" href="{{ url_for('rozliczenie.general_stats_export', date_from=date_from, date_to=date_to) }}"
        class="btn btn-ghost">⬇ Excel</a>
     {% if edycja %}
     <span class="autozapis-status" id="autoZapisStatus"
