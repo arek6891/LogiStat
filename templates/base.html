@@ -59,8 +59,8 @@
                         class="{% if request.endpoint == 'normy.stats' %}active{% endif %}">
                         <span class="icon">📊</span> Normy
                     </a></li>
-                <li><a href="{{ url_for('paczki_view') }}"
-                        class="{% if request.endpoint == 'paczki_view' %}active{% endif %}">
+                <li><a href="{{ url_for('paczki.paczki_view') }}"
+                        class="{% if request.endpoint == 'paczki.paczki_view' %}active{% endif %}">
                         <span class="icon">📦</span> Paczki (dane)
                     </a></li>
                 <li><a href="{{ url_for('worker_times') }}"
