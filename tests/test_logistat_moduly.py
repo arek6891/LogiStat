@@ -31,7 +31,8 @@ def test_modul_nie_ciagnie_aplikacji_ani_flaska(modul):
 @pytest.mark.parametrize('modul', ['logistat.config', 'logistat.extensions', 'logistat.models',
                                    'logistat.rozliczenie', 'logistat.paczki', 'logistat.import_paczek',
                                    'logistat.web.wspolne', 'logistat.normy_dane',
-                                   'logistat.dashboard_dane', 'logistat.przydzial'])
+                                   'logistat.dashboard_dane', 'logistat.przydzial',
+                                   'logistat.czas_pracy_dane'])
 def test_warstwa_danych_nie_importuje_app(modul):
     """Modele i rozszerzenia moga uzywac Flaska/SQLAlchemy, ale nigdy app.py —
     inaczej wraca cykl app → models → app (krok 3, 2026-10-16)."""
@@ -40,6 +41,24 @@ def test_warstwa_danych_nie_importuje_app(modul):
                            timeout=60, cwd='.')
     assert wynik.returncode == 0, wynik.stderr
     assert wynik.stdout.strip() == 'False'
+
+
+USLUGI = ['logistat.models', 'logistat.rozliczenie', 'logistat.paczki', 'logistat.import_paczek',
+          'logistat.normy_dane', 'logistat.dashboard_dane', 'logistat.przydzial',
+          'logistat.czas_pracy_dane']
+
+
+@pytest.mark.parametrize('modul', USLUGI)
+def test_usluga_nie_importuje_warstwy_http(modul):
+    """Kierunek: logistat/web/ → uslugi → modele. Usluga importujaca blueprint
+    tworzy cykl (2026-10-19: czas_pracy_dane ↔ web.czas_pracy) i ciagnie
+    request/abort do logiki."""
+    kod = (f"import sys, {modul}; "
+           "print(','.join(m for m in sys.modules if m.startswith('logistat.web')))")
+    wynik = subprocess.run([sys.executable, '-c', kod], capture_output=True, text=True,
+                           timeout=60, cwd='.')
+    assert wynik.returncode == 0, wynik.stderr
+    assert wynik.stdout.strip() == '', f'{modul} importuje warstwe HTTP: {wynik.stdout.strip()}'
 
 
 def test_logistat_models_rejestruje_wszystkie_tabele():

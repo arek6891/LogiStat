@@ -25,8 +25,8 @@
                         class="{% if request.endpoint == 'scanner' %}active{% endif %}">
                         <span class="icon">📷</span> Skaner zmian
                     </a></li>
-                <li><a href="{{ url_for('time_tracking') }}"
-                        class="{% if request.endpoint == 'time_tracking' %}active{% endif %}">
+                <li><a href="{{ url_for('czas_pracy.time_tracking') }}"
+                        class="{% if request.endpoint == 'czas_pracy.time_tracking' %}active{% endif %}">
                         <span class="icon">🕐</span> Czas pracy
                     </a></li>
                 <li><a href="{{ url_for('scan_paczki') }}"
@@ -63,8 +63,8 @@
                         class="{% if request.endpoint == 'paczki.paczki_view' %}active{% endif %}">
                         <span class="icon">📦</span> Paczki (dane)
                     </a></li>
-                <li><a href="{{ url_for('worker_times') }}"
-                        class="{% if request.endpoint == 'worker_times' %}active{% endif %}">
+                <li><a href="{{ url_for('czas_pracy.worker_times') }}"
+                        class="{% if request.endpoint == 'czas_pracy.worker_times' %}active{% endif %}">
                         <span class="icon">👥</span> Czasy pracowników
                     </a></li>
                 <li><a href="{{ url_for('imports.import_csv_page') }}"
