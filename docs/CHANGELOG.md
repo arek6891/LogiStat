@@ -1,5 +1,17 @@
 # LogiStat — Changelog
 
+## 2026-10-19 (3) — Krok 5: wszystkie trasy w blueprintach
+
+### Zmienione (bez zmian w adresach i działaniu)
+- 99 tras z `app.py` w 11 blueprintach `logistat/web/` (logowanie, administracja, import,
+  Forecast, Normy, Dashboard, Przydzielanie, Statystyki ogólne, Paczki, Czas pracy,
+  Stanowisko); zapytania obszarów w modułach usług. `app.py`: ~4 960 → ~600 linii.
+- Testy pilnują: adresów i metod (migawka), nazw tras w `url_for` i w menu, kierunku
+  zależności (usługi nie importują warstwy HTTP).
+
+### Poprawione
+- Menu: „Panel Admina” podświetla się też na Ustawieniach i Mapowaniu kosztów.
+
 ## 2026-10-19 (2) — Krok 4: rozliczenie, paczki i import jako moduły
 
 ### Zmienione (bez zmian w działaniu)

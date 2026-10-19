@@ -8,6 +8,7 @@
 - dwa rownolegle „koniec" tej samej paczki oba dostawaly 200 (15.09)
   → `SELECT … FOR UPDATE` na kartonie.
 """
+import importlib
 import threading
 import time
 from datetime import date
@@ -169,7 +170,10 @@ def test_dwa_rownolegle_konce_przechodzi_tylko_jeden(flask_app, leader, monkeypa
     logistat.db.session.commit()
 
     # Okno miedzy kontrola stanu a zapisem — bez blokady oba watki w nie wchodza.
-    oryginal = logistat.parse_scan_categories
+    # Trasa szuka parse_scan_categories w swoim module (blueprint, krok 5) — tam podmieniamy.
+    # importlib: `import logistat.web…` przypisalby nazwe `logistat` (tu = modul app).
+    stanowisko = importlib.import_module('logistat.web.stanowisko')
+    oryginal = stanowisko.parse_scan_categories
 
     wywolania = []
 
@@ -180,7 +184,7 @@ def test_dwa_rownolegle_konce_przechodzi_tylko_jeden(flask_app, leader, monkeypa
         time.sleep(0.5)
         return oryginal(surowe)
 
-    monkeypatch.setattr(logistat, 'parse_scan_categories', wolno)
+    monkeypatch.setattr(stanowisko, 'parse_scan_categories', wolno)
 
     wyniki = []
 

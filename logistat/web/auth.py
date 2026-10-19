@@ -38,7 +38,7 @@ def favicon():
 @bp.route('/')
 def index():
     if current_user.is_authenticated:
-        return redirect(url_for('scanner', shift_number=1))
+        return redirect(url_for('stanowisko.scanner', shift_number=1))
     return redirect(url_for('auth.login'))
 
 
