@@ -5,6 +5,7 @@
 - nazwa kategorii z cudzyslowem / backslashem nie psuje JS na stronach;
 - `migrate_columns()` nie polyka bledu — start pada z nazwa kolumny.
 """
+import importlib
 import json
 import re
 
@@ -115,7 +116,8 @@ def test_statystyki_ogolne_bez_json_parse_w_apostrofach(admin_client):
 
 def test_blad_migracji_kolumny_przerywa_start(flask_app, monkeypatch):
     zla = [('nie_ma_takiej_tabeli', 'kolumna', 'TEXT')]
-    monkeypatch.setattr(logistat, 'MIGRACJE_KOLUMN', zla)
+    # migrate_columns() czyta liste ze swojego modulu (logistat/baza.py, krok 6).
+    monkeypatch.setattr(importlib.import_module('logistat.baza'), 'MIGRACJE_KOLUMN', zla)
 
     with pytest.raises(RuntimeError, match='nie_ma_takiej_tabeli.kolumna'):
         logistat.migrate_columns()

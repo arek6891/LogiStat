@@ -1,5 +1,12 @@
 # LogiStat — Changelog
 
+## 2026-10-19 (4) — Krok 6: create_app(), baza oddzielona od fabryki
+
+### Zmienione (bez zmian w działaniu)
+- Aplikację buduje `create_app()` (`logistat/aplikacja.py`) — bez łączenia z bazą;
+  tworzenie tabel, migracje i seed w `logistat/baza.py` (`init_db()`).
+- `app.py` to już tylko punkt wejścia (~110 linii, z 6 836 na początku przebudowy).
+
 ## 2026-10-19 (3) — Krok 5: wszystkie trasy w blueprintach
 
 ### Zmienione (bez zmian w adresach i działaniu)

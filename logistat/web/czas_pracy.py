@@ -15,6 +15,16 @@ from logistat.web.wspolne import json_body, leader_required, require_int
 
 bp = Blueprint('czas_pracy', __name__)
 
+# ── Szkolenie: szkolacy + osoby szkolone ─────────────────────────────────────
+#
+# Zakladka „🎓 Szkolenie" w Czasie pracy (decyzja operacji 2026-10-08):
+# 1. skan szkolacego — NIC nie zapisuje, tylko sprawdza i pokazuje stan,
+# 2. skan osob szkolonych — pierwsza zaczyna szkolenie (szkolacy i ona w tej
+#    samej chwili), kolejne dopisuja sie takze w trakcie,
+# 3. „Zakończ szkolenie" — koniec dla szkolacego i wszystkich szkolonych naraz.
+# Szkolenie bez ani jednej osoby szkolonej nie istnieje — inaczej sam skan
+# dawalby szkolacemu 100% celu.
+
 
 def opis_szkolenia(trener, stan=None):
     """Stan szkolenia dla ekranu: czy trwa, od kiedy i kto jest szkolony."""

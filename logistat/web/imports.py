@@ -21,6 +21,11 @@ from logistat.web.wspolne import (
 
 bp = Blueprint('imports', __name__)
 
+# ── Grupowa poprawa daty pliku ───────────────────────────────────────────────
+#  Import = kartony jednej osoby z jednej minuty importu i jednej daty pliku
+#  (process_import_rows daje calemu plikowi jedno `imported_at`). Klucz importu
+#  w API: "<imported_by>|<minuta UTC ISO>|<data_pliku>".
+
 
 MAX_IMPORTOW_NA_LISCIE = 300
 
