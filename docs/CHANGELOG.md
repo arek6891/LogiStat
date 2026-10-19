@@ -1,5 +1,14 @@
 # LogiStat — Changelog
 
+## 2026-10-19 (2) — Krok 4: rozliczenie, paczki i import jako moduły
+
+### Zmienione (bez zmian w działaniu)
+- Przeliczanie Statystyk ogólnych, operacje na paczce (udziały, tabela, ❗, błędy) i import
+  CSV/Excel przeniesione do `logistat/rozliczenie.py`, `paczki.py`, `import_paczek.py`.
+  Import dostaje autora jawnie zamiast brać go z sesji. `app.py`: ~5 500 → ~4 960 linii.
+- Sprawdzone na kopii bazy z `.31`: każda z 346 linii rozliczenia przeliczona nowym kodem
+  daje dokładnie to samo.
+
 ## 2026-10-19 — Krok 3: modele i konfiguracja w pakiecie
 
 ### Zmienione (bez zmian w działaniu i w bazie)

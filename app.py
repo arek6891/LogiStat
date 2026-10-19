@@ -85,6 +85,16 @@ from logistat.models import (  # noqa: F401 — re-eksport dla testow i reszty a
     historia_celu_lista,
     POCZATEK_HISTORII_CELU,
 )
+from logistat.rozliczenie import (  # noqa: F401 — re-eksport
+    _ma_ilosci, _odsun_linie, _suma_kategorii, double_rate_amount_map, klucz_linii,
+    ma_reczne_ilosci, przenies_linie, recompute_general_stat, scan_category_totals,
+    scan_coverage_map)
+from logistat.paczki import (  # noqa: F401 — re-eksport
+    TOLERANCJA_ILOSCI, bledy_paczki, lista_osob, odswiez_roznice, otwarte_udzialy,
+    przelicz_ilosci_udzialow, zamknij_paczke_wielu_osob, zapisz_tabele_kartonu)
+from logistat.import_paczek import (  # noqa: F401 — re-eksport
+    IMPORT_CHUNK, _cell_to_barcode, _cell_to_date, _cell_to_int, _cell_to_str, _partiami,
+    detect_csv_encoding, importuj_wiersze, normalize_header)
 from openpyxl.chart import BarChart, Reference
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
@@ -194,6 +204,12 @@ def ustaw_szkolenia(user, activity_ids):
     for aid in nowe - obecne.keys():
         db.session.add(SzkolenieCzynnosci(user_id=user.id, activity_id=aid,
                                           dodal_id=current_user.id))
+
+
+def process_import_rows(rows, data_pliku):
+    """Import w imieniu zalogowanego uzytkownika — `importuj_wiersze()` z
+    `logistat.import_paczek` dostaje autora jawnie (modul nie zna current_user)."""
+    return importuj_wiersze(rows, data_pliku, current_user.id)
 
 
 @login_manager.user_loader
@@ -799,9 +815,6 @@ def import_csv_page():
     return render_template('import_csv.html', dzis=local_today().isoformat())
 
 PACZKI_NA_STRONE = 100
-#  Prog tolerancji: ilosc wpisana per kategoria wieksza niz Stueckzahl o wiecej
-#  niz 10% traktujemy jako pomylke wpisujacego.
-TOLERANCJA_ILOSCI = 1.10
 
 #  Po ktorym polu daty filtruje ekran /paczki (`date_typ`). Klucz -> (etykieta,
 #  kolumna, czy to DateTime). Domyslnie `plik` (data pliku — glowna data pracy
@@ -860,43 +873,6 @@ class StroniceLista:
     @property
     def next_num(self):
         return self.page + 1
-
-
-def bledy_paczki(carton):
-    """Lista bledow paczki: brak zakonczenia, przekroczona ilosc per kategoria.
-
-    Paczka z tabela ilosci (od 2026-10-15): bez progow — blad to tylko
-    niepotwierdzony ❗ (Brak / Nadwyzka / Uszkodzone / suma kilku osob ≠
-    plik). Paczki sprzed tabeli zachowuja stare reguly ponizej, inaczej
-    historia bledow zmienilaby sie wstecz.
-    """
-    bledy = []
-    if carton.scan_start_at and not carton.scan_end_at:
-        bledy.append('Rozpoczęta, ale nie zakończona')
-    if carton.tabela_ilosci:
-        if carton.roznica_do_potwierdzenia():
-            bledy.append('❗ Do potwierdzenia: ' + '; '.join(carton.powody_roznicy()))
-        return bledy
-
-    limit = (carton.stueckzahl or 0) * TOLERANCJA_ILOSCI
-    ilosci = carton.get_scan_categories()
-    for kat, ile in ilosci.items():
-        if ile > limit:
-            bledy.append(
-                f'{STAT_CATEGORY_LABELS.get(kat, kat)}: {ile} szt. '
-                f'przy {carton.stueckzahl or 0} w paczce'
-            )
-
-    # Paczka wielu osob z nadwyzka (suma > Stückzahl LUB kategoria > +10 %,
-    # decyzja operacji 2026-10-13): nie wiadomo, kto zawyzyl — lider wyjasnia.
-    osoby = {u.user_id: (u.user.display_name if u.user else '?') for u in carton.udzialy}
-    suma = sum(ilosci.values())
-    if len(osoby) >= 2 and (suma > (carton.stueckzahl or 0) or any(i > limit for i in ilosci.values())):
-        bledy.append(
-            f'Procesowało {len(osoby)} os. ({", ".join(osoby.values())}) — wpisano {suma} szt. '
-            f'przy {carton.stueckzahl or 0} w paczce. Do wyjaśnienia przez lidera'
-        )
-    return bledy
 
 
 @app.route('/paczki')
@@ -1221,88 +1197,6 @@ def general_stats_export():
     response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     response.headers['Content-Disposition'] = f'attachment; filename="{fname}"'
     return response
-
-
-def klucz_linii(carton):
-    """Klucz linii rozliczenia (GeneralStat) dla kartonu:
-    (uebergabe_nr, land, data_pliku) == (list_id, country_ledger, loading_date).
-
-    JEDYNA definicja — kazde miejsce, ktore przelicza albo szuka linii kartonu,
-    idzie przez nia. Od 2026-10 kluczem jest data pliku, nie Ziel-Datum.
-    """
-    return (carton.uebergabe_nr, carton.land, carton.data_pliku)
-
-
-def double_rate_amount_map():
-    """Sum of Stückzahl of double-rate cartons, keyed by
-    (uebergabe_nr, land, data_pliku) == (list_id, country_ledger, loading_date) — klucz_linii()."""
-    rows = db.session.query(
-        ImportedCarton.uebergabe_nr,
-        ImportedCarton.land,
-        ImportedCarton.data_pliku,
-        func.coalesce(func.sum(ImportedCarton.stueckzahl), 0),
-    ).filter(ImportedCarton.double_rate.is_(True)).group_by(
-        ImportedCarton.uebergabe_nr,
-        ImportedCarton.land,
-        ImportedCarton.data_pliku,
-    ).all()
-    return {(u, l, d): int(s or 0) for u, l, d, s in rows}
-
-
-def scan_category_totals(uebergabe_nr, land, data_pliku):
-    """Suma ilosci per kategoria ze skanow paczek w danej grupie rozliczeniowej.
-
-    Kategorie siedza w kolumnie Text jako JSON (patrz `category_data`), wiec
-    sumujemy w Pythonie. Zwraca ksztalt `category_data`, czyli
-    {kategoria: {'amount': N, 'cost': 0.0}} — koszt liczy sie w locie w to_dict().
-    """
-    kartony = ImportedCarton.query.filter(
-        ImportedCarton.uebergabe_nr == uebergabe_nr,
-        ImportedCarton.land == land,
-        ImportedCarton.data_pliku == data_pliku,
-    ).all()
-    suma = {kat: 0 for kat in STAT_CATEGORIES}
-    for karton in kartony:
-        for kat, ile in karton.get_scan_categories().items():
-            suma[kat] = suma.get(kat, 0) + (ile or 0)
-    return {kat: {'amount': liczba(suma.get(kat, 0)), 'cost': 0.0} for kat in STAT_CATEGORIES}
-
-
-def ma_reczne_ilosci(stat):
-    """Czy linia ma juz wpisane recznie niezerowe ilosci per kategoria."""
-    if (stat.category_source or 'manual') != 'manual':
-        return False
-    return any(d.get('amount', 0) for d in stat.get_category_data().values()
-               if isinstance(d, dict))
-
-
-def scan_coverage_map():
-    """Pokrycie skanami per grupa: {(uebergabe, land, data_pliku): (zeskanowane, wszystkie)}.
-
-    Linia zasilana skanami czyta w trakcie zmiany mniej niz finalnie — bez tego
-    licznika latwo wyeksportowac polowicznie zeskanowana linie jako gotowa.
-    """
-    # Agregujemy w bazie (GROUP BY), nie w Pythonie — inaczej ekran rozliczen
-    # ciagnalby cala tabele kartonow przy kazdym otwarciu.
-    # Tylko paczki ZAKONCZONE: czesc przekazana do dokonczenia ma juz ilosci,
-    # ale paczka nie jest skonczona — nie moze wygladac na „zeskanowana".
-    ma_skan = case(
-        (and_(ImportedCarton.scan_end_at.isnot(None),
-              ImportedCarton.scan_category_data.isnot(None),
-              ImportedCarton.scan_category_data.notin_(('{}', '', 'null'))), 1),
-        else_=0)
-    rows = db.session.query(
-        ImportedCarton.uebergabe_nr,
-        ImportedCarton.land,
-        ImportedCarton.data_pliku,
-        func.count(ImportedCarton.id),
-        func.coalesce(func.sum(ma_skan), 0),
-    ).group_by(
-        ImportedCarton.uebergabe_nr,
-        ImportedCarton.land,
-        ImportedCarton.data_pliku,
-    ).all()
-    return {(u, l, d): (int(zesk or 0), int(wsz or 0)) for u, l, d, wsz, zesk in rows}
 
 
 @app.route('/general-stats')
@@ -2760,116 +2654,6 @@ def api_country_mapping_delete(mapping_id):
 #  API: CSV IMPORT + GENERAL STATS
 # ══════════════════════════════════════════════════════════════════════════════
 
-def detect_csv_encoding(raw_bytes):
-    """Try UTF-8 first, then Latin-1."""
-    for enc in ['utf-8-sig', 'utf-8', 'latin-1', 'cp1252']:
-        try:
-            raw_bytes.decode(enc)
-            return enc
-        except (UnicodeDecodeError, LookupError):
-            continue
-    return 'latin-1'
-
-
-def normalize_header(h):
-    """Normalize CSV header to handle encoding issues."""
-    h = h.strip().lower()
-    replacements = {
-        'st\u00fcckzahl': 'stueckzahl',
-        'st\u00fcckel': 'stueckzahl',
-        'stã¼ckzahl': 'stueckzahl',
-        'stã¼ckel': 'stueckzahl',
-        '\u00fcbergabe nr.': 'uebergabe_nr',
-        '\u00fcbergabe nr': 'uebergabe_nr',
-        'ãœbergabe nr.': 'uebergabe_nr',
-        'ãœbergabe nr': 'uebergabe_nr',
-        'ziel-datum': 'ziel_datum',
-        'land': 'land',
-        'barcode': 'barcode',
-        'kategorie': 'kategorie',
-    }
-    for key, val in replacements.items():
-        if key in h:
-            return val
-    return h
-
-
-def _cell_to_barcode(val):
-    """Coerce a cell value to a barcode string.
-
-    Excel stores numeric-looking barcodes as float64 \u2014 a whole number is
-    rendered without the trailing '.0' (str(123.0) -> '123'), and leading
-    zeros are already lost at the source. CSV always hands us strings.
-    """
-    if val is None:
-        return ''
-    if isinstance(val, bool):
-        return ''
-    if isinstance(val, int):
-        return str(val)
-    if isinstance(val, float):
-        return str(int(val)) if val.is_integer() else str(val)
-    return str(val).strip()
-
-
-def _cell_to_int(val):
-    """Coerce a cell value to an int quantity (0 on failure)."""
-    if val is None:
-        return 0
-    if isinstance(val, bool):
-        return 0
-    if isinstance(val, (int, float)):
-        return int(val)
-    try:
-        return int(float(str(val).strip().replace(',', '')))
-    except (ValueError, TypeError):
-        return 0
-
-
-def _cell_to_date(val):
-    """Coerce a cell value to a date (None on failure).
-
-    openpyxl returns datetime/date for date cells; CSV returns strings.
-    """
-    if val is None:
-        return None
-    if isinstance(val, datetime):
-        return val.date()
-    if isinstance(val, date):
-        return val
-    s = str(val).strip()
-    for fmt in ('%d.%m.%Y', '%Y-%m-%d', '%d/%m/%Y'):
-        try:
-            return datetime.strptime(s, fmt).date()
-        except ValueError:
-            continue
-    return None
-
-
-def _cell_to_str(val):
-    """Coerce a cell value to a trimmed string ('' for None)."""
-    if val is None:
-        return ''
-    return str(val).strip()
-
-
-# Wiersze importu przetwarzamy partiami: dedup barcode'ow idzie jednym
-# zapytaniem `IN (...)` na partie, a nie jednym na wiersz. Rozmiar ograniczony,
-# zeby duzy plik nie wchodzil caly do pamieci.
-IMPORT_CHUNK = 500
-
-
-def _partiami(iterable, rozmiar):
-    """Dziel iterowalne (moze byc generator) na listy po `rozmiar` elementow."""
-    partia = []
-    for element in iterable:
-        partia.append(element)
-        if len(partia) >= rozmiar:
-            yield partia
-            partia = []
-    if partia:
-        yield partia
-
 
 def wymagana_data_pliku(wartosc):
     """Data pliku z requestu — WYMAGANA. Nie przez parse_date(): ta dla pustej
@@ -2882,136 +2666,6 @@ def wymagana_data_pliku(wartosc):
         return date.fromisoformat(tekst)
     except ValueError:
         abort(400, 'Nieprawidłowa Loading date (oczekiwano YYYY-MM-DD).')
-
-
-def process_import_rows(rows, data_pliku):
-    """Shared import pipeline for CSV and Excel.
-
-    `rows` is an iterable of dicts keyed by NORMALIZED header names
-    (barcode, land, stueckzahl, kategorie, ziel_datum, uebergabe_nr).
-    Values may be raw strings (CSV) or native types (Excel) \u2014 all field
-    coercion is type-aware. Creates ImportedCarton records (deduped by
-    barcode) and upserts aggregated GeneralStat rows. Returns the result
-    dict for the API response.
-
-    `data_pliku` (wymagana) dostaje kazdy karton i jest kluczem linii.
-    `imported_at` jest jeden na caly import: lista importow przy grupowej
-    poprawie daty grupuje po (osoba, minuta), a plik wczytywany kilkadziesiat
-    sekund nie moze sie rozpasc na dwa "importy".
-    """
-    teraz = datetime.utcnow()
-    imported = 0
-    skipped = 0
-    skipped_barcodes = []
-    aggregation = {}  # key: (list_id, land, date_str) -> sum of stueckzahl
-
-    # Mapowania krajow to kilkadziesiat rekordow — jeden odczyt zamiast SELECT-a
-    # na kazdy wiersz pliku.
-    mapowania = {m.innenauftrag: m for m in CountryMapping.query.all()}
-    # Barcode'y widziane w TYM imporcie — lapie duplikaty wewnatrz pliku bez
-    # polegania na autoflushu.
-    widziane = set()
-
-    for partia in _partiami(rows, IMPORT_CHUNK):
-        parsed = []
-        for row in partia:
-            barcode = _cell_to_barcode(row.get('barcode'))
-            if not barcode:
-                continue
-            parsed.append((barcode, row))
-
-        # Jedno zapytanie na partie zamiast jednego na wiersz.
-        istniejace = set()
-        if parsed:
-            kandydaci = [b for b, _ in parsed]
-            istniejace = {
-                b for (b,) in db.session.query(ImportedCarton.barcode)
-                .filter(ImportedCarton.barcode.in_(kandydaci)).all()
-            }
-
-        for barcode, row in parsed:
-            if barcode in istniejace or barcode in widziane:
-                skipped += 1
-                skipped_barcodes.append(barcode)
-                continue
-            widziane.add(barcode)
-
-            land = _cell_to_str(row.get('land'))
-            kategorie = _cell_to_str(row.get('kategorie'))
-            uebergabe_nr = _cell_to_str(row.get('uebergabe_nr'))
-            stueckzahl = _cell_to_int(row.get('stueckzahl'))
-            ziel_datum = _cell_to_date(row.get('ziel_datum'))
-
-            mapping = mapowania.get(land)
-
-            carton = ImportedCarton(
-                barcode=barcode,
-                land=land,
-                stueckzahl=stueckzahl,
-                kategorie=kategorie,
-                ziel_datum=ziel_datum,
-                uebergabe_nr=uebergabe_nr,
-                country_mapping_id=mapping.id if mapping else None,
-                double_rate=bool(row.get('double_rate')),
-                added_manually=bool(row.get('added_manually')),
-                imported_by=current_user.id,
-                imported_at=teraz,
-                data_pliku=data_pliku,
-            )
-            db.session.add(carton)
-            imported += 1
-
-            # Aggregate for GeneralStat — klucz_linii(): (UB, land, data_pliku).
-            # Ziel-Datum nie jest juz wymagana (decyzja 2026-10: paczki bez niej
-            # tez sie rozliczaja).
-            if uebergabe_nr:
-                agg_key = klucz_linii(carton)
-                if agg_key not in aggregation:
-                    aggregation[agg_key] = {
-                        'stueckzahl': 0,
-                        'country': mapping.country if mapping else None,
-                        'date': data_pliku
-                    }
-                aggregation[agg_key]['stueckzahl'] += stueckzahl
-
-    # Create/update GeneralStat entries
-    stats_created = 0
-    stats_updated = 0
-    for (list_id, land_val, _data), agg in aggregation.items():
-        existing = GeneralStat.query.filter_by(
-            list_id=list_id,
-            country_ledger=land_val,
-            loading_date=agg['date']
-        ).first()
-
-        if existing:
-            existing.amounts += agg['stueckzahl']
-            existing.updated_at = datetime.utcnow()
-            existing.updated_by = current_user.id
-            stats_updated += 1
-        else:
-            stat = GeneralStat(
-                loading_date=agg['date'],
-                week_number=agg['date'].isocalendar()[1],
-                list_id=list_id,
-                country_of_destination=agg['country'],
-                country_ledger=land_val,
-                amounts=agg['stueckzahl'],
-                category_data=json.dumps(empty_category_data())
-            )
-            db.session.add(stat)
-            stats_created += 1
-
-    db.session.commit()
-
-    return {
-        'message': f'Zaimportowano {imported} karton\u00f3w.',
-        'imported': imported,
-        'skipped': skipped,
-        'skipped_barcodes': skipped_barcodes[:50],
-        'stats_created': stats_created,
-        'stats_updated': stats_updated
-    }
 
 
 @app.route('/api/import-csv', methods=['POST'])
@@ -3632,70 +3286,6 @@ def api_package_create():
     }), 201
 
 
-def recompute_general_stat(uebergabe_nr, land, data_pliku, actor_id=None, from_scan=False):
-    """Recompute a GeneralStat line's `amounts` from the SUM of its cartons.
-
-    Argumenty to klucz_linii(): (uebergabe_nr, land, data_pliku) — wolajacy
-    podaje `*klucz_linii(carton)`, nigdy wlasnej trojki.
-
-    `amounts` is a pure carton aggregate (only written by process_import_rows),
-    so recomputing from SUM(stueckzahl) over the group is exact — it avoids
-    delta drift and stays correct when manual and imported cartons share a
-    line. Groups without uebergabe_nr or data_pliku never aggregate, so nothing
-    to recompute. If the group emptied to 0, the GeneralStat row is kept at
-    amounts=0 (preserves any entered category_data).
-    """
-    if not (uebergabe_nr and data_pliku):
-        return
-    total = db.session.query(
-        func.coalesce(func.sum(ImportedCarton.stueckzahl), 0)
-    ).filter(
-        ImportedCarton.uebergabe_nr == uebergabe_nr,
-        ImportedCarton.land == land,
-        ImportedCarton.data_pliku == data_pliku,
-    ).scalar() or 0
-
-    existing = GeneralStat.query.filter_by(
-        list_id=uebergabe_nr,
-        country_ledger=land,
-        loading_date=data_pliku,
-    ).first()
-
-    if existing:
-        existing.amounts = total
-        # Skan ilosci przelacza linie na zrodlo 'scan' — swiadomie, nie przy okazji
-        # importu. Linie 'manual' (sprzed skanowania) NIGDY nie sa nadpisywane,
-        # inaczej przeliczenie wyzerowaloby recznie wpisane rozliczenia.
-        #
-        # Wyjatek od przelaczenia: linia, w ktorej ktos juz wpisal ilosci recznie.
-        # Pierwszy skan zastapilby np. 120 sztuk szescioma i nikt by tego nie
-        # zauwazyl. Ilosci ze skanu i tak zapisuja sie na kartonie (nic nie ginie),
-        # a linie przelacza dopiero admin — POST /api/general-stats/<id>/use-scan.
-        if from_scan and not ma_reczne_ilosci(existing):
-            existing.category_source = 'scan'
-        if existing.category_source == 'scan':
-            existing.set_category_data(
-                scan_category_totals(uebergabe_nr, land, data_pliku))
-        existing.updated_at = datetime.utcnow()
-        if actor_id:
-            existing.updated_by = actor_id
-    elif total > 0:
-        mapping = CountryMapping.query.filter_by(innenauftrag=land).first()
-        stat = GeneralStat(
-            loading_date=data_pliku,
-            week_number=data_pliku.isocalendar()[1],
-            list_id=uebergabe_nr,
-            country_of_destination=mapping.country if mapping else None,
-            country_ledger=land,
-            amounts=total,
-            category_source='scan' if from_scan else 'manual',
-            category_data=json.dumps(
-                scan_category_totals(uebergabe_nr, land, data_pliku)
-                if from_scan else empty_category_data()),
-        )
-        db.session.add(stat)
-
-
 @app.route('/api/packages/<int:carton_id>', methods=['PUT'])
 @leader_required
 def api_package_update(carton_id):
@@ -3863,47 +3453,6 @@ def parse_scan_categories(surowe):
     return wynik, None
 
 
-def otwarte_udzialy(carton):
-    return [u for u in carton.udzialy if u.end_at is None]
-
-
-def lista_osob(udzialy):
-    return ', '.join(u.user.display_name if u.user else '?' for u in udzialy)
-
-
-def przelicz_ilosci_udzialow(carton, actor_id):
-    """Karton = SUMA ilosci wszystkich udzialow (z sumy, nigdy delta) → linia
-    rozliczenia, jak przy zwyklym koncu paczki. Tabela kartonu = suma tabel
-    osob (tryb zespol); ❗ liczy sie dopiero po zamknieciu paczki."""
-    suma = {}
-    for u in carton.udzialy:
-        for kat, ile in u.get_ilosci().items():
-            suma[kat] = suma.get(kat, 0) + ile
-    tabele = [t for t in (u.get_tabela() for u in carton.udzialy) if t]
-    if tabele:
-        carton.set_tabela(suma_tabel(tabele))
-    poprzednie = carton.get_scan_categories()
-    carton.set_scan_categories(suma)
-    odswiez_roznice(carton)
-    if suma or poprzednie:
-        recompute_general_stat(*klucz_linii(carton), actor_id=actor_id, from_scan=True)
-
-
-def odswiez_roznice(carton):
-    """Flaga ❗ z tabeli zakonczonej paczki. Paczka bez tabeli (sprzed
-    2026-10-15) ma stare reguly w bledy_paczki() i flagi nie dostaje."""
-    carton.roznica = bool(carton.scan_end_at and carton.tabela_ilosci
-                          and carton.powody_roznicy())
-
-
-def zapisz_tabele_kartonu(carton, tabela, actor_id):
-    """Paczka jednej osoby: tabela → kolumny rozliczenia → linia (z sumy)."""
-    carton.set_tabela(tabela)
-    carton.set_scan_categories(kategorie_z_tabeli(tabela))
-    odswiez_roznice(carton)
-    recompute_general_stat(*klucz_linii(carton), actor_id=actor_id, from_scan=True)
-
-
 def tabela_z_body(data, carton, oczekiwany_tryb):
     """(tabela, odpowiedz_bledu) z `tabela` + `tryb` w body stanowiska.
 
@@ -3919,16 +3468,6 @@ def tabela_z_body(data, carton, oczekiwany_tryb):
     if blad:
         return None, (jsonify({'error': blad}), 400)
     return tabela, None
-
-
-def zamknij_paczke_wielu_osob(carton, kto_id, teraz):
-    """Ostatni udzial zamkniety → paczka zakonczona. Start = pierwszy udzial,
-    zeby „kto/kiedy zaczal" na /paczki opisywal cala paczke."""
-    pierwszy = min(carton.udzialy, key=lambda u: u.start_at)
-    carton.scan_start_at = pierwszy.start_at
-    carton.scan_start_by = pierwszy.user_id
-    carton.scan_end_at = teraz
-    carton.scan_end_by = kto_id
 
 
 def pracownik_i_paczka_z_body():
@@ -5317,77 +4856,6 @@ def migrate_columns():
 
 
 ZNACZNIK_MIGRACJI_DATY_PLIKU = 'migracja_data_pliku'
-
-
-def _suma_kategorii(*slowniki):
-    """Suma ilosci per kategoria kilku `category_data` (ksztalt {kat: {'amount': N}})."""
-    suma = {kat: 0 for kat in STAT_CATEGORIES}
-    for dane in slowniki:
-        for kat, wartosc in (dane or {}).items():
-            if kat in suma and isinstance(wartosc, dict):
-                suma[kat] += int(wartosc.get('amount', 0) or 0)
-    return {kat: {'amount': n, 'cost': 0.0} for kat, n in suma.items()}
-
-
-def _ma_ilosci(dane):
-    return any(isinstance(v, dict) and v.get('amount') for v in (dane or {}).values())
-
-
-def przenies_linie(zrodla, klucz, actor_id=None, from_scan=False):
-    """Zlacz linie `zrodla` (GeneralStat) w jedna linie pod kluczem `klucz`
-    (uebergabe_nr, land, data_pliku) i przelicz ja z kartonow.
-
-    Uzywane przez jednorazowa migracje i grupowa zmiane daty pliku, zeby obie
-    trzymaly sie tych samych regul:
-    - linia, ktora juz stoi pod `klucz`, przezywa; inaczej pierwsza ze zrodel;
-    - reczne `category_data` (linie 'manual') i `double_rate_category_data` sa
-      SUMOWANE — to jedyne dane linii, ktorych nie da sie odtworzyc z kartonow;
-    - `amounts` i ilosci ze skanow liczy od nowa recompute_general_stat();
-    - linia ze zrodlem 'scan' zostaje 'scan', chyba ze ktores zrodlo ma reczne
-      ilosci (wtedy 'manual' z suma — skany i tak leza na kartonach).
-    Wolajacy musi wczesniej odsunac zrodla z ich starych kluczy (patrz
-    _odsun_linie), bo unikalny (list_id, country_ledger, loading_date) nie
-    pozwala przesunac linii na miejsce, ktore jeszcze zajmuje inna.
-    """
-    ub, land, data = klucz
-    docelowa = GeneralStat.query.filter_by(
-        list_id=ub, country_ledger=land, loading_date=data).first()
-    wszystkie = list({id(x): x for x in ([docelowa] if docelowa else []) + list(zrodla)}.values())
-    if not wszystkie:
-        recompute_general_stat(ub, land, data, actor_id=actor_id, from_scan=from_scan)
-        return
-    zostaje = docelowa or wszystkie[0]
-    reczne = [x for x in wszystkie if (x.category_source or 'manual') == 'manual'
-              and _ma_ilosci(x.get_category_data())]
-    skanowe = any((x.category_source or 'manual') == 'scan' for x in wszystkie)
-    zostaje.set_double_rate_category_data(
-        _suma_kategorii(*(x.get_double_rate_category_data() for x in wszystkie)))
-    if reczne:
-        zostaje.category_source = 'manual'
-        zostaje.set_category_data(_suma_kategorii(*(x.get_category_data() for x in reczne)))
-    elif skanowe:
-        zostaje.category_source = 'scan'
-    if not zostaje.country_of_destination:
-        zostaje.country_of_destination = next(
-            (x.country_of_destination for x in wszystkie if x.country_of_destination), None)
-    for x in wszystkie:
-        if x is not zostaje:
-            db.session.delete(x)
-    db.session.flush()
-    zostaje.loading_date = data
-    zostaje.week_number = data.isocalendar()[1]
-    db.session.flush()
-    recompute_general_stat(ub, land, data, actor_id=actor_id,
-                           from_scan=from_scan and not reczne)
-
-
-def _odsun_linie(linie):
-    """Przestaw linie na tymczasowe, unikalne daty (1900-01-01 + id), zeby
-    zwolnic ich klucze przed przesunieciem — inaczej linia A wchodzaca na dzien
-    linii B, ktora sama dopiero sie przesuwa, lamie unikalny indeks."""
-    for x in linie:
-        x.loading_date = date(1900, 1, 1) + timedelta(days=x.id)
-    db.session.flush()
 
 
 def migruj_date_pliku():

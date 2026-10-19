@@ -28,7 +28,8 @@ def test_modul_nie_ciagnie_aplikacji_ani_flaska(modul):
     assert wynik.stdout.strip() == '', f'{modul} importuje: {wynik.stdout.strip()}'
 
 
-@pytest.mark.parametrize('modul', ['logistat.config', 'logistat.extensions', 'logistat.models'])
+@pytest.mark.parametrize('modul', ['logistat.config', 'logistat.extensions', 'logistat.models',
+                                   'logistat.rozliczenie', 'logistat.paczki', 'logistat.import_paczek'])
 def test_warstwa_danych_nie_importuje_app(modul):
     """Modele i rozszerzenia moga uzywac Flaska/SQLAlchemy, ale nigdy app.py —
     inaczej wraca cykl app → models → app (krok 3, 2026-10-16)."""
