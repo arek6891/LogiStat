@@ -1,9 +1,8 @@
 """Konta i listy slownikowe uzytkownikow; role."""
-from datetime import datetime
-
 from flask_login import UserMixin
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from logistat.czas import teraz_utc
 from logistat.extensions import db
 
 
@@ -15,7 +14,7 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(200), nullable=True)  # only leaders/admins
     role = db.Column(db.String(20), default='operator')  # operator | leader | admin
     is_active_user = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=teraz_utc)
     # Pola opisowe z list slownikowych, ktore admin definiuje sam (UserOption).
     # `shift_group`, nie `shift` — `Shift` / `shift_id` to juz zmiana 1/2 danego
     # dnia, a „Zmiana A/B/C" to stala brygada pracownika.
@@ -113,6 +112,6 @@ class ProbaLogowania(db.Model):
     __tablename__ = 'proba_logowania'
     id = db.Column(db.Integer, primary_key=True)
     login = db.Column(db.String(100), nullable=False, index=True)
-    kiedy = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    kiedy = db.Column(db.DateTime, nullable=False, default=teraz_utc, index=True)
     adres_ip = db.Column(db.String(64), nullable=True)
 

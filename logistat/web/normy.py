@@ -1,10 +1,8 @@
 """Normy: przeglad zespolu, karta pracownika, cel szt./h (historia zmian)."""
-from datetime import datetime
-
 from flask import Blueprint, abort, jsonify, render_template, request
 from flask_login import current_user
 
-from logistat.czas import iso_z, local_today, utc_to_local
+from logistat.czas import iso_z, local_today, teraz_utc, utc_to_local
 from logistat.extensions import db
 from logistat.models import (
     Activity, DailyStat, HistoriaCelu, Shift, User, get_setting_int, historia_celu_lista,
@@ -59,7 +57,7 @@ def api_stats_target_update():
     else:
         dzis.wartosc = wartosc         # ostatni zapis danego dnia wygrywa
     dzis.zmienil_id = current_user.id
-    dzis.zmieniono_at = datetime.utcnow()
+    dzis.zmieniono_at = teraz_utc()
     set_setting('target_szt_h', wartosc)
     db.session.commit()
     return jsonify({

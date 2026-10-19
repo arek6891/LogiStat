@@ -1,12 +1,12 @@
 """Przydzielanie osob do czynnosci (szkolenia, estymacja, sugestie AI, wersja) i Wpis ilosci."""
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from flask import Blueprint, jsonify, render_template, request
 from flask_login import current_user
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
-from logistat.czas import local_today
+from logistat.czas import local_today, teraz_utc
 from logistat.extensions import db
 from logistat.models import (
     Activity, ActivityAssignment, DailyStat, Shift, ShiftAttendance, User, get_or_create_shift,
@@ -330,7 +330,7 @@ def api_daily_stats_save():
             existing.quantity = quantity
             existing.note = entry.get('note', '')
             existing.modified_by = current_user.id
-            existing.modified_at = datetime.utcnow()
+            existing.modified_at = teraz_utc()
         else:
             db.session.add(DailyStat(
                 shift_id=shift.id,
@@ -355,7 +355,7 @@ def api_daily_stat_update(stat_id):
     stat.quantity = data.get('quantity', stat.quantity)
     stat.note = data.get('note', stat.note)
     stat.modified_by = current_user.id
-    stat.modified_at = datetime.utcnow()
+    stat.modified_at = teraz_utc()
 
     db.session.commit()
     return jsonify({'message': 'Zaktualizowano.', 'stat': stat.to_dict()}), 200

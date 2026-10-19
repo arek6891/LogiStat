@@ -1,9 +1,9 @@
 """Rozliczenie: linie Statystyk ogolnych, stawki, mapowanie krajow, Forecast, nazwy kategorii."""
 import json
-from datetime import datetime
 
 from flask import g, has_request_context
 
+from logistat.czas import teraz_utc
 from logistat.extensions import db
 from logistat.kategorie import STAT_CATEGORIES, STAT_CATEGORY_LABELS, STAT_CATEGORY_LABELS_PL
 from logistat.models.ustawienia import AppSetting
@@ -66,7 +66,7 @@ class Forecast(db.Model):
     quantity = db.Column(db.Integer, default=0)
     notes = db.Column(db.String(500), nullable=True)
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=teraz_utc)
     updated_at = db.Column(db.DateTime, nullable=True)
     updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
 
@@ -87,7 +87,7 @@ class GeneralStat(db.Model):
     # 'manual' = kategorie wpisane recznie (linie sprzed skanowania ilosci) — recompute ich NIE rusza.
     # 'scan'   = kategorie sa suma skanow paczek — pole reczne zablokowane.
     category_source = db.Column(db.String(10), default='manual')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=teraz_utc)
     updated_at = db.Column(db.DateTime, nullable=True)
     updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
 
@@ -156,7 +156,7 @@ class CostMapping(db.Model):
     year = db.Column(db.Integer, nullable=False)
     month = db.Column(db.Integer, nullable=False)
     rates_data = db.Column(db.Text, default='{}')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=teraz_utc)
     updated_at = db.Column(db.DateTime, nullable=True)
     updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
 

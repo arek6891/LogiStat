@@ -1,5 +1,18 @@
 # LogiStat — Changelog
 
+## 2026-10-20 (2) — Porządki techniczne
+
+### Zmienione (bez zmian w działaniu)
+- `teraz_utc()` zamiast przestarzałego `datetime.utcnow()` (43 miejsca).
+- Komunikaty startu (seed, migracje) przez dziennik (`logging`) z poziomem i czasem
+  zamiast `print()`.
+- Eksporty do Excela (Statystyki ogólne, Forecast) korzystają ze wspólnego modułu.
+
+### Poprawione
+- Eksport Forecast: oś wykresu „Ilość sztuk” zamiast „Ilość paczek” (dane są w sztukach).
+- Skrypt kontroli spójności uruchamiany z linii poleceń — import pakietu po ustawieniu
+  ścieżki (test uruchamia go tak jak po wdrożeniu).
+
 ## 2026-10-20 — Bezpieczeństwo logowania
 
 ### Zmienione

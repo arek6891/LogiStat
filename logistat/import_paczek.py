@@ -3,10 +3,10 @@ Autor importu przychodzi parametrem (actor_id) — modul nie wie o zalogowanym u
 import json
 from datetime import date, datetime
 
+from logistat.czas import teraz_utc
 from logistat.extensions import db
 from logistat.models import CountryMapping, GeneralStat, ImportedCarton, empty_category_data
 from logistat.rozliczenie import klucz_linii
-
 
 # Wiersze importu przetwarzamy partiami: dedup barcode'ow idzie jednym
 # zapytaniem `IN (...)` na partie, a nie jednym na wiersz. Rozmiar ograniczony,
@@ -134,7 +134,7 @@ def importuj_wiersze(rows, data_pliku, actor_id):
     poprawie daty grupuje po (osoba, minuta), a plik wczytywany kilkadziesiat
     sekund nie moze sie rozpasc na dwa "importy".
     """
-    teraz = datetime.utcnow()
+    teraz = teraz_utc()
     imported = 0
     skipped = 0
     skipped_barcodes = []
@@ -221,7 +221,7 @@ def importuj_wiersze(rows, data_pliku, actor_id):
 
         if existing:
             existing.amounts += agg['stueckzahl']
-            existing.updated_at = datetime.utcnow()
+            existing.updated_at = teraz_utc()
             existing.updated_by = actor_id
             stats_updated += 1
         else:

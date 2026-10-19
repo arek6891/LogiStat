@@ -1,10 +1,11 @@
 """Rozliczenie: linie Statystyk ogolnych liczone Z SUMY paczek (nigdy przyrostowo),
 klucz linii, pokrycie skanami, przenoszenie linii przy zmianie Loading date."""
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from sqlalchemy import and_, case, func
 
+from logistat.czas import teraz_utc
 from logistat.extensions import db
 from logistat.kategorie import STAT_CATEGORIES, liczba
 from logistat.models import CountryMapping, GeneralStat, ImportedCarton, empty_category_data
@@ -140,7 +141,7 @@ def recompute_general_stat(uebergabe_nr, land, data_pliku, actor_id=None, from_s
         if existing.category_source == 'scan':
             existing.set_category_data(
                 scan_category_totals(uebergabe_nr, land, data_pliku))
-        existing.updated_at = datetime.utcnow()
+        existing.updated_at = teraz_utc()
         if actor_id:
             existing.updated_by = actor_id
     elif total > 0:

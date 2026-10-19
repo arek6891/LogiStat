@@ -2,11 +2,11 @@
 „kto ile zrobil"), okresy szkolen, cele dnia z historii, przeglad zespolu i karta
 pracownika. Liczenie szt./h robi czyste `logistat.normy.policz_wydajnosc`."""
 from bisect import bisect_right
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from sqlalchemy.orm import joinedload
 
-from logistat.czas import local_day_bounds, local_today
+from logistat.czas import local_day_bounds, local_today, teraz_utc
 from logistat.extensions import db
 from logistat.models import (
     HistoriaCelu, ImportedCarton, POCZATEK_HISTORII_CELU, UdzialPaczki, User, WorkerTimeEvent,
@@ -119,7 +119,7 @@ def okresy_szkolen(user_ids, date_from=None, date_to=None, najwczesniej=None):
             otwarte[klucz] = e.timestamp
         elif klucz in otwarte:
             wynik[rodzaj].setdefault(e.user_id, []).append((otwarte.pop(klucz), e.timestamp))
-    teraz = datetime.utcnow()
+    teraz = teraz_utc()
     for (rodzaj, uid, _), start in otwarte.items():
         wynik[rodzaj].setdefault(uid, []).append(
             (start, min(teraz, start + MAKS_OTWARTEGO_SZKOLENIA)))

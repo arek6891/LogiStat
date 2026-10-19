@@ -89,3 +89,15 @@ def test_main_zwraca_kod_bledu(leader_client, acting_admin, capsys):
 
     assert skrypt.main() == 1
     assert 'BŁĘDY' in capsys.readouterr().out
+
+
+def test_skrypt_uruchamia_sie_jako_plik():
+    """Tak jak po wdrozeniu: `python scripts/sprawdz_spojnosc.py` z katalogu
+    aplikacji — import pakietu musi isc po dodaniu katalogu do sys.path."""
+    import subprocess
+    import sys
+    katalog = os.path.join(os.path.dirname(__file__), '..')
+    wynik = subprocess.run([sys.executable, 'scripts/sprawdz_spojnosc.py'], cwd=katalog,
+                           capture_output=True, text=True, timeout=120)
+    assert 'Spójność' in wynik.stdout, wynik.stderr
+

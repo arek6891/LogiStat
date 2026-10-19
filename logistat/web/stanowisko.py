@@ -1,11 +1,9 @@
 """Stanowiska na hali: skaner zmian (obecnosc), Czasy paczek (start / koniec / do dokonczenia /
 zespol, tabela ilosci), podglad paczki i pracownika."""
-from datetime import datetime
-
 from flask import Blueprint, jsonify, render_template, request
 from sqlalchemy.orm import joinedload
 
-from logistat.czas import local_today
+from logistat.czas import local_today, teraz_utc
 from logistat.extensions import db
 from logistat.models import (
     ImportedCarton, Shift, ShiftAttendance, UDZIAL_PRZEKAZANA, UDZIAL_ZESPOL, UdzialPaczki,
@@ -43,7 +41,7 @@ def koniec_udzialu(carton, user, kategorie, zamknij_wszystkich, tabela=None):
                            start_at=carton.scan_start_at)
         db.session.add(moj)
 
-    teraz = datetime.utcnow()
+    teraz = teraz_utc()
     moj.end_at = teraz
     if tabela:
         moj.set_tabela(tabela)
@@ -287,7 +285,7 @@ def api_package_time_przekaz():
         if blad:
             return jsonify({'error': blad}), 400
 
-    teraz = datetime.utcnow()
+    teraz = teraz_utc()
     if not moj:
         moj = UdzialPaczki(carton=carton, user_id=user.id, rodzaj=UDZIAL_PRZEKAZANA,
                            start_at=carton.scan_start_at)
@@ -327,7 +325,7 @@ def api_package_time_dolacz():
         return jsonify({'message': f'Już pracujesz przy paczce {carton.barcode}.',
                         'carton': carton.to_dict()}), 200
 
-    teraz = datetime.utcnow()
+    teraz = teraz_utc()
     # Pierwsze dolaczenie: osoba, ktora zaczela, tez dostaje udzial — od swojego
     # startu. Tylko jesli nie ma JUZ wiersza z tego startu: gdy zaczynajaca
     # skonczyla swoja czesc (wiersz zamkniety), drugi wiersz od tego samego
@@ -395,7 +393,7 @@ def api_package_time_start():
 
     # Świeży start (paczka nierozpoczęta albo czekajaca na dokonczenie)
     dokonczenie = carton.do_dokonczenia()
-    carton.scan_start_at = datetime.utcnow()
+    carton.scan_start_at = teraz_utc()
     carton.scan_start_by = user.id
     db.session.commit()
 
@@ -466,7 +464,7 @@ def api_package_time_end():
         if blad:
             return jsonify({'error': blad}), 400
 
-    carton.scan_end_at = datetime.utcnow()
+    carton.scan_end_at = teraz_utc()
     carton.scan_end_by = user.id
     if tabela:
         zapisz_tabele_kartonu(carton, tabela, user.id)

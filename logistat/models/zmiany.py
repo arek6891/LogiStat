@@ -1,7 +1,5 @@
 """Zmiany, obecnosc, czynnosci, przydzial, szkolenia z czynnosci, wpis ilosci."""
-from datetime import datetime
-
-from logistat.czas import iso_z, local_today
+from logistat.czas import iso_z, local_today, teraz_utc
 from logistat.extensions import db
 from logistat.models.ustawienia import AppSetting
 
@@ -25,7 +23,7 @@ class Shift(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.Date, nullable=False)
     shift_number = db.Column(db.Integer, nullable=False)  # 1 or 2
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=teraz_utc)
 
     __table_args__ = (
         db.UniqueConstraint('date', 'shift_number', name='uq_shift_date_number'),
@@ -43,7 +41,7 @@ class ShiftAttendance(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     shift_id = db.Column(db.Integer, db.ForeignKey('shift.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    scanned_at = db.Column(db.DateTime, default=datetime.utcnow)
+    scanned_at = db.Column(db.DateTime, default=teraz_utc)
 
     shift = db.relationship('Shift', backref=db.backref('attendances', lazy=True))
     user = db.relationship('User', backref=db.backref('attendances', lazy=True))
@@ -69,7 +67,7 @@ class ActivityAssignment(db.Model):
     activity_id = db.Column(db.Integer, db.ForeignKey('activity.id'), nullable=False)
     is_suggestion = db.Column(db.Boolean, default=False)
     assigned_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    assigned_at = db.Column(db.DateTime, default=datetime.utcnow)
+    assigned_at = db.Column(db.DateTime, default=teraz_utc)
 
     shift = db.relationship('Shift', backref=db.backref('assignments', lazy=True))
     user = db.relationship('User', foreign_keys=[user_id],
@@ -98,7 +96,7 @@ class SzkolenieCzynnosci(db.Model):
     __tablename__ = 'szkolenie_czynnosci'
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
     activity_id = db.Column(db.Integer, db.ForeignKey('activity.id'), primary_key=True)
-    dodano_at = db.Column(db.DateTime, default=datetime.utcnow)
+    dodano_at = db.Column(db.DateTime, default=teraz_utc)
     dodal_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
 
 
@@ -144,7 +142,7 @@ class DailyStat(db.Model):
 
     # Audit fields
     entered_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    entered_at = db.Column(db.DateTime, default=datetime.utcnow)
+    entered_at = db.Column(db.DateTime, default=teraz_utc)
     modified_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     modified_at = db.Column(db.DateTime, nullable=True)
 

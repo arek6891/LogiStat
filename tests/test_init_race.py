@@ -96,5 +96,7 @@ def test_ponowny_start_na_gotowej_bazie_jest_no_opem(pusta_baza):
 
     assert all(w.returncode == 0 for w in wyniki)
     assert all('ADMINOW=1' in w.stdout for w in wyniki)
-    assert all('[SEED]' not in w.stdout for w in wyniki), \
+    # Seed pisze przez logging na stderr (od 2026-10-20) — patrzymy w oba strumienie.
+    assert all('[SEED]' not in w.stdout + w.stderr for w in wyniki), \
         'na gotowej bazie seed nie ma nic do roboty'
+    assert '[SEED]' in pierwszy.stdout + pierwszy.stderr, 'pierwszy start na pustej bazie robi seed'

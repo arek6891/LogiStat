@@ -15,7 +15,7 @@ docker compose down
 # Tests — need a Postgres; the compose file below provides one (port 55432, tmpfs)
 docker compose -f docker-compose.test.yml up -d
 pip install -r requirements-dev.txt
-pytest                               # 799 tests
+pytest                               # 800 tests
 docker compose -f docker-compose.test.yml down
 LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://u:p@host:5432/db pytest   # another DB
 # On .32 there is no pytest/venv — use the prebuilt runner image instead:
@@ -179,10 +179,12 @@ Every PR: **green CI** (`.github/workflows/testy.yml` — pytest on Postgres 16 
 - **Drag & drop:** native HTML5, click multi-select, drag moves all selected.
 - **User options:** `User.worker_type_id` („Rodzaj pracownika") and `User.shift_group_id` („Nazwa zmiany") → `UserOption(kind, name)`, `USER_OPTION_KINDS`. Defaults seeded **once** (marker `user_options_seeded`). Columns in the Normy overview (`worker_type` / `shift_group`, `joinedload`ed). Named `shift_group` because `Shift`/`shift_id` = dated shift 1/2. Admin edits at `/admin/user-options`; `GET /api/user-options` leader+; option in use → delete 409, rename only.
 - **"Today" = Warsaw day:** `local_today()` / `local_day_bounds(d)` (→ naive-UTC `[start, end)`, DST-correct) are the single definition. Never `date.today()`.
-- **Timestamps: naive UTC (`datetime.utcnow()`), displayed Europe/Warsaw.** API: `iso_z()` appends `Z` — **datetime fields only**, date-only (`ziel_datum`, `loading_date`, `Shift.date`) stay bare `isoformat()`. Jinja: `| localdt('%fmt')`. Browser sends `new Date(local).toISOString().slice(0,19)`. Never bare `strftime` on a stored datetime, never a Z-less ISO into `new Date()`.
+- **Timestamps: naive UTC (`teraz_utc()` from `logistat/czas.py` — never `datetime.utcnow()`, deprecated since 3.12), displayed Europe/Warsaw.** API: `iso_z()` appends `Z` — **datetime fields only**, date-only (`ziel_datum`, `loading_date`, `Shift.date`) stay bare `isoformat()`. Jinja: `| localdt('%fmt')`. Browser sends `new Date(local).toISOString().slice(0,19)`. Never bare `strftime` on a stored datetime, never a Z-less ISO into `new Date()`.
 - **Time thresholds** (`/admin/settings`, `PUT /api/settings`, `AppSetting`, `get_setting_int()`, `SETTING_DEFAULTS`): `break_threshold_minutes` 30, `max_work_minutes` 660, `min_break_minutes` 15 → JS `BREAK_THRESHOLD` / `MAX_WORK_MINUTES` / `MIN_BREAK_MINUTES`.
 - **First start serialized with `pg_advisory_lock`** — gunicorn workers race in `db.create_all()` on an empty DB (`Worker failed to boot`). `tests/test_init_race.py` (`pusta_baza` does `CREATE DATABASE`).
 - **Backups:** `pg_dump`.
+- **Logging:** `logging.getLogger(__name__)` (logger `logistat.*`, configured in `create_app()` → stderr → `docker logs`), never `print()`. Seed lines start with `[SEED]` (`test_init_race` checks them).
+- **Excel exports** use `logistat/web/excel.py` (`odpowiedz_xlsx`, `styl_naglowka`, `RAMKA`); colours stay per export.
 - **Remote work on .32 (2026-10-12):** Claude Code runs as a Remote Control session inside tmux session **`claude`** (`tmux new -d -s claude -c /opt/LogiStat 'claude --remote-control logistat'`), used from claude.ai/code. Check `tmux ls` before starting anything: **never start a second Claude session** next to it (it would just eat the server's resources), and never kill `claude` or the other tmux sessions (`gemini`, `linux`, `postgres`). It doesn't survive a reboot, so start it again with the same command.
 - **Config** (`docs/DEPLOY.md`): `SECRET_KEY` mandatory — `resolve_secret_key()` raises (bypass `LOGISTAT_ALLOW_DEV_SECRET=1`); from `.env` via Compose. **Never `${VAR:?}` in `docker-compose.yml`** — resolved before the override merges, breaks `.31` (no `.env`). `MAX_UPLOAD_MB` (32) → 413 JSON. `SESSION_COOKIE_SAMESITE=Lax` always; `SESSION_COOKIE_SECURE` opt-in (`.31` also on plain HTTP).
 - **Login `?next=`** only via `bezpieczny_next()` (a local path; full URLs, `//host`, `\` → index — open redirect).

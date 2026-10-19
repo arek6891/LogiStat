@@ -2,6 +2,7 @@
 bazy (`migrate_columns`), jednorazowe migracje danych i seed — wszystko pod
 `pg_advisory_lock` w `init_db()`. Wola to app.py przy imporcie (gunicorn), nie
 `create_app()`."""
+import logging
 import os
 
 from logistat.config import DEFAULT_ADMIN_PASSWORD
@@ -11,6 +12,8 @@ from logistat.models import (
     User, UserOption, zaznacz_wszystkich_przeszkolonych)
 from logistat.normy_dane import zasiej_historie_celu
 from logistat.rozliczenie import _odsun_linie, przenies_linie, recompute_general_stat
+
+log = logging.getLogger(__name__)
 
 
 DEFAULT_ACTIVITIES = [
@@ -65,7 +68,7 @@ def seed_data():
         for i, name in enumerate(DEFAULT_ACTIVITIES):
             db.session.add(Activity(name=name, sort_order=i))
         db.session.commit()
-        print("[SEED] Default activities created.")
+        log.info('[SEED] Domyslne czynnosci utworzone.')
 
     if User.query.filter_by(role='admin').count() == 0:
         haslo = os.environ.get('ADMIN_PASSWORD', '').strip() or DEFAULT_ADMIN_PASSWORD
@@ -78,12 +81,11 @@ def seed_data():
         db.session.add(admin)
         db.session.commit()
         if haslo == DEFAULT_ADMIN_PASSWORD:
-            print("[SEED] Admin user created (login: admin / password: "
-                  f"{DEFAULT_ADMIN_PASSWORD})")
-            print("[SEED] !!! ZMIEN TO HASLO PRZY PIERWSZYM LOGOWANIU (/profile) "
-                  "albo ustaw ADMIN_PASSWORD przed pierwszym startem.")
+            log.warning('[SEED] Konto admin z domyslnym haslem (%s) — zmiana wymuszona przy '
+                        'pierwszym logowaniu; lepiej ustaw ADMIN_PASSWORD przed pierwszym startem.',
+                        DEFAULT_ADMIN_PASSWORD)
         else:
-            print("[SEED] Admin user created (login: admin / haslo z ADMIN_PASSWORD)")
+            log.info('[SEED] Konto admin utworzone (haslo z ADMIN_PASSWORD).')
 
     # Tylko raz (znacznik w AppSetting): gdyby warunkiem byla pusta lista, admin,
     # ktory skasowal wszystkie pozycje, dostalby domyslne z powrotem po restarcie.
@@ -94,13 +96,13 @@ def seed_data():
                     db.session.add(UserOption(kind=kind, name=name, sort_order=i))
         db.session.add(AppSetting(key='user_options_seeded', value='1'))
         db.session.commit()
-        print("[SEED] Default user options created.")
+        log.info('[SEED] Domyslne listy uzytkownikow utworzone.')
 
     if CountryMapping.query.count() == 0:
         for country, innenauftrag in DEFAULT_COUNTRY_MAPPINGS:
             db.session.add(CountryMapping(country=country, innenauftrag=innenauftrag))
         db.session.commit()
-        print("[SEED] Default country mappings created.")
+        log.info('[SEED] Domyslne mapowanie krajow utworzone.')
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -242,7 +244,7 @@ def migruj_date_pliku():
 
     db.session.add(AppSetting(key=ZNACZNIK_MIGRACJI_DATY_PLIKU, value='1'))
     db.session.commit()
-    print(f'[MIGRACJA] Data pliku: {len(plan)} linii rozliczenia pod nowymi kluczami.')
+    log.info('[MIGRACJA] Data pliku: %d linii rozliczenia pod nowymi kluczami.', len(plan))
 
 
 def init_db():

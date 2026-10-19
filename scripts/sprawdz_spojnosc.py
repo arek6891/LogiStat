@@ -18,9 +18,13 @@ paczki = kategorie_z_tabeli(), paczka kilku osob = suma tabel osob.
 import os
 import sys
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import timedelta
 
+# Uruchamiany jako plik (python scripts/…): katalog projektu na sciezke PRZED
+# importem pakietu.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from logistat.czas import teraz_utc  # noqa: E402
 
 PAKA_WISI_PO = timedelta(hours=12)
 STAN_CZASU_WISI_PO = timedelta(hours=14)
@@ -38,7 +42,7 @@ def _kategorie_z_udzialow(L, carton):
 
 def sprawdz(L, teraz=None):
     """→ (bledy, uwagi): listy (opis, przyklady). `L` = modul app."""
-    teraz = teraz or datetime.utcnow()
+    teraz = teraz or teraz_utc()
     bledy, uwagi = [], []
 
     def dodaj(lista, opis, przyklady):

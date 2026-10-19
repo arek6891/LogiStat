@@ -1,21 +1,21 @@
 """Statystyki ogolne (rozliczenie): ekran z kosztami tylko dla admina, edycja linii recznych,
 przelaczenie na skany, eksport Excel."""
 import calendar
-import io
 from datetime import date, datetime
 
 import openpyxl
-from flask import Blueprint, abort, jsonify, make_response, render_template, request
+from flask import Blueprint, abort, jsonify, render_template, request
 from flask_login import current_user
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment, Font, PatternFill
 
-from logistat.czas import local_today
+from logistat.czas import local_today, teraz_utc
 from logistat.extensions import db
 from logistat.kategorie import (
     STAT_CATEGORIES, STAT_CATEGORY_LABELS, TOTAL_AMOUNT_BEZ, total_amount_wiersza)
 from logistat.models import CostMapping, GeneralStat, nazwy_kategorii_pl
 from logistat.rozliczenie import double_rate_amount_map, scan_category_totals, scan_coverage_map
 from logistat.tabela_ilosci import ZRODLO_KATEGORII
+from logistat.web.excel import RAMKA, odpowiedz_xlsx, styl_naglowka
 from logistat.web.wspolne import acting_as_admin, admin_required, json_body, leader_required
 
 bp = Blueprint('rozliczenie', __name__)
@@ -53,19 +53,9 @@ def general_stats_export():
     ws = wb.active
     ws.title = 'Statystyki ogólne'
 
-    # Styles
-    header_font = Font(bold=True, color='FFFFFF', size=10)
-    header_fill_main = PatternFill('solid', fgColor='3B4A6B')
-    header_fill_cat  = PatternFill('solid', fgColor='4F46E5')
-    header_fill_dr   = PatternFill('solid', fgColor='C2410C')
-    header_fill_tot  = PatternFill('solid', fgColor='166534')
-    center = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    thin = Border(
-        left=Side(style='thin', color='555555'),
-        right=Side(style='thin', color='555555'),
-        top=Side(style='thin', color='555555'),
-        bottom=Side(style='thin', color='555555'),
-    )
+    # Kolory naglowkow (hex) — styl wspolny z logistat/web/excel.py
+    kolor_glowny, kolor_kat, kolor_dr, kolor_tot = '3B4A6B', '4F46E5', 'C2410C', '166534'
+    thin = RAMKA
     dr_fill_row = PatternFill('solid', fgColor='FFF3E0')
 
     # Row 1: main headers
@@ -75,30 +65,22 @@ def general_stats_export():
 
     for ci, h in enumerate(base_headers, 1):
         cell = ws.cell(row=1, column=ci, value=h)
-        cell.font = header_font
-        cell.fill = header_fill_dr if h == 'Double Rate' else header_fill_main
-        cell.alignment = center
-        cell.border = thin
+        styl_naglowka(cell, kolor_dr if h == 'Double Rate' else kolor_glowny,
+                      rozmiar=10, ramka=True, zawijaj=True)
         ws.merge_cells(start_row=1, start_column=ci, end_row=2, end_column=ci)
 
     for i, cat in enumerate(STAT_CATEGORIES):
         col = cat_cols_start + i * kol_na_kat
         label = STAT_CATEGORY_LABELS[cat]
         c = ws.cell(row=1, column=col, value=label)
-        c.font = header_font
-        c.fill = header_fill_cat
-        c.alignment = center
-        c.border = thin
+        styl_naglowka(c, kolor_kat, rozmiar=10, ramka=True, zawijaj=True)
         if kol_na_kat > 1:
             ws.merge_cells(start_row=1, start_column=col, end_row=1, end_column=col + 1)
 
     total_col = cat_cols_start + len(STAT_CATEGORIES) * kol_na_kat
     if koszty:
         tc = ws.cell(row=1, column=total_col, value='Total cost (EUR)')
-        tc.font = header_font
-        tc.fill = header_fill_tot
-        tc.alignment = center
-        tc.border = thin
+        styl_naglowka(tc, kolor_tot, rozmiar=10, ramka=True, zawijaj=True)
         ws.merge_cells(start_row=1, start_column=total_col, end_row=2, end_column=total_col)
 
     # Row 2: sub-headers for categories
@@ -106,10 +88,7 @@ def general_stats_export():
         col = cat_cols_start + i * kol_na_kat
         for offset, sub in enumerate(['Amount', 'Cost (EUR)'][:kol_na_kat]):
             c = ws.cell(row=2, column=col + offset, value=sub)
-            c.font = Font(bold=True, color='FFFFFF', size=9)
-            c.fill = header_fill_cat
-            c.alignment = center
-            c.border = thin
+            styl_naglowka(c, kolor_kat, rozmiar=9, ramka=True, zawijaj=True)
 
     ws.row_dimensions[1].height = 28
     ws.row_dimensions[2].height = 18
@@ -189,15 +168,7 @@ def general_stats_export():
 
     ws.freeze_panes = 'A3'
 
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-
-    fname = f"statystyki_{date_from_str or 'all'}_{date_to_str or 'all'}.xlsx"
-    response = make_response(output.read())
-    response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    response.headers['Content-Disposition'] = f'attachment; filename="{fname}"'
-    return response
+    return odpowiedz_xlsx(wb, f"statystyki_{date_from_str or 'all'}_{date_to_str or 'all'}.xlsx")
 
 
 @bp.route('/general-stats')
@@ -305,7 +276,7 @@ def api_general_stat_update(stat_id):
         stat.set_category_data(data['category_data'])
     if 'double_rate_category_data' in data:
         stat.set_double_rate_category_data(data['double_rate_category_data'])
-    stat.updated_at = datetime.utcnow()
+    stat.updated_at = teraz_utc()
     stat.updated_by = current_user.id
 
     db.session.commit()
@@ -325,7 +296,7 @@ def api_general_stat_use_scan(stat_id):
     stat.category_source = 'scan'
     stat.set_category_data(
         scan_category_totals(stat.list_id, stat.country_ledger, stat.loading_date))
-    stat.updated_at = datetime.utcnow()
+    stat.updated_at = teraz_utc()
     stat.updated_by = current_user.id
     db.session.commit()
     return jsonify(stat.to_dict()), 200

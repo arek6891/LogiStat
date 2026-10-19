@@ -1,10 +1,11 @@
 """Logowanie, wylogowanie, profil (zmiana hasla), wymuszona zmiana domyslnego hasla."""
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
 from logistat.config import DEFAULT_ADMIN_PASSWORD
+from logistat.czas import teraz_utc
 from logistat.extensions import db
 from logistat.models import PRIVILEGED_ROLES, ProbaLogowania, User
 from logistat.web.wspolne import bezpieczny_next
@@ -69,7 +70,7 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
-        teraz = datetime.utcnow()
+        teraz = teraz_utc()
         klucz = username.lower()
         minuty = zablokowane_logowanie(klucz, teraz)
         if minuty:
