@@ -75,19 +75,19 @@
                         class="{% if request.endpoint == 'general_stats_page' %}active{% endif %}">
                         <span class="icon">💶</span> Statystyki ogólne
                     </a></li>
-                <li><a href="{{ url_for('admin_users') }}"
-                        class="{% if request.endpoint == 'admin_users' %}active{% endif %}">
+                <li><a href="{{ url_for('admin.admin_users') }}"
+                        class="{% if request.endpoint == 'admin.admin_users' %}active{% endif %}">
                         <span class="icon">👤</span> Użytkownicy
                     </a></li>
 
                 {% if current_user.role == 'admin' %}
                 <li class="nav-section">🛡️ Admin</li>
-                <li><a href="{{ url_for('admin_activities') }}"
-                        class="{% if request.endpoint == 'admin_activities' %}active{% endif %}">
+                <li><a href="{{ url_for('admin.admin_activities') }}"
+                        class="{% if request.endpoint == 'admin.admin_activities' %}active{% endif %}">
                         <span class="icon">⚙️</span> Czynności
                     </a></li>
-                <li><a href="{{ url_for('admin_panel') }}"
-                        class="{% if request.endpoint in ('admin_panel', 'admin_country_mapping', 'admin_user_options', 'admin_category_labels') %}active{% endif %}">
+                <li><a href="{{ url_for('admin.admin_panel') }}"
+                        class="{% if request.endpoint in ('admin.admin_panel', 'admin.admin_country_mapping', 'admin.admin_user_options', 'admin.admin_category_labels') %}active{% endif %}">
                         <span class="icon">🛡️</span> Panel Admina
                     </a></li>
                 {% endif %}
