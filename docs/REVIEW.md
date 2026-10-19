@@ -37,6 +37,13 @@ Szczegóły i uzasadnienia każdej reguły: `CLAUDE.md` i `docs/ARCHITEKTURA.md`
 - [ ] Zapis ze stanowiska: karton `with_for_update()`; przydział sprawdza `wersja`.
 - [ ] Błędy `/api/` jako JSON (`abort(400, '…')`), komunikat po polsku, mówi co poprawić.
 
+## 5b. Trasy
+- [ ] Adresy i metody bez zmian (`tests/test_trasy.py` + `tests/mapa_adresow.txt`); nowa trasa
+      = aktualizacja pliku w tym samym PR.
+- [ ] Zmiana nazwy endpointu (blueprint) → wszystkie `url_for`, `login_view`,
+      `BEZ_WYMOGU_ZMIANY_HASLA` w tym samym PR.
+- [ ] Moduly `logistat/` nie importuja `app.py` (test w podprocesie).
+
 ## 6. Frontend
 - [ ] Dane z bazy do `innerHTML` przez `escapeHtml()`.
 - [ ] JSON w atrybucie HTML: `data-x='{{ v | tojson }}'` (apostrofy).

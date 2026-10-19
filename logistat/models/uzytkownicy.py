@@ -97,3 +97,11 @@ ROLES = ('operator', 'leader', 'admin')
 # Role z dostepem do logowania i ekranow — konta uprzywilejowane. Zakladac je,
 # zmieniac im role/haslo i dezaktywowac moze wylacznie admin.
 PRIVILEGED_ROLES = ('leader', 'admin')
+
+
+def active_admin_count(exclude_id=None):
+    """Ilu aktywnych adminow zostanie, jesli pominac `exclude_id`."""
+    q = User.query.filter_by(role='admin', is_active_user=True)
+    if exclude_id is not None:
+        q = q.filter(User.id != exclude_id)
+    return q.count()

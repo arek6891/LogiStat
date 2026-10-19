@@ -171,7 +171,12 @@ def test_dwa_rownolegle_konce_przechodzi_tylko_jeden(flask_app, leader, monkeypa
     # Okno miedzy kontrola stanu a zapisem — bez blokady oba watki w nie wchodza.
     oryginal = logistat.parse_scan_categories
 
+    wywolania = []
+
     def wolno(surowe):
+        # Licznik: po przeniesieniu trasy do blueprintu podmiana w module `app`
+        # przestalaby dzialac — test bylby zielony, ale nie testowalby wyscigu.
+        wywolania.append(1)
         time.sleep(0.5)
         return oryginal(surowe)
 
@@ -192,6 +197,7 @@ def test_dwa_rownolegle_konce_przechodzi_tylko_jeden(flask_app, leader, monkeypa
     for w in watki:
         w.join(timeout=10)
 
+    assert wywolania, 'wolna podmiana nie zostala wywolana — trasa uzywa innego modulu'
     assert sorted(wyniki) == [200, 409]
     assert carton().get_scan_categories() == {'labelling_on': 5}
 

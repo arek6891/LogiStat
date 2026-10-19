@@ -63,6 +63,18 @@ def test_po_zmianie_hasla_dostep_wraca(client):
     assert client.get('/api/dashboard').status_code == 200
 
 
+def test_wylogowanie_dziala_przy_wymuszonej_zmianie(client):
+    """Bez tego po zmianie nazw endpointow (blueprinty) /logout trafialby do
+    przekierowania na /profile — petla, z ktorej nie da sie wylogowac."""
+    u = admin_z_domyslnym_haslem()
+    login(client, u.username, logistat.DEFAULT_ADMIN_PASSWORD)
+
+    r = client.get('/logout')
+
+    assert r.status_code == 302 and r.headers['Location'].startswith('/login')
+    assert client.get('/dashboard').headers['Location'].startswith('/login')
+
+
 def test_zwykle_haslo_bez_wymogu(client):
     lider = make_user('leader')
 
