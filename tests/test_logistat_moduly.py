@@ -28,6 +28,28 @@ def test_modul_nie_ciagnie_aplikacji_ani_flaska(modul):
     assert wynik.stdout.strip() == '', f'{modul} importuje: {wynik.stdout.strip()}'
 
 
+@pytest.mark.parametrize('modul', ['logistat.config', 'logistat.extensions', 'logistat.models'])
+def test_warstwa_danych_nie_importuje_app(modul):
+    """Modele i rozszerzenia moga uzywac Flaska/SQLAlchemy, ale nigdy app.py —
+    inaczej wraca cykl app → models → app (krok 3, 2026-10-16)."""
+    kod = f"import sys, {modul}; print('app' in sys.modules)"
+    wynik = subprocess.run([sys.executable, '-c', kod], capture_output=True, text=True,
+                           timeout=60, cwd='.')
+    assert wynik.returncode == 0, wynik.stderr
+    assert wynik.stdout.strip() == 'False'
+
+
+def test_logistat_models_rejestruje_wszystkie_tabele():
+    """Sam import pakietu modeli = komplet tabel dla create_all()."""
+    import app as logistat
+    kod = ('import logistat.models as m; from logistat.extensions import db; '
+           'print(",".join(sorted(db.metadata.tables)))')
+    wynik = subprocess.run([sys.executable, '-c', kod], capture_output=True, text=True,
+                           timeout=60, cwd='.')
+    assert wynik.returncode == 0, wynik.stderr
+    assert wynik.stdout.strip().split(',') == sorted(logistat.db.metadata.tables)
+
+
 T = datetime(2026, 10, 16, 8, 0)
 
 
