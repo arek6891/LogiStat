@@ -38,6 +38,12 @@ def nazwy_url_for():
         tresc = open(p, encoding='utf-8').read()
         nazwy |= {(os.path.relpath(p, KATALOG), n)
                   for n in re.findall(r"url_for\(\s*['\"]([\w.]+)['\"]", tresc)}
+        # Podswietlenie menu w base.html: request.endpoint == 'nazwa' / in ('a', 'b').
+        # Po zmianie nazwy na 'obszar.nazwa' zla nazwa nie daje bledu — pozycja
+        # menu po cichu przestaje sie podswietlac.
+        for linia in re.findall(r'request\.endpoint[^%\n]*', tresc):
+            nazwy |= {(os.path.relpath(p, KATALOG), n)
+                      for n in re.findall(r"['\"]([\w.]+)['\"]", linia)}
     return nazwy
 
 
