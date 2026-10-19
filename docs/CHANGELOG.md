@@ -5,7 +5,7 @@
 ### Zmienione (bez zmian w działaniu i w bazie)
 - Modele bazy danych przeniesione z `app.py` do `logistat/models/` (6 plików według
   obszarów), konfiguracja do `logistat/config.py`, `db` i logowanie do
-  `logistat/extensions.py`. `app.py`: ~6 370 → ~5 400 linii.
+  `logistat/extensions.py`. `app.py`: ~6 370 → ~5 500 linii.
 - Testy pilnują kierunku zależności (pakiet nigdy nie importuje `app.py`) i tego, że
   baza widzi komplet tabel.
 
