@@ -67,8 +67,8 @@
                         class="{% if request.endpoint == 'worker_times' %}active{% endif %}">
                         <span class="icon">👥</span> Czasy pracowników
                     </a></li>
-                <li><a href="{{ url_for('import_csv_page') }}"
-                        class="{% if request.endpoint == 'import_csv_page' %}active{% endif %}">
+                <li><a href="{{ url_for('imports.import_csv_page') }}"
+                        class="{% if request.endpoint == 'imports.import_csv_page' %}active{% endif %}">
                         <span class="icon">📥</span> Import danych
                     </a></li>
                 <li><a href="{{ url_for('general_stats_page') }}"
