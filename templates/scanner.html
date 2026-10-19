@@ -5,9 +5,9 @@
 <div class="scanner-page" data-shift="{{ shift_number }}">
     <div class="page-header" style="text-align:center;">
         <div class="shift-tabs">
-            <a href="{{ url_for('scanner', shift_number=1) }}" data-shift="1"
+            <a href="{{ url_for('stanowisko.scanner', shift_number=1) }}" data-shift="1"
                 class="shift-tab {% if shift_number == 1 %}active{% endif %}">Zmiana 1</a>
-            <a href="{{ url_for('scanner', shift_number=2) }}" data-shift="2"
+            <a href="{{ url_for('stanowisko.scanner', shift_number=2) }}" data-shift="2"
                 class="shift-tab {% if shift_number == 2 %}active{% endif %}">Zmiana 2</a>
         </div>
     </div>

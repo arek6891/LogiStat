@@ -7,6 +7,7 @@ sama, paczka zamyka sie po ostatniej (albo „zamknij dla wszystkich" / lider).
 Normy licza kazda osobe z jej udzialu: jej czas i jej WPISANE ilosci.
 Nadwyzka przy 2+ osobach → blad „do wyjasnienia przez lidera".
 """
+import importlib
 import threading
 import time
 from datetime import date
@@ -408,7 +409,10 @@ def test_dwa_rownolegle_konce_zespolu_zamykaja_paczke_raz(flask_app, leader, mon
     dolacz(klient, 'B')
     logistat.db.session.commit()
 
-    oryginal = logistat.parse_scan_categories
+    # Trasa szuka parse_scan_categories w swoim module (blueprint, krok 5) — tam podmieniamy.
+    # importlib: `import logistat.web…` przypisalby nazwe `logistat` (tu = modul app).
+    stanowisko = importlib.import_module('logistat.web.stanowisko')
+    oryginal = stanowisko.parse_scan_categories
 
     wywolania = []
 
@@ -417,7 +421,7 @@ def test_dwa_rownolegle_konce_zespolu_zamykaja_paczke_raz(flask_app, leader, mon
         time.sleep(0.4)
         return oryginal(surowe)
 
-    monkeypatch.setattr(logistat, 'parse_scan_categories', wolno)
+    monkeypatch.setattr(stanowisko, 'parse_scan_categories', wolno)
     wyniki = []
 
     def zadanie(kod, ile):

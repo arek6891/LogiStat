@@ -21,20 +21,20 @@
             </div>
             <ul class="sidebar-nav">
                 <li class="nav-section">👷 Pracownik</li>
-                <li><a href="{{ url_for('scanner', shift_number=1) }}"
-                        class="{% if request.endpoint == 'scanner' %}active{% endif %}">
+                <li><a href="{{ url_for('stanowisko.scanner', shift_number=1) }}"
+                        class="{% if request.endpoint == 'stanowisko.scanner' %}active{% endif %}">
                         <span class="icon">📷</span> Skaner zmian
                     </a></li>
                 <li><a href="{{ url_for('czas_pracy.time_tracking') }}"
                         class="{% if request.endpoint == 'czas_pracy.time_tracking' %}active{% endif %}">
                         <span class="icon">🕐</span> Czas pracy
                     </a></li>
-                <li><a href="{{ url_for('scan_paczki') }}"
-                        class="{% if request.endpoint == 'scan_paczki' %}active{% endif %}">
+                <li><a href="{{ url_for('stanowisko.scan_paczki') }}"
+                        class="{% if request.endpoint == 'stanowisko.scan_paczki' %}active{% endif %}">
                         <span class="icon">⏱</span> Czasy paczek
                     </a></li>
-                <li><a href="{{ url_for('scan_package') }}"
-                        class="{% if request.endpoint == 'scan_package' %}active{% endif %}">
+                <li><a href="{{ url_for('stanowisko.scan_package') }}"
+                        class="{% if request.endpoint == 'stanowisko.scan_package' %}active{% endif %}">
                         <span class="icon">🔎</span> Paczki inspektor
                     </a></li>
 
@@ -87,7 +87,7 @@
                         <span class="icon">⚙️</span> Czynności
                     </a></li>
                 <li><a href="{{ url_for('admin.admin_panel') }}"
-                        class="{% if request.endpoint in ('admin.admin_panel', 'admin.admin_country_mapping', 'admin.admin_user_options', 'admin.admin_category_labels') %}active{% endif %}">
+                        class="{% if request.endpoint in ('admin.admin_panel', 'admin.admin_country_mapping', 'admin.admin_user_options', 'admin.admin_category_labels', 'admin.admin_settings', 'admin.admin_cost_mapping') %}active{% endif %}">
                         <span class="icon">🛡️</span> Panel Admina
                     </a></li>
                 {% endif %}
