@@ -330,7 +330,8 @@ def test_zle_zadanie_zmiany_daty(leader_client):
 
 
 def test_operator_bez_logowania_nie_zmieni_daty(client):
-    assert client.post('/api/imports/zmien-date', json={}).status_code == 302
+    r = client.post('/api/imports/zmien-date', json={})
+    assert r.status_code == 401 and 'zaloguj' in r.get_json()['error']
 
 
 # ── Dashboard i Forecast ─────────────────────────────────────────────────────

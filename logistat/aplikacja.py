@@ -2,7 +2,7 @@
 `create_app()` NIE dotyka bazy — schemat, migracje i seed: `logistat.baza.init_db()`."""
 import os
 
-from flask import Flask, jsonify, request, url_for
+from flask import Flask, jsonify, redirect, request, url_for
 from werkzeug.exceptions import HTTPException
 
 from logistat.config import DEFAULT_MAX_UPLOAD_MB, resolve_database_url, resolve_secret_key
@@ -105,6 +105,15 @@ def _blueprinty(app):
     for modul in (auth, admin, imports, forecast, normy, dashboard, przydzial, rozliczenie,
                   paczki, czas_pracy, stanowisko):
         app.register_blueprint(modul.bp)
+
+
+@login_manager.unauthorized_handler
+def brak_sesji():
+    """Niezalogowany: API → 401 w JSON (np. wygasla sesja przy autozapisie — front
+    pokazuje komunikat zamiast „bledu polaczenia"), strona → logowanie z `next`."""
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Sesja wygasła — zaloguj się ponownie.'}), 401
+    return redirect(url_for('auth.login', next=request.full_path.rstrip('?')))
 
 
 @login_manager.user_loader

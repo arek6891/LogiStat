@@ -1,5 +1,15 @@
 # LogiStat — Changelog
 
+## 2026-10-20 — Bezpieczeństwo logowania
+
+### Zmienione
+- **Limit logowania:** po 5 nieudanych próbach na jeden login w ciągu 15 minut logowanie
+  jest blokowane (komunikat, za ile minut). Udane logowanie zeruje licznik.
+- **API bez sesji / bez uprawnień** zwraca błąd 401 / 403 z komunikatem zamiast
+  przekierowania na stronę logowania — np. po wygaśnięciu sesji autozapis pokazuje
+  „Sesja wygasła — zaloguj się ponownie” zamiast „błędu połączenia”.
+- **Wylogowanie** tylko przyciskiem (POST) — zwykły link mogła wywołać obca strona.
+
 ## 2026-10-19 (4) — Krok 6: create_app(), baza oddzielona od fabryki
 
 ### Zmienione (bez zmian w działaniu)

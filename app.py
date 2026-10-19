@@ -43,6 +43,7 @@ from logistat.models import (  # noqa: F401 — re-eksport dla testow i reszty a
     ROLES,
     PRIVILEGED_ROLES,
     active_admin_count,
+    ProbaLogowania,
     Activity,
     Shift,
     ShiftAttendance,

@@ -17,14 +17,23 @@ def acting_as_admin():
     return current_user.is_authenticated and current_user.role == 'admin'
 
 
+def _odmowa_dostepu():
+    """Brak uprawnien: API dostaje 403 w JSON (front czyta `data.error`), strona —
+    komunikat i powrot na start. Wczesniej API tez dostawalo przekierowanie 302
+    na HTML, a autozapis widzial wtedy „blad polaczenia"."""
+    if request.path.startswith('/api/'):
+        abort(403, 'Brak uprawnień do tej operacji.')
+    flash('Brak uprawnień.', 'error')
+    return redirect(url_for('auth.index'))
+
+
 def leader_required(f):
     """Decorator: requires leader or admin role."""
     @wraps(f)
     @login_required
     def decorated(*args, **kwargs):
         if current_user.role not in PRIVILEGED_ROLES:
-            flash('Brak uprawnień.', 'error')
-            return redirect(url_for('auth.index'))
+            return _odmowa_dostepu()
         return f(*args, **kwargs)
     return decorated
 
@@ -35,8 +44,7 @@ def admin_required(f):
     @login_required
     def decorated(*args, **kwargs):
         if current_user.role != 'admin':
-            flash('Brak uprawnień.', 'error')
-            return redirect(url_for('auth.index'))
+            return _odmowa_dostepu()
         return f(*args, **kwargs)
     return decorated
 

@@ -105,3 +105,14 @@ def active_admin_count(exclude_id=None):
     if exclude_id is not None:
         q = q.filter(User.id != exclude_id)
     return q.count()
+
+
+class ProbaLogowania(db.Model):
+    """Nieudana proba logowania (2026-10-19) — do limitu `zablokowane_logowanie()`.
+    Login zapisany malymi literami; udane logowanie kasuje proby tego loginu."""
+    __tablename__ = 'proba_logowania'
+    id = db.Column(db.Integer, primary_key=True)
+    login = db.Column(db.String(100), nullable=False, index=True)
+    kiedy = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    adres_ip = db.Column(db.String(64), nullable=True)
+

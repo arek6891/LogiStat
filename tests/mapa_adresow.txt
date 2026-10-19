@@ -45,7 +45,6 @@ GET /forecast
 GET /general-stats
 GET /general-stats/export
 GET /import-csv
-GET /logout
 GET /paczki
 GET /scan-package
 GET /scan-paczki
@@ -81,6 +80,7 @@ POST /api/time/training/trener
 POST /api/user-options
 POST /api/users
 POST /api/worker-times/event
+POST /logout
 POST PUT /api/cost-mapping/<int:year>/<int:month>
 PUT /api/activities/<int:activity_id>
 PUT /api/category-labels
