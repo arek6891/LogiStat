@@ -18,7 +18,7 @@ MIGAWKA = os.path.join(os.path.dirname(__file__), 'mapa_adresow.txt')
 
 def obecna_mapa():
     return sorted(
-        f'{" ".join(sorted(r.methods - {"HEAD", "OPTIONS"}))} {r.rule}'
+        f'{" ".join(sorted((r.methods or set()) - {"HEAD", "OPTIONS"}))} {r.rule}'
         for r in logistat.app.url_map.iter_rules() if r.endpoint != 'static')
 
 

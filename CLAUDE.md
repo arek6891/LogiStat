@@ -21,7 +21,9 @@ LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://u:p@host:5432/db pytest   # ano
 # On .32 there is no pytest/venv — use the prebuilt runner image instead:
 docker run --rm --network host -v /opt/LogiStat:/app -w /app logistat-testrunner:latest pytest -q
 
-# Static check (npm i -g pyright; basic mode — pyrightconfig.json) — must be 0 errors (CI blocks)
+# Static check (npm i -g pyright; basic mode — pyrightconfig.json) — must be 0 errors (CI blocks).
+# On .32 the libraries are not installed, so local pyright is laxer than CI (Optional from
+# werkzeug/flask types) — CI is authoritative.
 pyright
 
 # Data consistency after every deploy (read-only; exit 1 = billing/data mismatch)
