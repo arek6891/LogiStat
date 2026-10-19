@@ -117,7 +117,7 @@
             </select>
             {% if current_user.role == 'admin' %}
             <small style="color:var(--text-muted);">
-                Pozycje obu list ustawisz w <a href="{{ url_for('admin_user_options') }}">Panel Admina → Listy użytkowników</a>.
+                Pozycje obu list ustawisz w <a href="{{ url_for('admin.admin_user_options') }}">Panel Admina → Listy użytkowników</a>.
             </small>
             {% endif %}
         </div>
