@@ -15,7 +15,7 @@ docker compose down
 # Tests — need a Postgres; the compose file below provides one (port 55432, tmpfs)
 docker compose -f docker-compose.test.yml up -d
 pip install -r requirements-dev.txt
-pytest                               # 768 tests
+pytest                               # 771 tests
 docker compose -f docker-compose.test.yml down
 LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://u:p@host:5432/db pytest   # another DB
 # On .32 there is no pytest/venv — use the prebuilt runner image instead:
@@ -43,10 +43,11 @@ Every PR: **green CI** (`.github/workflows/testy.yml` — pytest on Postgres 16 
 
 ## Architecture
 
-**`app.py` (~5500 lines: routes, API, DB queries, seed, migrations) + package `logistat/`** — being split step by step (plan and progress: `docs/ARCHITEKTURA.md`, „Przeglad architektury"). Layers, import direction **app → logistat.models → logistat.extensions** (never back to `app`; `tests/test_logistat_moduly.py` checks it in a subprocess):
+**`app.py` (~5000 lines: routes, API, remaining DB queries, seed, migrations) + package `logistat/`** — being split step by step (plan and progress: `docs/ARCHITEKTURA.md`, „Przeglad architektury"). Layers, import direction **app → logistat.models → logistat.extensions** (never back to `app`; `tests/test_logistat_moduly.py` checks it in a subprocess):
 - **Pure logic, no Flask/SQLAlchemy:** `czas.py` (`local_today`, `local_day_bounds`, `iso_z`, `utc_to_local`), `kategorie.py` (`STAT_CATEGORIES`, labels, `liczba`, `TOTAL_AMOUNT_BEZ`), `tabela_ilosci.py`, `okresy.py` (`zlacz_okresy`, `suma_zlaczonych_okresow` — one implementation), `normy.py` (`policz_wydajnosc`).
 - **`config.py`** (`resolve_secret_key`, `resolve_database_url`, defaults), **`extensions.py`** (`db = SQLAlchemy()`, `login_manager` — no app; `app.py` calls `init_app`).
 - **`models/`** by area: `uzytkownicy` (User, UserOption, `ROLES`), `zmiany` (Shift, attendance, activities, assignment, `SzkolenieCzynnosci`, DailyStat), `paczki` (ImportedCarton, UdzialPaczki), `rozliczenie` (GeneralStat, CostMapping, `rates_for`, CountryMapping, Forecast, category names), `czas_pracy` (WorkerTimeEvent, HistoriaCelu), `ustawienia` (AppSetting, `get_setting`). A new model goes into the right file **and** its import list in `models/__init__.py` (that is what `create_all()` sees). Request validation that `abort()`s or reads `current_user` (`resolve_user_option`, `ustaw_szkolenia`) stays in `app.py`.
+- **Services (DB, no request):** `rozliczenie.py` (`klucz_linii`, `recompute_general_stat`, `scan_category_totals`, `scan_coverage_map`, `przenies_linie`), `paczki.py` (`przelicz_ilosci_udzialow`, `odswiez_roznice`, `zapisz_tabele_kartonu`, `bledy_paczki`), `import_paczek.py` (`importuj_wiersze(rows, data_pliku, actor_id)`, CSV/Excel cell parsing). They never read `current_user`/`request` — the author comes as a parameter; `app.process_import_rows(rows, data_pliku)` is the thin wrapper that passes `current_user.id` (tests keep calling it with `acting_admin`).
 - `app.py` imports and **re-exports** all of it, so `gunicorn app:app` and `logistat.X` in tests are unchanged. New pure logic → `logistat/`, not `app.py`.
 
 **Tests:** `tests/` (pytest). `conftest.py` sets `DATABASE_URL` **before importing `app`** (it runs `init_db()` at import) → `…@127.0.0.1:55432/logistat_test`, overridable with `LOGISTAT_TEST_DATABASE_URL`; unreachable DB → import raises with the start command. Each test gets a fresh schema + seed. Coverage is concentrated on money paths (import aggregation, `recompute_general_stat`, double rate, cost math) plus permissions, day boundaries, validation, page smoke test. `IsolatedClient` clears `g._login_user` / `g._rates_cache` per request — Flask reuses the test's app context, so two clients would otherwise share the cached login.
