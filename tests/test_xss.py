@@ -9,9 +9,11 @@ import os
 import re
 
 import pytest
-
-import app as logistat
 from conftest import make_user, strona_z_js
+
+from logistat.extensions import db
+from logistat.models import CountryMapping, ImportedCarton
+
 
 ZLOSLIWA_NAZWA = '<img src=x onerror=alert(1)>'
 ZLOSLIWY_BARCODE = '"><script>alert(1)</script>'
@@ -22,7 +24,6 @@ KATALOG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SZABLONY = sorted(glob.glob(os.path.join(KATALOG, 'templates', '*.html'))
                   + glob.glob(os.path.join(KATALOG, 'static', 'js', '*.js')))
 assert any(p.endswith('.js') for p in SZABLONY), 'brak static/js/*.js do sprawdzenia'
-
 
 
 # ── Regula statyczna: zaden inline handler nie sklada danych z bazy ──────────
@@ -78,9 +79,9 @@ def test_lista_uzytkownikow_escapuje_nazwe(admin_client):
 
 
 def test_lista_paczek_escapuje_barcode(leader_client):
-    logistat.db.session.add(logistat.ImportedCarton(
+    db.session.add(ImportedCarton(
         barcode=ZLOSLIWY_BARCODE, land='PL', stueckzahl=1))
-    logistat.db.session.commit()
+    db.session.commit()
 
     html = strona_z_js(leader_client, '/paczki')
 
@@ -99,9 +100,9 @@ def test_sidebar_escapuje_nazwe_zalogowanego(client):
 
 
 def test_lista_krajow_escapuje_nazwe(admin_client):
-    logistat.db.session.add(logistat.CountryMapping(
+    db.session.add(CountryMapping(
         country=ZLOSLIWA_NAZWA, innenauftrag='X1'))
-    logistat.db.session.commit()
+    db.session.commit()
 
     html = strona_z_js(admin_client, '/admin/country-mapping')
 

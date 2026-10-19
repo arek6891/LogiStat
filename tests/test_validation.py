@@ -5,39 +5,44 @@ literowka w URL-u albo pusty POST z fronta nie powinny konczyc sie 500-ka.
 """
 from datetime import date
 
-import app as logistat
 from conftest import make_user
 
+from logistat.czas import local_today
+from logistat.extensions import db
+from logistat.models import (
+    Activity, ActivityAssignment, CountryMapping, DailyStat, Forecast, WorkerTimeEvent,
+    get_or_create_shift)
+from logistat.web.wspolne import parse_date, parse_shift_number
 
 # ── Helpery ──────────────────────────────────────────────────────────────────
 
 def test_parse_shift_number(flask_app):
-    assert logistat.parse_shift_number(1) == 1
-    assert logistat.parse_shift_number('2') == 2
-    assert logistat.parse_shift_number(7) == 1, 'poza zakresem -> default'
-    assert logistat.parse_shift_number('abc') == 1
-    assert logistat.parse_shift_number(None) == 1
-    assert logistat.parse_shift_number(None, default=2) == 2
+    assert parse_shift_number(1) == 1
+    assert parse_shift_number('2') == 2
+    assert parse_shift_number(7) == 1, 'poza zakresem -> default'
+    assert parse_shift_number('abc') == 1
+    assert parse_shift_number(None) == 1
+    assert parse_shift_number(None, default=2) == 2
 
 
 def test_parse_date(flask_app):
-    assert logistat.parse_date('2026-09-01') == date(2026, 9, 1)
+    assert parse_date('2026-09-01') == date(2026, 9, 1)
     # Puste daje DZIS, nie None. Wlasciwe dla "ktora zmiane pokazac", ale przy
     # filtrach zakresu trzeba sprawdzic parametr przed wywolaniem, inaczej brak
     # date_from znaczylby "od dzisiaj" zamiast "bez filtra".
-    assert logistat.parse_date('') == logistat.local_today()
-    assert logistat.parse_date(None) == logistat.local_today()
+    assert parse_date('') == local_today()
+    assert parse_date(None) == local_today()
 
 
 def test_brak_filtra_daty_nie_znaczy_dzisiaj(leader_client):
     """Regresja na pulapke parse_date: bez date_from statystyki maja pokazac
     calą historie, nie tylko dzisiejszy dzien."""
     u = make_user('operator', username='historyk')
-    shift = logistat.get_or_create_shift(date(2020, 1, 15), 1)
-    akt = logistat.Activity.query.first()
-    logistat.db.session.add(logistat.DailyStat(
+    shift = get_or_create_shift(date(2020, 1, 15), 1)
+    akt = Activity.query.first()
+    db.session.add(DailyStat(
         shift_id=shift.id, user_id=u.id, activity_id=akt.id, quantity=42))
-    logistat.db.session.commit()
+    db.session.commit()
 
     d = leader_client.get(f'/api/stats/user/{u.id}').get_json()
 
@@ -112,7 +117,7 @@ def test_wpis_ilosci_bez_user_id_daje_400(leader_client):
 
 def test_wpis_ilosci_z_bzdurna_ilościa_daje_400(leader_client):
     u = make_user('operator')
-    akt = logistat.Activity.query.first()
+    akt = Activity.query.first()
 
     r = leader_client.post('/api/daily-stats', json={
         'date': '2026-09-01', 'shift_number': 1,
@@ -120,7 +125,7 @@ def test_wpis_ilosci_z_bzdurna_ilościa_daje_400(leader_client):
     })
 
     assert r.status_code == 400
-    assert logistat.DailyStat.query.count() == 0
+    assert DailyStat.query.count() == 0
 
 
 def test_entries_musi_byc_lista(leader_client):
@@ -146,13 +151,13 @@ def test_bledne_przydzielenie_nie_kasuje_istniejacych(leader_client):
     """Endpoint najpierw czyscil zmiane, potem wstawial — bledny wiersz w
     srodku zostawialby zmiane bez przydzialu."""
     u = make_user('operator', przeszkolony=True)
-    akt = logistat.Activity.query.first()
+    akt = Activity.query.first()
     ok = leader_client.post('/api/assignment/save', json={
         'date': '2026-09-01', 'shift_number': 1,
         'assignments': [{'user_id': u.id, 'activity_id': akt.id}],
     })
     assert ok.status_code == 200
-    assert logistat.ActivityAssignment.query.count() == 1
+    assert ActivityAssignment.query.count() == 1
 
     r = leader_client.post('/api/assignment/save', json={
         'date': '2026-09-01', 'shift_number': 1,
@@ -161,14 +166,14 @@ def test_bledne_przydzielenie_nie_kasuje_istniejacych(leader_client):
     })
 
     assert r.status_code == 400
-    assert logistat.ActivityAssignment.query.count() == 1, \
+    assert ActivityAssignment.query.count() == 1, \
         'odrzucony zapis nie moze zostawic zmiany bez przydzialu'
 
 
 # ── Zdarzenia czasu pracy: klucze obce ───────────────────────────────────────
 
 def test_zdarzenie_dla_nieznanego_pracownika_daje_400(leader_client):
-    shift = logistat.get_or_create_shift(date(2026, 9, 1), 1)
+    shift = get_or_create_shift(date(2026, 9, 1), 1)
 
     r = leader_client.post('/api/worker-times/event', json={
         'user_id': 999999, 'shift_id': shift.id,
@@ -176,7 +181,7 @@ def test_zdarzenie_dla_nieznanego_pracownika_daje_400(leader_client):
     })
 
     assert r.status_code == 400
-    assert logistat.WorkerTimeEvent.query.count() == 0
+    assert WorkerTimeEvent.query.count() == 0
 
 
 def test_zdarzenie_dla_nieznanej_zmiany_daje_400(leader_client):
@@ -188,12 +193,12 @@ def test_zdarzenie_dla_nieznanej_zmiany_daje_400(leader_client):
     })
 
     assert r.status_code == 400
-    assert logistat.WorkerTimeEvent.query.count() == 0
+    assert WorkerTimeEvent.query.count() == 0
 
 
 def test_zly_typ_zdarzenia_daje_400(leader_client):
     u = make_user('operator')
-    shift = logistat.get_or_create_shift(date(2026, 9, 1), 1)
+    shift = get_or_create_shift(date(2026, 9, 1), 1)
 
     r = leader_client.post('/api/worker-times/event', json={
         'user_id': u.id, 'shift_id': shift.id,
@@ -205,7 +210,7 @@ def test_zly_typ_zdarzenia_daje_400(leader_client):
 
 def test_poprawne_zdarzenie_przechodzi(leader_client):
     u = make_user('operator')
-    shift = logistat.get_or_create_shift(date(2026, 9, 1), 1)
+    shift = get_or_create_shift(date(2026, 9, 1), 1)
 
     r = leader_client.post('/api/worker-times/event', json={
         'user_id': u.id, 'shift_id': shift.id,
@@ -214,7 +219,7 @@ def test_poprawne_zdarzenie_przechodzi(leader_client):
     })
 
     assert r.status_code == 201
-    assert logistat.WorkerTimeEvent.query.count() == 1
+    assert WorkerTimeEvent.query.count() == 1
 
 
 # ── Pozostale ────────────────────────────────────────────────────────────────
@@ -224,11 +229,11 @@ def test_forecast_ze_zla_ilościa_daje_400(leader_client):
                            json=[{'date': '2026-09-01', 'quantity': 'duzo'}])
 
     assert r.status_code == 400
-    assert logistat.Forecast.query.count() == 0
+    assert Forecast.query.count() == 0
 
 
 def test_czynnosc_z_nietekstowa_nazwa_nie_wywala(admin_client):
-    akt = logistat.Activity.query.first()
+    akt = Activity.query.first()
 
     r = admin_client.put(f'/api/activities/{akt.id}', json={'name': 12345})
 
@@ -236,7 +241,7 @@ def test_czynnosc_z_nietekstowa_nazwa_nie_wywala(admin_client):
 
 
 def test_mapowanie_kraju_z_nullem_nie_wywala(admin_client):
-    m = logistat.CountryMapping.query.first()
+    m = CountryMapping.query.first()
 
     r = admin_client.put(f'/api/country-mappings/{m.id}', json={'country': None})
 

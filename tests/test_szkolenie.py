@@ -7,40 +7,48 @@ prowadzone szkolenie, liczy sie CALA jako dokladnie 100% celu z dnia jej konca
 a samo szkolenie bez paczek niczego nie dolicza. Paczki ze szkolenia nie
 wchodza do sredniej zespolu.
 """
-import importlib
 from datetime import date, datetime, timedelta
 
-import app as logistat
 from conftest import make_user
+
+from logistat.czas import local_day_bounds, local_today
+from logistat.czas_pracy_dane import _compute_worker_times
+from logistat.extensions import db
+from logistat.models import (
+    HistoriaCelu, ImportedCarton, POCZATEK_HISTORII_CELU, ShiftAttendance, User,
+    WorkerTimeEvent, get_or_create_shift, set_setting)
+from logistat.normy_dane import cele_dzienne, przeglad_zespolu
+from logistat.web import czas_pracy as czas_web
+
 
 DZIEN = date(2026, 9, 15)
 
 
-def ustaw_cel(wartosc, od=logistat.POCZATEK_HISTORII_CELU):
-    logistat.set_setting('target_szt_h', wartosc)
-    logistat.db.session.merge(logistat.HistoriaCelu(dzien=od, wartosc=wartosc))
-    logistat.db.session.commit()
+def ustaw_cel(wartosc, od=POCZATEK_HISTORII_CELU):
+    set_setting('target_szt_h', wartosc)
+    db.session.merge(HistoriaCelu(dzien=od, wartosc=wartosc))
+    db.session.commit()
 
 
 def chwila(dzien, godz, minut=0):
     """Naive UTC lokalnej godziny `godz:minut` dnia `dzien`."""
-    return logistat.local_day_bounds(dzien)[0] + timedelta(hours=godz, minutes=minut)
+    return local_day_bounds(dzien)[0] + timedelta(hours=godz, minutes=minut)
 
 
 def szkolacy(nazwa='Trener', barcode=None):
     u = make_user('operator', username=nazwa.lower(), display_name=nazwa,
                   barcode_id=barcode)
     u.is_trainer = True
-    logistat.db.session.commit()
+    db.session.commit()
     return u
 
 
 def szkolenie(kto, dzien, od, do):
-    shift = logistat.get_or_create_shift(dzien, 1)
+    shift = get_or_create_shift(dzien, 1)
     for typ, ts in (('training_start', od), ('training_end', do)):
-        logistat.db.session.add(logistat.WorkerTimeEvent(
+        db.session.add(WorkerTimeEvent(
             user_id=kto.id, shift_id=shift.id, event_type=typ, timestamp=ts))
-    logistat.db.session.commit()
+    db.session.commit()
 
 
 _licznik = [0]
@@ -48,12 +56,12 @@ _licznik = [0]
 
 def paczka(kto, sztuk, start, koniec):
     _licznik[0] += 1
-    logistat.db.session.add(logistat.ImportedCarton(
+    db.session.add(ImportedCarton(
         barcode=f'SZK-{_licznik[0]}', land='PL', stueckzahl=sztuk,
         data_pliku=DZIEN, uebergabe_nr='UB-1',
         scan_start_at=start, scan_start_by=kto.id if start else None,
         scan_end_at=koniec, scan_end_by=kto.id))
-    logistat.db.session.commit()
+    db.session.commit()
 
 
 def paczki_po_kolei(kto, dzien, od_godz, ile, sztuk, minut):
@@ -83,7 +91,7 @@ def test_admin_zaklada_szkolacego(admin_client):
         'username': 'ola', 'display_name': 'Ola', 'is_trainer': True})
     assert r.status_code == 201
     assert r.get_json()['is_trainer'] is True
-    assert logistat.User.query.filter_by(username='ola').one().is_trainer
+    assert User.query.filter_by(username='ola').one().is_trainer
 
 
 def test_domyslnie_nie_jest_szkolacym(admin_client):
@@ -101,18 +109,18 @@ def test_lider_nie_ustawi_znacznika_liderowi(leader_client):
     inny = make_user('leader')
     r = leader_client.put(f'/api/users/{inny.id}', json={'is_trainer': True})
     assert r.status_code == 403
-    logistat.db.session.refresh(inny)
+    db.session.refresh(inny)
     assert not inny.is_trainer
 
 
 # ── zakladka „Szkolenie": szkolacy + osoby szkolone ─────────────────────────
 
 def obecny(user, minut_temu=120):
-    shift = logistat.get_or_create_shift(logistat.local_today(), 1)
-    logistat.db.session.add(logistat.ShiftAttendance(
+    shift = get_or_create_shift(local_today(), 1)
+    db.session.add(ShiftAttendance(
         shift_id=shift.id, user_id=user.id,
         scanned_at=datetime.utcnow() - timedelta(minutes=minut_temu)))
-    logistat.db.session.commit()
+    db.session.commit()
     return shift
 
 
@@ -135,8 +143,8 @@ def zakoncz(client, trener):
 
 def zdarzenia(user):
     return [(e.event_type, e.timestamp, e.training_lead_id)
-            for e in logistat.WorkerTimeEvent.query.filter_by(user_id=user.id)
-            .order_by(logistat.WorkerTimeEvent.id)]
+            for e in WorkerTimeEvent.query.filter_by(user_id=user.id)
+            .order_by(WorkerTimeEvent.id)]
 
 
 def ekipa():
@@ -297,10 +305,10 @@ def test_aktywne_szkolenia(leader_client):
 def test_czas_szkolonego_nie_pomniejsza_pracy(leader_client):
     t, s1, _ = ekipa()
     dopisz(leader_client, t, 'S1')
-    shift = logistat.get_or_create_shift(logistat.local_today(), 1)
-    wejscie = logistat.ShiftAttendance.query.filter_by(user_id=s1.id).one().scanned_at
+    shift = get_or_create_shift(local_today(), 1)
+    wejscie = ShiftAttendance.query.filter_by(user_id=s1.id).one().scanned_at
 
-    w = logistat._compute_worker_times(s1.id, shift, wejscie)
+    w = _compute_worker_times(s1.id, shift, wejscie)
 
     assert w['on_trainee'] and w['work_minutes'] >= 119
     assert len(w['trainee_periods']) == 1
@@ -308,14 +316,14 @@ def test_czas_szkolonego_nie_pomniejsza_pracy(leader_client):
 
 def test_szkolenie_nie_pomniejsza_czasu_pracy(flask_app):
     u = szkolacy()
-    shift = logistat.get_or_create_shift(DZIEN, 1)
+    shift = get_or_create_shift(DZIEN, 1)
     wejscie = chwila(DZIEN, 6)
     szkolenie(u, DZIEN, chwila(DZIEN, 7), chwila(DZIEN, 9))
-    logistat.db.session.add(logistat.WorkerTimeEvent(
+    db.session.add(WorkerTimeEvent(
         user_id=u.id, shift_id=shift.id, event_type='work_end', timestamp=chwila(DZIEN, 14)))
-    logistat.db.session.commit()
+    db.session.commit()
 
-    t = logistat._compute_worker_times(u.id, shift, wejscie)
+    t = _compute_worker_times(u.id, shift, wejscie)
 
     assert t['work_minutes'] == 8 * 60
     assert t['training_minutes'] == 120
@@ -324,7 +332,7 @@ def test_szkolenie_nie_pomniejsza_czasu_pracy(flask_app):
 
 def test_reczne_szkolenie_tylko_dla_szkolacego(leader_client):
     op = make_user('operator')
-    shift = logistat.get_or_create_shift(DZIEN, 1)
+    shift = get_or_create_shift(DZIEN, 1)
     r = leader_client.post('/api/worker-times/event', json={
         'user_id': op.id, 'shift_id': shift.id, 'event_type': 'training_start',
         'timestamp': chwila(DZIEN, 8).isoformat()})
@@ -445,22 +453,22 @@ def test_ocena_osoby_i_wykres_zgadzaja_sie_z_przegladem(leader_client):
 # ── historia celu ────────────────────────────────────────────────────────────
 
 def test_zmiana_celu_nie_przelicza_starych_dni(leader_client):
-    logistat.set_setting('target_szt_h', 80)
-    logistat.db.session.commit()
+    set_setting('target_szt_h', 80)
+    db.session.commit()
 
     assert leader_client.put('/api/stats/target', json={'target_szt_h': 120}).status_code == 200
 
-    cel = logistat.cele_dzienne()
+    cel = cele_dzienne()
     assert cel(DZIEN) == 80
-    assert cel(logistat.local_today()) == 120
+    assert cel(local_today()) == 120
 
 
 def test_dwa_zapisy_celu_jednego_dnia(leader_client):
     leader_client.put('/api/stats/target', json={'target_szt_h': 120})
     leader_client.put('/api/stats/target', json={'target_szt_h': 130})
 
-    assert logistat.cele_dzienne()(logistat.local_today()) == 130
-    assert logistat.HistoriaCelu.query.count() == 2   # zasiew + dzis
+    assert cele_dzienne()(local_today()) == 130
+    assert HistoriaCelu.query.count() == 2   # zasiew + dzis
 
 
 def test_paczka_zahaczajaca_o_szkolenie_liczy_sie_cala(leader_client):
@@ -578,12 +586,12 @@ def test_wynik_szkolacego_nie_zalezy_od_zakresu_dat(leader_client):
 # ── Normy: osoba szkolona wypada z oceny w czasie szkolenia ─────────────────
 
 def jako_szkolony(kto, trener, dzien, od, do):
-    shift = logistat.get_or_create_shift(dzien, 1)
+    shift = get_or_create_shift(dzien, 1)
     for typ, ts in (('trainee_start', od), ('trainee_end', do)):
-        logistat.db.session.add(logistat.WorkerTimeEvent(
+        db.session.add(WorkerTimeEvent(
             user_id=kto.id, shift_id=shift.id, event_type=typ, timestamp=ts,
             training_lead_id=trener.id))
-    logistat.db.session.commit()
+    db.session.commit()
 
 
 def test_paczki_szkolonego_z_czasu_szkolenia_wypadaja(leader_client):
@@ -611,7 +619,7 @@ def test_szkolony_wypada_takze_bez_celu(flask_app):
     jako_szkolony(s, t, DZIEN, chwila(DZIEN, 8), chwila(DZIEN, 10))
     paczki_po_kolei(s, DZIEN, 8, ile=4, sztuk=1, minut=30)
 
-    r = logistat.przeglad_zespolu(DZIEN, DZIEN)
+    r = przeglad_zespolu(DZIEN, DZIEN)
 
     assert r['srednia_szt_h'] is None
     assert wiersz(r, 'Nowa')['szt_h'] is None
@@ -666,7 +674,7 @@ def test_szkolacy_dalej_dostaje_100_procent_przy_szkolonym(leader_client):
     teraz = datetime.utcnow()
     paczka(t, 1, teraz - timedelta(seconds=1), teraz)
     zakoncz(leader_client, t)
-    dzis = logistat.local_today()
+    dzis = local_today()
 
     dane = przeglad(leader_client, dzis, dzis)
 
@@ -683,8 +691,7 @@ def test_dwie_stacje_naraz_daja_jeden_start_szkolenia(flask_app, leader, monkeyp
     t, _, _ = ekipa()
     nazwa_lidera = leader.username
     # Trasa szukaje stan_czasu_dzis w swoim module (blueprint, krok 5) — tam podmieniamy.
-    # importlib: `import logistat.web…` przypisalby nazwe `logistat` (tu = modul app).
-    czas_web = importlib.import_module('logistat.web.czas_pracy')
+    # Podmiana w module blueprintu — tam trasa szuka nazwy.
     oryginal = czas_web.stan_czasu_dzis
 
     wywolania = []
@@ -703,7 +710,7 @@ def test_dwie_stacje_naraz_daja_jeden_start_szkolenia(flask_app, leader, monkeyp
             k = flask_app.test_client()
             login(k, nazwa_lidera)
             wyniki.append(dopisz(k, t, kod).status_code)
-            logistat.db.session.remove()
+            db.session.remove()
 
     watki = [threading.Thread(target=zadanie, args=(kod,)) for kod in ('S1', 'S2')]
     for w in watki:

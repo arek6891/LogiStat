@@ -9,7 +9,9 @@ from datetime import date
 
 import openpyxl
 
-import app as logistat
+from logistat.extensions import db
+from logistat.models import ImportedCarton
+
 
 DZIEN = date(2026, 9, 10)
 
@@ -17,10 +19,10 @@ DZIEN = date(2026, 9, 10)
 def przygotuj(client, plan, przyjechalo):
     assert client.post('/api/forecast/save', json={
         'date': DZIEN.isoformat(), 'quantity': plan}).status_code == 200
-    logistat.db.session.add(logistat.ImportedCarton(
+    db.session.add(ImportedCarton(
         barcode='FC-1', land='PL', stueckzahl=przyjechalo,
         data_pliku=DZIEN, uebergabe_nr='UB-1'))
-    logistat.db.session.commit()
+    db.session.commit()
 
 
 def test_mniej_niz_plan_to_minus(leader_client):

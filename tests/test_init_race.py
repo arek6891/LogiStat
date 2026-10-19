@@ -45,10 +45,11 @@ def pusta_baza():
 
 
 SKRYPT = (
-    'import app; '
+    'import app; '   # tak jak worker gunicorna: import = init_db()
+    'from logistat.extensions import db; from logistat.models import User; '
     'ctx = app.app.app_context(); ctx.push(); '
-    "print('ADMINOW=%d' % app.User.query.filter_by(role='admin').count()); "
-    "print('TABEL=%d' % len(app.db.metadata.tables))"
+    "print('ADMINOW=%d' % User.query.filter_by(role='admin').count()); "
+    "print('TABEL=%d' % len(db.metadata.tables))"
 )
 
 

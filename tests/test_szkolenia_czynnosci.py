@@ -4,8 +4,14 @@ i nowa czynnosc startuja bez szkolen. Wszystkich istniejacych w dniu wdrozenia
 zaznacza raz `zaznacz_wszystkich_przeszkolonych()`. Zapisany przydzial zostaje,
 choc szkolenie potem odznaczono — blokada dotyczy tylko NOWYCH przydzialow.
 """
-import app as logistat
 from conftest import make_user, strona_z_js
+
+from logistat.extensions import db
+from logistat.models import (
+    Activity, ActivityAssignment, ShiftAttendance, SzkolenieCzynnosci, User,
+    get_or_create_shift, zaznacz_wszystkich_przeszkolonych)
+from logistat.web.wspolne import parse_date
+
 
 DZIEN = '2026-09-01'
 
@@ -18,18 +24,18 @@ def zapisz(client, *pary):
 
 def przeszkol(user, *czynnosci):
     for a in czynnosci:
-        logistat.db.session.add(logistat.SzkolenieCzynnosci(user_id=user.id, activity_id=a.id))
-    logistat.db.session.commit()
+        db.session.add(SzkolenieCzynnosci(user_id=user.id, activity_id=a.id))
+    db.session.commit()
 
 
 def czynnosci(n=2):
-    return logistat.Activity.query.order_by(logistat.Activity.sort_order).limit(n).all()
+    return Activity.query.order_by(Activity.sort_order).limit(n).all()
 
 
 def obecny(user):
-    zmiana = logistat.get_or_create_shift(logistat.parse_date(DZIEN), 1)
-    logistat.db.session.add(logistat.ShiftAttendance(shift_id=zmiana.id, user_id=user.id))
-    logistat.db.session.commit()
+    zmiana = get_or_create_shift(parse_date(DZIEN), 1)
+    db.session.add(ShiftAttendance(shift_id=zmiana.id, user_id=user.id))
+    db.session.commit()
 
 
 def test_bez_szkolenia_nie_mozna_przydzielic(leader_client):
@@ -43,7 +49,7 @@ def test_bez_szkolenia_nie_mozna_przydzielic(leader_client):
     assert d['brak_szkolenia'] == [{'user_id': u.id, 'activity_id': a.id,
                                     'osoba': 'Nowa', 'czynnosc': a.name}]
     assert 'Brak szkolenia' in d['error'] and 'Nowa' in d['error']
-    assert logistat.ActivityAssignment.query.count() == 0
+    assert ActivityAssignment.query.count() == 0
 
 
 def test_odrzucony_zapis_nie_kasuje_dotychczasowego_przydzialu(leader_client):
@@ -55,7 +61,7 @@ def test_odrzucony_zapis_nie_kasuje_dotychczasowego_przydzialu(leader_client):
 
     assert zapisz(leader_client, (ok, a), (nowa, a)).status_code == 400
 
-    assert [(x.user_id, x.activity_id) for x in logistat.ActivityAssignment.query] == [(ok.id, a.id)]
+    assert [(x.user_id, x.activity_id) for x in ActivityAssignment.query] == [(ok.id, a.id)]
 
 
 def test_przeszkolony_przydziela_sie(leader_client):
@@ -64,7 +70,7 @@ def test_przeszkolony_przydziela_sie(leader_client):
     przeszkol(u, a)
 
     assert zapisz(leader_client, (u, a)).status_code == 200
-    assert logistat.ActivityAssignment.query.count() == 1
+    assert ActivityAssignment.query.count() == 1
 
 
 def test_szkolenie_z_innej_czynnosci_nie_wystarcza(leader_client):
@@ -83,8 +89,8 @@ def test_odznaczone_szkolenie_nie_zdejmuje_zapisanego_przydzialu(leader_client):
     przeszkol(u, a1)
     przeszkol(inna, a2)
     assert zapisz(leader_client, (u, a1)).status_code == 200
-    logistat.SzkolenieCzynnosci.query.filter_by(user_id=u.id).delete()
-    logistat.db.session.commit()
+    SzkolenieCzynnosci.query.filter_by(user_id=u.id).delete()
+    db.session.commit()
 
     assert zapisz(leader_client, (u, a1), (inna, a2)).status_code == 200
     assert zapisz(leader_client, (inna, a2)).status_code == 200      # u zdjeta
@@ -132,7 +138,7 @@ def test_sugestie_przechodza_zapis(leader_client):
 # ── Uzytkownicy: zaznaczanie szkolen ─────────────────────────────────────────
 
 def szkolenia(user):
-    return {w.activity_id for w in logistat.SzkolenieCzynnosci.query.filter_by(user_id=user.id)}
+    return {w.activity_id for w in SzkolenieCzynnosci.query.filter_by(user_id=user.id)}
 
 
 def test_lider_zaznacza_szkolenia_operatora(leader_client):
@@ -163,13 +169,13 @@ def test_nowy_uzytkownik_ze_szkoleniami(leader_client):
         'username': 'nowy', 'display_name': 'Nowy', 'czynnosci': [a.id]})
 
     assert r.status_code == 201
-    assert szkolenia(logistat.db.session.get(logistat.User, r.get_json()['id'])) == {a.id}
+    assert szkolenia(db.session.get(User, r.get_json()['id'])) == {a.id}
 
 
 def test_nowy_uzytkownik_domyslnie_bez_szkolen(leader_client):
     r = leader_client.post('/api/users', json={'username': 'nowy', 'display_name': 'Nowy'})
 
-    assert szkolenia(logistat.db.session.get(logistat.User, r.get_json()['id'])) == set()
+    assert szkolenia(db.session.get(User, r.get_json()['id'])) == set()
 
 
 def test_nieznana_czynnosc_400(leader_client):
@@ -185,7 +191,7 @@ def test_szkolenie_z_wylaczonej_czynnosci_zostaje(leader_client):
     a1, a2 = czynnosci(2)
     przeszkol(u, a1, a2)
     a2.is_active = False
-    logistat.db.session.commit()
+    db.session.commit()
 
     leader_client.put(f'/api/users/{u.id}', json={'czynnosci': []})
 
@@ -207,7 +213,7 @@ def test_strona_uzytkownikow_ma_checkboxy_czynnosci(leader_client):
     html = strona_z_js(leader_client, '/admin/users')
 
     assert 'class="czynnosc-szkolenie"' in html
-    n = logistat.Activity.query.filter_by(is_active=True).count()
+    n = Activity.query.filter_by(is_active=True).count()
     assert f'✅ Szkolenia {n}/{n}' in html
     assert u.display_name in html
 
@@ -223,14 +229,14 @@ def test_tablica_ma_okno_braku_szkolenia(leader_client):
 
 def test_migracja_zaznacza_wszystkich_raz(flask_app):
     u = make_user('operator')
-    wszystkie = {a.id for a in logistat.Activity.query}
+    wszystkie = {a.id for a in Activity.query}
 
-    logistat.zaznacz_wszystkich_przeszkolonych()
+    zaznacz_wszystkich_przeszkolonych()
 
     assert szkolenia(u) == wszystkie
     po = make_user('operator')
-    logistat.SzkolenieCzynnosci.query.filter_by(user_id=u.id).delete()
-    logistat.db.session.commit()
-    logistat.zaznacz_wszystkich_przeszkolonych()           # znacznik — drugi raz nic
+    SzkolenieCzynnosci.query.filter_by(user_id=u.id).delete()
+    db.session.commit()
+    zaznacz_wszystkich_przeszkolonych()           # znacznik — drugi raz nic
     assert szkolenia(u) == set()
     assert szkolenia(po) == set(), 'kto przyszedl po wdrozeniu, startuje bez szkolen'

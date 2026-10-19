@@ -8,9 +8,14 @@ to jest blad, ktory kosztuje pieniadze i nie rzuca sie w oczy.
 """
 from datetime import date
 
-import app as logistat
 from conftest import make_user
 from test_import_aggregation import ZIEL, gstat, row
+
+from logistat.extensions import db
+from logistat.kategorie import STAT_CATEGORIES, STAT_CATEGORY_LABELS
+from logistat.models import ImportedCarton
+from logistat.rozliczenie import recompute_general_stat
+from logistat.web.wspolne import process_import_rows
 
 # /general-stats bez zakresu pokazuje BIEZACY miesiac — dane testowe maja stala
 # date, wiec bez jawnego zakresu testy padaly z dniem 1 nastepnego miesiaca.
@@ -18,15 +23,15 @@ STRONA_STATYSTYK = f'/general-stats?date_from={ZIEL.replace(day=1)}&date_to={ZIE
 
 
 def make_carton(barcode='P1', stueckzahl=10, uebergabe_nr='UB-1'):
-    c = logistat.ImportedCarton(barcode=barcode, land='PL', stueckzahl=stueckzahl,
+    c = ImportedCarton(barcode=barcode, land='PL', stueckzahl=stueckzahl,
                                 ziel_datum=ZIEL, data_pliku=ZIEL, uebergabe_nr=uebergabe_nr)
-    logistat.db.session.add(c)
-    logistat.db.session.commit()
+    db.session.add(c)
+    db.session.commit()
     return c
 
 
 def carton(barcode='P1'):
-    return logistat.ImportedCarton.query.filter_by(barcode=barcode).first()
+    return ImportedCarton.query.filter_by(barcode=barcode).first()
 
 
 def start(client, emp, pkg='P1'):
@@ -60,7 +65,7 @@ def test_koniec_z_iloscami_zapisuje_je_na_kartonie(leader_client):
 
 def test_ilosci_ze_skanu_trafiaja_do_statystyk_ogolnych(leader_client, acting_admin):
     make_user('operator', barcode_id='W1')
-    logistat.process_import_rows([row('P1', 10)], ZIEL)
+    process_import_rows([row('P1', 10)], ZIEL)
     start(leader_client, 'W1')
     end(leader_client, 'W1', categories={'textile': 6, 'sorting': 4})
 
@@ -72,7 +77,7 @@ def test_ilosci_ze_skanu_trafiaja_do_statystyk_ogolnych(leader_client, acting_ad
 
 def test_linia_sumuje_skany_z_wielu_paczek(leader_client, acting_admin):
     make_user('operator', barcode_id='W1')
-    logistat.process_import_rows([row('P1', 10), row('P2', 10)], ZIEL)
+    process_import_rows([row('P1', 10), row('P2', 10)], ZIEL)
 
     for pkg in ('P1', 'P2'):
         start(leader_client, 'W1', pkg)
@@ -84,7 +89,7 @@ def test_linia_sumuje_skany_z_wielu_paczek(leader_client, acting_admin):
 def test_koniec_bez_ilosci_nie_przelacza_linii_na_scan(leader_client, acting_admin):
     """Zgodnosc wsteczna: stary klient nie wysyla `categories`."""
     make_user('operator', barcode_id='W1')
-    logistat.process_import_rows([row('P1', 10)], ZIEL)
+    process_import_rows([row('P1', 10)], ZIEL)
     start(leader_client, 'W1')
 
     assert end(leader_client, 'W1').status_code == 200
@@ -94,18 +99,18 @@ def test_koniec_bez_ilosci_nie_przelacza_linii_na_scan(leader_client, acting_adm
 # ── NAJWAZNIEJSZE: przeliczanie nie tyka linii recznych ─────────────────────
 
 def _linia_z_recznymi_kategoriami():
-    logistat.process_import_rows([row('B1', 10)], ZIEL)
+    process_import_rows([row('B1', 10)], ZIEL)
     s = gstat()
     s.set_category_data({'textile': {'amount': 120, 'cost': 0.0}})
     s.category_source = 'manual'
-    logistat.db.session.commit()
+    db.session.commit()
     return s
 
 
 def test_import_nowego_kartonu_nie_zeruje_recznych_kategorii(acting_admin):
     _linia_z_recznymi_kategoriami()
 
-    logistat.process_import_rows([row('B2', 5)], ZIEL)
+    process_import_rows([row('B2', 5)], ZIEL)
 
     s = gstat()
     assert s.amounts == 15            # suma kartonow sie zaktualizowala
@@ -115,8 +120,8 @@ def test_import_nowego_kartonu_nie_zeruje_recznych_kategorii(acting_admin):
 def test_recompute_wprost_nie_zeruje_recznych_kategorii(acting_admin):
     _linia_z_recznymi_kategoriami()
 
-    logistat.recompute_general_stat('UB-1', 'PL', ZIEL)
-    logistat.db.session.commit()
+    recompute_general_stat('UB-1', 'PL', ZIEL)
+    db.session.commit()
 
     assert amount(gstat(), 'textile') == 120
 
@@ -124,14 +129,14 @@ def test_recompute_wprost_nie_zeruje_recznych_kategorii(acting_admin):
 def test_reczne_dodanie_paczki_nie_zeruje_recznych_kategorii(acting_admin):
     _linia_z_recznymi_kategoriami()
 
-    logistat.process_import_rows([row('M1', 7, added_manually=True)], ZIEL)
+    process_import_rows([row('M1', 7, added_manually=True)], ZIEL)
 
     assert amount(gstat(), 'textile') == 120
 
 
 def test_zmiana_grupy_paczki_nie_zeruje_recznych_kategorii(leader_client, acting_admin):
     _linia_z_recznymi_kategoriami()
-    reczna = logistat.process_import_rows([row('M1', 7, added_manually=True)], ZIEL)
+    reczna = process_import_rows([row('M1', 7, added_manually=True)], ZIEL)
     karton = carton('M1')
 
     leader_client.put(f'/api/packages/{karton.id}', json={
@@ -146,7 +151,7 @@ def test_zmiana_grupy_paczki_nie_zeruje_recznych_kategorii(leader_client, acting
 
 def test_linia_scan_odrzuca_reczna_edycje_kategorii(admin_client, acting_admin):
     make_user('operator', barcode_id='W1')
-    logistat.process_import_rows([row('P1', 10)], ZIEL)
+    process_import_rows([row('P1', 10)], ZIEL)
     start(admin_client, 'W1')
     end(admin_client, 'W1', categories={'textile': 6})
 
@@ -169,7 +174,7 @@ def test_linia_manual_dalej_pozwala_na_reczna_edycje(admin_client, acting_admin)
 
 def test_zolty_wiersz_double_rate_zostaje_reczny(admin_client, acting_admin):
     make_user('operator', barcode_id='W1')
-    logistat.process_import_rows([row('P1', 10)], ZIEL)
+    process_import_rows([row('P1', 10)], ZIEL)
     start(admin_client, 'W1')
     end(admin_client, 'W1', categories={'textile': 6})
 
@@ -184,7 +189,7 @@ def test_zolty_wiersz_double_rate_zostaje_reczny(admin_client, acting_admin):
 
 def test_lider_poprawia_ilosci_takze_na_paczce_z_importu(leader_client, acting_admin):
     make_user('operator', barcode_id='W1')
-    logistat.process_import_rows([row('P1', 10)], ZIEL)
+    process_import_rows([row('P1', 10)], ZIEL)
     start(leader_client, 'W1')
     end(leader_client, 'W1', categories={'textile': 500})   # literowka
 
@@ -197,7 +202,7 @@ def test_lider_poprawia_ilosci_takze_na_paczce_z_importu(leader_client, acting_a
 
 
 def test_korekta_zostawia_slad_kto_zmienil(leader_client, leader, acting_admin):
-    logistat.process_import_rows([row('P1', 10)], ZIEL)
+    process_import_rows([row('P1', 10)], ZIEL)
 
     leader_client.put(f'/api/packages/{carton().id}/categories',
                       json={'categories': {'textile': 5}})
@@ -209,7 +214,7 @@ def test_korekta_zostawia_slad_kto_zmienil(leader_client, leader, acting_admin):
 # ── walidacja ───────────────────────────────────────────────────────────────
 
 def test_nieznana_kategoria_odrzucona(leader_client, acting_admin):
-    logistat.process_import_rows([row('P1', 10)], ZIEL)
+    process_import_rows([row('P1', 10)], ZIEL)
 
     r = leader_client.put(f'/api/packages/{carton().id}/categories',
                           json={'categories': {'nie_ma_takiej': 5}})
@@ -218,7 +223,7 @@ def test_nieznana_kategoria_odrzucona(leader_client, acting_admin):
 
 
 def test_ujemna_ilosc_odrzucona(leader_client, acting_admin):
-    logistat.process_import_rows([row('P1', 10)], ZIEL)
+    process_import_rows([row('P1', 10)], ZIEL)
 
     r = leader_client.put(f'/api/packages/{carton().id}/categories',
                           json={'categories': {'textile': -1}})
@@ -227,7 +232,7 @@ def test_ujemna_ilosc_odrzucona(leader_client, acting_admin):
 
 
 def test_nieliczbowa_ilosc_odrzucona(leader_client, acting_admin):
-    logistat.process_import_rows([row('P1', 10)], ZIEL)
+    process_import_rows([row('P1', 10)], ZIEL)
 
     r = leader_client.put(f'/api/packages/{carton().id}/categories',
                           json={'categories': {'textile': 'duzo'}})
@@ -238,7 +243,7 @@ def test_nieliczbowa_ilosc_odrzucona(leader_client, acting_admin):
 def test_suma_kategorii_nie_musi_sie_zgadzac_ze_stueckzahl(leader_client, acting_admin):
     """Swiadoma decyzja: rozbieznosc nie blokuje pracy."""
     make_user('operator', barcode_id='W1')
-    logistat.process_import_rows([row('P1', 10)], ZIEL)
+    process_import_rows([row('P1', 10)], ZIEL)
     start(leader_client, 'W1')
 
     r = end(leader_client, 'W1', categories={'textile': 999})
@@ -249,16 +254,16 @@ def test_suma_kategorii_nie_musi_sie_zgadzac_ze_stueckzahl(leader_client, acting
 # ── usunieta kategoria ──────────────────────────────────────────────────────
 
 def test_carton_labeling_nie_istnieje_juz_w_systemie():
-    assert 'carton_labeling' not in logistat.STAT_CATEGORIES
-    assert 'carton_labeling' not in logistat.STAT_CATEGORY_LABELS
+    assert 'carton_labeling' not in STAT_CATEGORIES
+    assert 'carton_labeling' not in STAT_CATEGORY_LABELS
 
 
 def test_historyczna_kategoria_nie_dolicza_sie_do_kosztu(acting_admin):
     """Stary wiersz moze miec w JSON-ie klucz usunietej kategorii."""
-    logistat.process_import_rows([row('B1', 10)], ZIEL)
+    process_import_rows([row('B1', 10)], ZIEL)
     s = gstat()
     s.set_category_data({'carton_labeling': {'amount': 500, 'cost': 0.0}})
-    logistat.db.session.commit()
+    db.session.commit()
 
     d = gstat().to_dict()
 
@@ -270,7 +275,7 @@ def test_historyczna_kategoria_nie_dolicza_sie_do_kosztu(acting_admin):
 
 def test_api_pokazuje_ile_paczek_zeskanowano(admin_client, acting_admin):
     make_user('operator', barcode_id='W1')
-    logistat.process_import_rows([row('P1', 10), row('P2', 10), row('P3', 10)], ZIEL)
+    process_import_rows([row('P1', 10), row('P2', 10), row('P3', 10)], ZIEL)
     start(admin_client, 'W1')
     end(admin_client, 'W1', categories={'textile': 5})
 
@@ -294,7 +299,7 @@ def test_ekran_skanowania_ma_tabele_ilosci(leader_client):
 
 
 def test_paczki_maja_przycisk_korekty_ilosci(leader_client, acting_admin):
-    logistat.process_import_rows([row('P1', 10)], ZIEL)
+    process_import_rows([row('P1', 10)], ZIEL)
 
     html = leader_client.get('/paczki').get_data(as_text=True)
 
@@ -304,7 +309,7 @@ def test_paczki_maja_przycisk_korekty_ilosci(leader_client, acting_admin):
 
 def test_statystyki_blokuja_pole_linii_ze_skanu(admin_client, acting_admin):
     make_user('operator', barcode_id='W1')
-    logistat.process_import_rows([row('P1', 10)], ZIEL)
+    process_import_rows([row('P1', 10)], ZIEL)
     start(admin_client, 'W1')
     end(admin_client, 'W1', categories={'textile': 6})
 
@@ -357,7 +362,7 @@ def test_admin_moze_swiadomie_przelaczyc_linie_na_skany(admin_client, acting_adm
 
 def test_swieza_linia_z_importu_przelacza_sie_przy_pierwszym_skanie(leader_client, acting_admin):
     """Pusta linia nie ma czego stracic — tu przelaczenie ma byc automatyczne."""
-    logistat.process_import_rows([row('P1', 10)], ZIEL)
+    process_import_rows([row('P1', 10)], ZIEL)
     make_user('operator', barcode_id='W1')
 
     start(leader_client, 'W1')

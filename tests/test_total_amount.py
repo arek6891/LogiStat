@@ -10,7 +10,11 @@ from datetime import date
 
 import openpyxl
 
-import app as logistat
+from logistat.extensions import db
+from logistat.kategorie import STAT_CATEGORIES, STAT_CATEGORY_LABELS_PL, TOTAL_AMOUNT_BEZ
+from logistat.models import GeneralStat, etykieta_kategorii
+from logistat.web.wspolne import process_import_rows
+
 
 LADOWANIE = date(2026, 9, 10)
 ILOSCI = {
@@ -24,13 +28,13 @@ KOLUMNA_TOTAL_AMOUNT = 8   # 'Loading date','Double Rate','Week','List-ID',
 
 
 def linia(list_id='UB-1', ilosci=None, amounts=100):
-    s = logistat.GeneralStat(loading_date=LADOWANIE, week_number=37, list_id=list_id,
+    s = GeneralStat(loading_date=LADOWANIE, week_number=37, list_id=list_id,
                              country_ledger='PL', country_of_destination='Polska',
                              amounts=amounts)
     s.set_category_data({k: {'amount': v, 'cost': 0.0}
                          for k, v in (ilosci if ilosci is not None else ILOSCI).items()})
-    logistat.db.session.add(s)
-    logistat.db.session.commit()
+    db.session.add(s)
+    db.session.commit()
     return s
 
 
@@ -43,8 +47,8 @@ def eksport(admin_client):
 # ── stala ────────────────────────────────────────────────────────────────────
 
 def test_kategorie_poza_total_amount_sa_w_liscie_kategorii():
-    assert set(logistat.TOTAL_AMOUNT_BEZ) == {'labelling_tvl', 'labelling_try'}
-    assert set(logistat.TOTAL_AMOUNT_BEZ) <= set(logistat.STAT_CATEGORIES)
+    assert set(TOTAL_AMOUNT_BEZ) == {'labelling_tvl', 'labelling_try'}
+    assert set(TOTAL_AMOUNT_BEZ) <= set(STAT_CATEGORIES)
 
 
 # ── eksport Excel ────────────────────────────────────────────────────────────
@@ -69,14 +73,14 @@ def test_eksport_total_amount_bez_labelling_one(admin_client):
 def test_zolty_wiersz_double_rate_liczy_tak_samo(admin_client, acting_admin):
     """Do 2026-10-15 zolty wiersz byl suma wszystkich kategorii (TODO czekalo
     na operacje) — teraz ta sama regula co zwykly wiersz."""
-    logistat.process_import_rows([{
+    process_import_rows([{
         'barcode': 'B-DR', 'land': 'PL', 'stueckzahl': 10, 'kategorie': 'textile',
         'ziel_datum': LADOWANIE, 'uebergabe_nr': 'UB-1', 'double_rate': True,
     }], LADOWANIE)
-    s = logistat.GeneralStat.query.filter_by(list_id='UB-1').first()
+    s = GeneralStat.query.filter_by(list_id='UB-1').first()
     s.set_category_data({k: {'amount': v, 'cost': 0.0} for k, v in ILOSCI.items()})
     s.set_double_rate_category_data({k: {'amount': v, 'cost': 0.0} for k, v in ILOSCI.items()})
-    logistat.db.session.commit()
+    db.session.commit()
 
     ws = eksport(admin_client)
 
@@ -124,13 +128,13 @@ def test_strona_ma_dymek_wyjasniajacy_total_amount(admin_client):
 def test_etykieta_kategorii_jest_dwuczlonowa(flask_app):
     # Od 2026-10: najpierw polska nazwa (edytowalna przez admina), w nawiasie
     # angielska ze Statystyk ogolnych — patrz tests/test_nazwy_kategorii.py.
-    assert logistat.etykieta_kategorii('labelling_on') == 'Etykietowanie pojedyncze (Labelling one)'
-    assert logistat.etykieta_kategorii('card_facture') == 'Karta / faktura (Card facture)'
+    assert etykieta_kategorii('labelling_on') == 'Etykietowanie pojedyncze (Labelling one)'
+    assert etykieta_kategorii('card_facture') == 'Karta / faktura (Card facture)'
 
 
 def test_kazda_kategoria_ma_polskie_tlumaczenie():
-    brakujace = [k for k in logistat.STAT_CATEGORIES
-                 if k not in logistat.STAT_CATEGORY_LABELS_PL]
+    brakujace = [k for k in STAT_CATEGORIES
+                 if k not in STAT_CATEGORY_LABELS_PL]
 
     assert brakujace == []
 

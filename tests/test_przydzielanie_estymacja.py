@@ -7,8 +7,14 @@ pracownikow, nie tylko obecnych na zmianie. `Post Processing` = skany paczek
 """
 from datetime import date, timedelta
 
-import app as logistat
 from conftest import make_user, strona_z_js
+
+from logistat.czas import local_day_bounds
+from logistat.extensions import db
+from logistat.models import Activity, DailyStat, ImportedCarton, Shift
+from logistat.normy_dane import przeglad_zespolu
+from logistat.przydzial import CZYNNOSC_SKANOW_PACZEK, DNI_SREDNIEJ_PRZYDZIALU
+
 
 DZIEN = date(2026, 9, 20)
 
@@ -20,32 +26,32 @@ def wczytaj(client, dzien=DZIEN):
 
 
 def zmiana(dzien, numer=1):
-    s = logistat.Shift.query.filter_by(date=dzien, shift_number=numer).first()
+    s = Shift.query.filter_by(date=dzien, shift_number=numer).first()
     if not s:
-        s = logistat.Shift(date=dzien, shift_number=numer)
-        logistat.db.session.add(s)
-        logistat.db.session.flush()
+        s = Shift(date=dzien, shift_number=numer)
+        db.session.add(s)
+        db.session.flush()
     return s
 
 
 def wpis(kto, akt, ilosc, dzien):
-    logistat.db.session.add(logistat.DailyStat(
+    db.session.add(DailyStat(
         shift_id=zmiana(dzien).id, user_id=kto.id, activity_id=akt.id, quantity=ilosc))
-    logistat.db.session.commit()
+    db.session.commit()
 
 
 def paczka(barcode, kto, sztuk, dzien, minut=30):
-    koniec = logistat.local_day_bounds(dzien)[0] + timedelta(hours=10)
-    logistat.db.session.add(logistat.ImportedCarton(
+    koniec = local_day_bounds(dzien)[0] + timedelta(hours=10)
+    db.session.add(ImportedCarton(
         barcode=barcode, land='PL', stueckzahl=sztuk, data_pliku=dzien,
         uebergabe_nr='UB-1',
         scan_start_at=koniec - timedelta(minutes=minut), scan_start_by=kto.id,
         scan_end_at=koniec, scan_end_by=kto.id))
-    logistat.db.session.commit()
+    db.session.commit()
 
 
 def czynnosc(nazwa):
-    return logistat.Activity.query.filter_by(name=nazwa).one()
+    return Activity.query.filter_by(name=nazwa).one()
 
 
 def test_wpis_ilosci_srednia_wszystkich_na_osobe(leader_client):
@@ -85,7 +91,7 @@ def test_czynnosc_bez_danych_nie_ma_klucza(leader_client):
 
 
 def test_post_processing_ze_skanow_paczek(leader_client):
-    akt = czynnosc(logistat.CZYNNOSC_SKANOW_PACZEK)
+    akt = czynnosc(CZYNNOSC_SKANOW_PACZEK)
     a, b = make_user('operator'), make_user('operator')
     paczka('PP-1', a, 100, DZIEN - timedelta(days=1), minut=30)    # 200 szt./h
     paczka('PP-2', b, 50, DZIEN - timedelta(days=2), minut=30)     # 100 szt./h
@@ -99,11 +105,11 @@ def test_post_processing_ze_skanow_paczek(leader_client):
 
 def test_post_processing_ta_sama_srednia_co_w_normach(leader_client):
     paczka('PP-1', make_user('operator'), 70, DZIEN - timedelta(days=1), minut=20)
-    od = DZIEN - timedelta(days=logistat.DNI_SREDNIEJ_PRZYDZIALU)
+    od = DZIEN - timedelta(days=DNI_SREDNIEJ_PRZYDZIALU)
 
-    w = wczytaj(leader_client)[str(czynnosc(logistat.CZYNNOSC_SKANOW_PACZEK).id)]
+    w = wczytaj(leader_client)[str(czynnosc(CZYNNOSC_SKANOW_PACZEK).id)]
 
-    assert w['szt_h_os'] == logistat.przeglad_zespolu(od, DZIEN)['srednia_szt_h']
+    assert w['szt_h_os'] == przeglad_zespolu(od, DZIEN)['srednia_szt_h']
 
 
 def test_estymacja_takze_bez_utworzonej_zmiany(leader_client):
@@ -112,7 +118,7 @@ def test_estymacja_takze_bez_utworzonej_zmiany(leader_client):
     wpis(make_user('operator'), akt, 60, DZIEN - timedelta(days=1))
     jutro = DZIEN + timedelta(days=1)
 
-    assert logistat.Shift.query.filter_by(date=jutro).first() is None
+    assert Shift.query.filter_by(date=jutro).first() is None
     assert wczytaj(leader_client, jutro)[str(akt.id)]['szt_zmiana_os'] == 60
 
 

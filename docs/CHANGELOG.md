@@ -1,5 +1,12 @@
 # LogiStat — Changelog
 
+## 2026-10-20 (3) — Testy importują z pakietu
+
+### Zmienione (bez zmian w działaniu)
+- Testy biorą nazwy prosto z modułów `logistat/` zamiast przez `app.py`;
+  `app.py` to już tylko ~30 linii punktu wejścia (bez listy re-eksportów).
+- Skrypt kontroli spójności importuje z pakietu (bez przekazywania modułu `app`).
+
 ## 2026-10-20 (2) — Porządki techniczne
 
 ### Zmienione (bez zmian w działaniu)

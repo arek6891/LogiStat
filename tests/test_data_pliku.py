@@ -9,10 +9,15 @@ import io
 from datetime import date, datetime
 
 import openpyxl
-
-import app as logistat
 from conftest import login, make_user, strona_z_js
 from test_import_aggregation import gstat
+
+from logistat.baza import migruj_date_pliku
+from logistat.czas import local_today
+from logistat.extensions import db
+from logistat.models import GeneralStat, ImportedCarton
+from logistat.rozliczenie import klucz_linii, recompute_general_stat
+
 
 CSV = ('Barcode;Land;Stückzahl;Kategorie;Ziel-Datum;Übergabe Nr.\n'
        'C1;PL;10;textile;11.09.2026;UB-1\n'
@@ -27,7 +32,7 @@ def wyslij_csv(client, data_pliku=None, tresc=CSV):
 
 
 def karton(barcode):
-    return logistat.ImportedCarton.query.filter_by(barcode=barcode).one()
+    return ImportedCarton.query.filter_by(barcode=barcode).one()
 
 
 # ── import ───────────────────────────────────────────────────────────────────
@@ -37,21 +42,21 @@ def test_import_bez_daty_pliku_daje_400_i_nic_nie_zapisuje(leader_client):
         r = wyslij_csv(leader_client, brak)
         assert r.status_code == 400, repr(brak)
         assert 'Loading date' in r.get_json()['error']
-    assert logistat.ImportedCarton.query.count() == 0
+    assert ImportedCarton.query.count() == 0
 
 
 def test_zla_data_pliku_daje_400(leader_client):
     assert wyslij_csv(leader_client, '13.10.2026').status_code == 400
-    assert logistat.ImportedCarton.query.count() == 0
+    assert ImportedCarton.query.count() == 0
 
 
 def test_import_csv_zapisuje_date_pliku_i_linie_pod_nia(leader_client):
     r = wyslij_csv(leader_client, '2026-09-10')
 
     assert r.status_code == 200
-    assert {c.data_pliku for c in logistat.ImportedCarton.query} == {date(2026, 9, 10)}
+    assert {c.data_pliku for c in ImportedCarton.query} == {date(2026, 9, 10)}
     # Dwie rozne Ziel-Datum, jeden plik -> jedna linia pod data pliku.
-    assert logistat.GeneralStat.query.count() == 1
+    assert GeneralStat.query.count() == 1
     assert gstat(loading_date=date(2026, 9, 10)).amounts == 15
 
 
@@ -76,30 +81,30 @@ def test_import_excel_tez_wymaga_daty_pliku(leader_client):
 def test_strona_importu_podpowiada_dzisiejsza_date(leader_client):
     html = strona_z_js(leader_client, '/import-csv')
 
-    assert f'const DZIS = "{logistat.local_today().isoformat()}"' in html
+    assert f'const DZIS = "{local_today().isoformat()}"' in html
     assert 'id="dataPlikuModal"' in html
 
 
 # ── migracja ─────────────────────────────────────────────────────────────────
 
 def _stara_linia(ub, land, d, amounts=0, reczne=None, zrodlo='manual'):
-    s = logistat.GeneralStat(loading_date=d, week_number=d.isocalendar()[1], list_id=ub,
+    s = GeneralStat(loading_date=d, week_number=d.isocalendar()[1], list_id=ub,
                              country_ledger=land, amounts=amounts, category_source=zrodlo)
     s.set_category_data({k: {'amount': v, 'cost': 0.0} for k, v in (reczne or {}).items()})
-    logistat.db.session.add(s)
+    db.session.add(s)
     return s
 
 
 def _stary_karton(barcode, ub, ziel, imported_at, szt=10, **kw):
-    c = logistat.ImportedCarton(barcode=barcode, land='PL', stueckzahl=szt, uebergabe_nr=ub,
+    c = ImportedCarton(barcode=barcode, land='PL', stueckzahl=szt, uebergabe_nr=ub,
                                 ziel_datum=ziel, imported_at=imported_at, **kw)
-    logistat.db.session.add(c)
+    db.session.add(c)
     return c
 
 
 def _migruj():
-    logistat.db.session.commit()
-    logistat.migruj_date_pliku()
+    db.session.commit()
+    migruj_date_pliku()
 
 
 def test_migracja_bierze_lokalny_dzien_importu(flask_app):
@@ -112,8 +117,8 @@ def test_migracja_bierze_lokalny_dzien_importu(flask_app):
 
 def test_migracja_bez_czasu_importu_bierze_ziel_datum(flask_app):
     _stary_karton('N2', 'UB-1', date(2026, 9, 11), datetime(2026, 9, 9, 6, 0))
-    logistat.db.session.commit()
-    logistat.db.session.execute(logistat.db.text(
+    db.session.commit()
+    db.session.execute(db.text(
         "UPDATE imported_carton SET imported_at = NULL WHERE barcode = 'N2'"))
     _migruj()
 
@@ -128,7 +133,7 @@ def test_migracja_przenosi_linie_na_date_pliku_i_laczy_kolizje(flask_app):
     _stara_linia('UB-1', 'PL', date(2026, 9, 12), 5, reczne={'textile': 4})
     _migruj()
 
-    linie = logistat.GeneralStat.query.all()
+    linie = GeneralStat.query.all()
     assert len(linie) == 1, 'ten sam UB + kraj + data pliku = jedna linia'
     assert linie[0].loading_date == date(2026, 9, 10)
     assert linie[0].amounts == 15
@@ -172,9 +177,9 @@ def test_migracja_biegnie_tylko_raz(flask_app):
     _stara_linia('UB-1', 'PL', date(2026, 9, 11), 10)
     _migruj()
     karton('A1').data_pliku = date(2026, 1, 1)       # ktos potem poprawil date
-    logistat.db.session.commit()
+    db.session.commit()
 
-    logistat.migruj_date_pliku()
+    migruj_date_pliku()
 
     assert karton('A1').data_pliku == date(2026, 1, 1)
 
@@ -202,7 +207,7 @@ def test_lista_importow_grupuje_plik_w_jeden_wpis(leader_client, leader):
 
 def test_filtry_listy_importow(leader_client, leader):
     _import(leader_client, '2026-09-10')
-    dzis = logistat.local_today().isoformat()
+    dzis = local_today().isoformat()
 
     def ile(**f):
         return len(leader_client.get('/api/imports', query_string=f).get_json()['importy'])
@@ -223,21 +228,21 @@ def test_podglad_nic_nie_zapisuje(leader_client):
 
     assert r.status_code == 200
     assert r.get_json()['paczek'] == 2 and r.get_json()['linii_przenoszonych'] == 1
-    assert {c.data_pliku for c in logistat.ImportedCarton.query} == {date(2026, 9, 10)}
+    assert {c.data_pliku for c in ImportedCarton.query} == {date(2026, 9, 10)}
 
 
 def test_zmiana_przenosi_paczki_i_linie_z_recznymi_ilosciami(leader_client, leader):
     klucz = _import(leader_client, '2026-09-10')[0]['klucz']
     linia = gstat(loading_date=date(2026, 9, 10))
     linia.set_category_data({'textile': {'amount': 6, 'cost': 0.0}})
-    logistat.db.session.commit()
+    db.session.commit()
 
     r = _zmien(leader_client, [klucz], '2026-09-09')
 
     assert r.status_code == 200
-    assert {c.data_pliku for c in logistat.ImportedCarton.query} == {date(2026, 9, 9)}
-    assert {c.modified_by for c in logistat.ImportedCarton.query} == {leader.id}
-    assert logistat.GeneralStat.query.count() == 1
+    assert {c.data_pliku for c in ImportedCarton.query} == {date(2026, 9, 9)}
+    assert {c.modified_by for c in ImportedCarton.query} == {leader.id}
+    assert GeneralStat.query.count() == 1
     przeniesiona = gstat(loading_date=date(2026, 9, 9))
     assert przeniesiona.amounts == 15
     assert przeniesiona.get_category_data()['textile']['amount'] == 6, \
@@ -251,7 +256,7 @@ def test_zmiana_laczy_sie_z_istniejaca_linia_nowej_daty(leader_client):
 
     assert _zmien(leader_client, [zly['klucz']], '2026-09-09').status_code == 200
 
-    assert logistat.GeneralStat.query.count() == 1
+    assert GeneralStat.query.count() == 1
     assert gstat(loading_date=date(2026, 9, 9)).amounts == 115
 
 
@@ -264,7 +269,7 @@ def test_czesciowe_przeniesienie_linii_z_recznymi_ilosciami_daje_409(leader_clie
     importy = _import(leader_client, '2026-09-10', druga)
     linia = gstat(loading_date=date(2026, 9, 10))
     linia.set_category_data({'textile': {'amount': 6, 'cost': 0.0}})
-    logistat.db.session.commit()
+    db.session.commit()
     jeden = [i for i in importy if i['paczek'] == 1][0]['klucz']
 
     r = _zmien(leader_client, [jeden], '2026-09-09')
@@ -280,11 +285,11 @@ def test_laczenie_linii_recznej_ze_skanowa_daje_409(leader_client):
             'Barcode;Land;Stückzahl;Kategorie;Ziel-Datum;Übergabe Nr.\nS9;PL;8;textile;;UB-1\n')
     s9 = karton('S9')
     s9.set_scan_categories({'sorting': 8})
-    logistat.recompute_general_stat(*logistat.klucz_linii(s9), from_scan=True)
+    recompute_general_stat(*klucz_linii(s9), from_scan=True)
     zly = [i for i in _import(leader_client, '2026-09-10') if i['data_pliku'] == '2026-09-10'][0]
     linia = gstat(loading_date=date(2026, 9, 10))
     linia.set_category_data({'textile': {'amount': 6, 'cost': 0.0}})
-    logistat.db.session.commit()
+    db.session.commit()
 
     r = _zmien(leader_client, [zly['klucz']], '2026-09-09')
 
@@ -310,8 +315,8 @@ def test_przeniesione_ilosci_ze_skanu_ida_za_paczka(leader_client):
     klucz = _import(leader_client, '2026-09-10')[0]['klucz']
     c = karton('C1')
     c.set_scan_categories({'sorting': 4})
-    logistat.recompute_general_stat(*logistat.klucz_linii(c), from_scan=True)
-    logistat.db.session.commit()
+    recompute_general_stat(*klucz_linii(c), from_scan=True)
+    db.session.commit()
 
     assert _zmien(leader_client, [klucz], '2026-09-09').status_code == 200
 
@@ -341,7 +346,7 @@ def test_plan_dnia_pliku(leader_client):
     c = karton('C1')
     c.scan_start_at = c.scan_end_at = datetime(2026, 9, 11, 8, 0)    # skonczona nastepnego dnia
     karton('C2').scan_start_at = datetime(2026, 9, 11, 9, 0)
-    logistat.db.session.commit()
+    db.session.commit()
 
     p = leader_client.get('/api/dashboard/plik?date=2026-09-10').get_json()
 
@@ -355,7 +360,7 @@ def test_plan_dnia_pliku(leader_client):
 def test_podsumowanie_to_tylko_niezrobione_wg_daty_pliku(leader_client):
     _import(leader_client, '2026-09-10')
     karton('C1').scan_end_at = datetime(2026, 9, 10, 8, 0)
-    logistat.db.session.commit()
+    db.session.commit()
 
     z = leader_client.get('/api/dashboard').get_json()['zalegle']
 

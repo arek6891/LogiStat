@@ -12,7 +12,9 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from logistat.czas import local_day_bounds
+from logistat.extensions import db
 from logistat.okresy import odejmij_okresy, suma_zlaczonych_okresow, w_okresach, zlacz_okresy
+
 
 MODULY = ['logistat.czas', 'logistat.kategorie', 'logistat.tabela_ilosci',
           'logistat.okresy', 'logistat.normy']
@@ -78,13 +80,12 @@ def test_create_app_nie_dotyka_bazy():
 
 def test_logistat_models_rejestruje_wszystkie_tabele():
     """Sam import pakietu modeli = komplet tabel dla create_all()."""
-    import app as logistat
     kod = ('import logistat.models as m; from logistat.extensions import db; '
            'print(",".join(sorted(db.metadata.tables)))')
     wynik = subprocess.run([sys.executable, '-c', kod], capture_output=True, text=True,
                            timeout=60, cwd='.')
     assert wynik.returncode == 0, wynik.stderr
-    assert wynik.stdout.strip().split(',') == sorted(logistat.db.metadata.tables)
+    assert wynik.stdout.strip().split(',') == sorted(db.metadata.tables)
 
 
 T = datetime(2026, 10, 16, 8, 0)

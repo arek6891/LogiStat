@@ -9,7 +9,10 @@ from datetime import date
 
 import openpyxl
 
-import app as logistat
+from logistat.extensions import db
+from logistat.kategorie import STAT_CATEGORIES, STAT_CATEGORY_LABELS
+from logistat.models import CostMapping, GeneralStat
+
 
 LADOWANIE = date(2026, 9, 10)
 STRONA = f'/general-stats?date_from={LADOWANIE}&date_to={LADOWANIE}'
@@ -17,14 +20,14 @@ STAWKA = 7.7731   # charakterystyczna — latwo wypatrzyc w HTML
 
 
 def linia():
-    s = logistat.GeneralStat(loading_date=LADOWANIE, week_number=37, list_id='UB-1',
+    s = GeneralStat(loading_date=LADOWANIE, week_number=37, list_id='UB-1',
                              country_ledger='PL', country_of_destination='Polska',
                              amounts=100)
     s.set_category_data({'labelling_on': {'amount': 40, 'cost': 0.0}})
-    mapping = logistat.CostMapping(year=LADOWANIE.year, month=LADOWANIE.month)
+    mapping = CostMapping(year=LADOWANIE.year, month=LADOWANIE.month)
     mapping.set_rates_data({'labelling_on': STAWKA})
-    logistat.db.session.add_all([s, mapping])
-    logistat.db.session.commit()
+    db.session.add_all([s, mapping])
+    db.session.commit()
     return s
 
 
@@ -78,8 +81,8 @@ def test_lider_nie_zapisze_przez_api(leader_client):
                           json={'category_data': {'labelling_on': {'amount': 999}}})
 
     assert r.status_code != 200
-    logistat.db.session.expire_all()
-    assert logistat.db.session.get(logistat.GeneralStat, s.id) \
+    db.session.expire_all()
+    assert db.session.get(GeneralStat, s.id) \
         .get_category_data()['labelling_on']['amount'] == 40
     assert leader_client.post(f'/api/general-stats/{s.id}/use-scan').status_code != 200
     assert leader_client.get('/api/general-stats').status_code != 200, \
@@ -99,10 +102,10 @@ def test_eksport_lidera_bez_kolumn_kosztow(leader_client):
     assert 'Cost (EUR)' not in h and 'Total cost (EUR)' not in h
     # Jedna kolumna na kategorie: pierwsza kategoria zaraz po Total Amount.
     assert ws.cell(row=1, column=9).value == \
-        logistat.STAT_CATEGORY_LABELS[logistat.STAT_CATEGORIES[0]]
-    assert ws.max_column == 8 + len(logistat.STAT_CATEGORIES)
-    ilosci = [ws.cell(row=3, column=9 + i).value for i in range(len(logistat.STAT_CATEGORIES))]
-    assert ilosci[logistat.STAT_CATEGORIES.index('labelling_on')] == 40
+        STAT_CATEGORY_LABELS[STAT_CATEGORIES[0]]
+    assert ws.max_column == 8 + len(STAT_CATEGORIES)
+    ilosci = [ws.cell(row=3, column=9 + i).value for i in range(len(STAT_CATEGORIES))]
+    assert ilosci[STAT_CATEGORIES.index('labelling_on')] == 40
 
 
 def test_eksport_admina_z_kosztami(admin_client):
@@ -113,7 +116,7 @@ def test_eksport_admina_z_kosztami(admin_client):
 
     h = naglowki(ws)
     assert 'Cost (EUR)' in h and 'Total cost (EUR)' in h
-    assert ws.max_column == 8 + 2 * len(logistat.STAT_CATEGORIES) + 1
+    assert ws.max_column == 8 + 2 * len(STAT_CATEGORIES) + 1
 
 
 def test_filtr_po_lewej_nad_tabela(leader_client):

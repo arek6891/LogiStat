@@ -8,28 +8,31 @@
 - dwa rownolegle „koniec" tej samej paczki oba dostawaly 200 (15.09)
   → `SELECT … FOR UPDATE` na kartonie.
 """
-import importlib
 import threading
 import time
 from datetime import date
 
-import app as logistat
 from conftest import login, make_user, strona_z_js
+
+from logistat.extensions import db
+from logistat.models import ImportedCarton
+from logistat.web import stanowisko
+
 
 ZIEL = date(2026, 9, 10)
 
 
 def make_carton(barcode='P1', stueckzahl=10):
-    c = logistat.ImportedCarton(barcode=barcode, land='PL', stueckzahl=stueckzahl,
+    c = ImportedCarton(barcode=barcode, land='PL', stueckzahl=stueckzahl,
                                 ziel_datum=ZIEL, data_pliku=ZIEL, uebergabe_nr='UB-1')
-    logistat.db.session.add(c)
-    logistat.db.session.commit()
+    db.session.add(c)
+    db.session.commit()
     return c
 
 
 def carton(barcode='P1'):
-    logistat.db.session.expire_all()
-    return logistat.ImportedCarton.query.filter_by(barcode=barcode).first()
+    db.session.expire_all()
+    return ImportedCarton.query.filter_by(barcode=barcode).first()
 
 
 def start(client, emp, pkg='P1'):
@@ -66,7 +69,7 @@ def test_nieznany_pracownik_daje_404(leader_client):
 def test_nieaktywny_pracownik_nie_przechodzi_kroku_1(leader_client):
     w = make_user('operator', barcode_id='W1')
     w.is_active_user = False
-    logistat.db.session.commit()
+    db.session.commit()
 
     assert employee(leader_client, 'W1').status_code == 404
 
@@ -167,12 +170,11 @@ def test_dwa_rownolegle_konce_przechodzi_tylko_jeden(flask_app, leader, monkeypa
     klient = flask_app.test_client()
     login(klient, nazwa_lidera)
     assert start(klient, 'W1').status_code == 200
-    logistat.db.session.commit()
+    db.session.commit()
 
     # Okno miedzy kontrola stanu a zapisem — bez blokady oba watki w nie wchodza.
     # Trasa szuka parse_scan_categories w swoim module (blueprint, krok 5) — tam podmieniamy.
-    # importlib: `import logistat.web…` przypisalby nazwe `logistat` (tu = modul app).
-    stanowisko = importlib.import_module('logistat.web.stanowisko')
+    # Podmiana w module blueprintu — tam trasa szuka nazwy.
     oryginal = stanowisko.parse_scan_categories
 
     wywolania = []
@@ -193,7 +195,7 @@ def test_dwa_rownolegle_konce_przechodzi_tylko_jeden(flask_app, leader, monkeypa
             k = flask_app.test_client()
             login(k, nazwa_lidera)
             wyniki.append(end(k, 'W1', categories={'labelling_on': 5}).status_code)
-            logistat.db.session.remove()
+            db.session.remove()
 
     watki = [threading.Thread(target=zadanie) for _ in range(2)]
     for w in watki:

@@ -5,9 +5,14 @@ nie o dokladna liczbe.
 """
 from datetime import date
 
-import app as logistat
 from conftest import make_user
 from test_import_aggregation import ZIEL, row
+
+from logistat.extensions import db
+from logistat.models import (
+    Activity, ActivityAssignment, CostMapping, GeneralStat, ImportedCarton, ShiftAttendance,
+    get_or_create_shift)
+from logistat.web.wspolne import process_import_rows
 
 
 def test_import_nie_robi_zapytania_na_wiersz(acting_admin, queries):
@@ -15,9 +20,9 @@ def test_import_nie_robi_zapytania_na_wiersz(acting_admin, queries):
     Przy 10k wierszy to 20k round-tripow do bazy."""
     wiersze = [row(f'B{i}', 1) for i in range(200)]
 
-    logistat.process_import_rows(wiersze, ZIEL)
+    process_import_rows(wiersze, ZIEL)
 
-    assert logistat.ImportedCarton.query.count() == 200
+    assert ImportedCarton.query.count() == 200
     odczyty = len(queries.selects)
     assert odczyty < 20, (
         f'200 wierszy = {odczyty} SELECT-ow — powinno byc kilka partii, nie '
@@ -25,7 +30,7 @@ def test_import_nie_robi_zapytania_na_wiersz(acting_admin, queries):
 
 
 def test_mapowania_krajow_czytane_raz(acting_admin, queries):
-    logistat.process_import_rows([row(f'B{i}', 1, land='PL') for i in range(50)], ZIEL)
+    process_import_rows([row(f'B{i}', 1, land='PL') for i in range(50)], ZIEL)
 
     selecty = queries.matching('FROM country_mapping')
 
@@ -33,7 +38,7 @@ def test_mapowania_krajow_czytane_raz(acting_admin, queries):
 
 
 def test_dedup_idzie_partiami(acting_admin, queries):
-    logistat.process_import_rows([row(f'B{i}', 1) for i in range(50)], ZIEL)
+    process_import_rows([row(f'B{i}', 1) for i in range(50)], ZIEL)
 
     dedup = [q for q in queries.matching('FROM imported_carton') if ' IN ' in q]
 
@@ -45,15 +50,15 @@ def test_stawki_z_cache_na_zadanie(admin_client, queries):
     # 30 linii w trzech miesiacach
     for i in range(30):
         d = date(2026, 1 + (i % 3), 10)
-        logistat.db.session.add(logistat.GeneralStat(
+        db.session.add(GeneralStat(
             loading_date=d, week_number=d.isocalendar()[1],
             list_id=f'UB-{i}', country_ledger='PL', amounts=10,
             category_data='{}'))
     for m in (1, 2, 3):
-        cm = logistat.CostMapping(year=2026, month=m)
+        cm = CostMapping(year=2026, month=m)
         cm.set_rates_data({'textile': 1.0})
-        logistat.db.session.add(cm)
-    logistat.db.session.commit()
+        db.session.add(cm)
+    db.session.commit()
     queries.statements.clear()
 
     r = admin_client.get('/api/general-stats')
@@ -68,11 +73,11 @@ def test_stawki_z_cache_na_zadanie(admin_client, queries):
 
 def test_filtry_daty_na_liscie_statystyk(admin_client):
     for d in (date(2026, 1, 5), date(2026, 6, 5), date(2026, 12, 5)):
-        logistat.db.session.add(logistat.GeneralStat(
+        db.session.add(GeneralStat(
             loading_date=d, week_number=d.isocalendar()[1],
             list_id=f'UB-{d.month}', country_ledger='PL', amounts=10,
             category_data='{}'))
-    logistat.db.session.commit()
+    db.session.commit()
 
     wszystkie = admin_client.get('/api/general-stats').get_json()
     zakres = admin_client.get(
@@ -87,11 +92,11 @@ def test_zla_data_w_filtrze_daje_400(admin_client):
 
 
 def test_lista_obecnosci_bez_zapytania_na_pracownika(leader_client, queries):
-    shift = logistat.get_or_create_shift(date(2026, 9, 1), 1)
+    shift = get_or_create_shift(date(2026, 9, 1), 1)
     for i in range(20):
         u = make_user('operator', barcode_id=f'W{i}')
-        logistat.db.session.add(logistat.ShiftAttendance(shift_id=shift.id, user_id=u.id))
-    logistat.db.session.commit()
+        db.session.add(ShiftAttendance(shift_id=shift.id, user_id=u.id))
+    db.session.commit()
     queries.statements.clear()
 
     r = leader_client.get('/api/shift/attendances?date=2026-09-01&shift_number=1')
@@ -105,16 +110,16 @@ def test_lista_obecnosci_bez_zapytania_na_pracownika(leader_client, queries):
 def test_dane_przydzielania_bez_n_plus_1(leader_client, queries):
     """Liczba SELECT-ow nie rosnie z liczba przydzielen. Porownanie 2 vs 20, nie
     sztywny limit — estymacja (`wydajnosc_czynnosci()`) doklada staly koszt."""
-    shift = logistat.get_or_create_shift(date(2026, 9, 1), 1)
-    akt = logistat.Activity.query.first()
+    shift = get_or_create_shift(date(2026, 9, 1), 1)
+    akt = Activity.query.first()
 
     def dodaj(od, do):
         for i in range(od, do):
             u = make_user('operator', barcode_id=f'W{i}')
-            logistat.db.session.add(logistat.ShiftAttendance(shift_id=shift.id, user_id=u.id))
-            logistat.db.session.add(logistat.ActivityAssignment(
+            db.session.add(ShiftAttendance(shift_id=shift.id, user_id=u.id))
+            db.session.add(ActivityAssignment(
                 shift_id=shift.id, user_id=u.id, activity_id=akt.id))
-        logistat.db.session.commit()
+        db.session.commit()
 
     def odczyty():
         queries.statements.clear()

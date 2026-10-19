@@ -5,20 +5,24 @@ nie dni kalendarzowe zakresu — dzien wolny nie zaniza sredniej.
 """
 from datetime import date, timedelta
 
-import app as logistat
 from conftest import make_user
+
+from logistat.czas import local_day_bounds
+from logistat.extensions import db
+from logistat.models import Activity, ImportedCarton
+
 
 ZIEL = date(2026, 9, 10)
 
 
 def paczka(barcode, kto, sztuk, dzien, godzina=10):
     """Paczka zakonczona o `godzina` czasu lokalnego danego dnia."""
-    koniec = logistat.local_day_bounds(dzien)[0] + timedelta(hours=godzina)
-    logistat.db.session.add(logistat.ImportedCarton(
+    koniec = local_day_bounds(dzien)[0] + timedelta(hours=godzina)
+    db.session.add(ImportedCarton(
         barcode=barcode, land='PL', stueckzahl=sztuk, ziel_datum=ZIEL, data_pliku=ZIEL,
         uebergabe_nr='UB-1', scan_start_at=koniec - timedelta(minutes=10),
         scan_start_by=kto.id, scan_end_at=koniec, scan_end_by=kto.id))
-    logistat.db.session.commit()
+    db.session.commit()
 
 
 def statystyki(client, kto, **params):
@@ -73,7 +77,7 @@ def test_podsumowanie_jest_takze_przy_filtrze_czynnosci(leader_client):
     maja sie liczyc niezaleznie od tego filtra."""
     a = make_user('operator', username='ala', display_name='Ala')
     paczka('A1', a, 10, date(2026, 9, 5))
-    czynnosc = logistat.Activity.query.first()
+    czynnosc = Activity.query.first()
 
     p = statystyki(leader_client, a, activity_id=czynnosc.id,
                    date_from='2026-09-01', date_to='2026-09-30')

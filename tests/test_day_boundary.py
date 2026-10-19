@@ -8,8 +8,12 @@ strefy czasowej serwera.
 """
 from datetime import date, datetime, timedelta
 
-import app as logistat
 from conftest import make_user
+
+from logistat.czas import LOCAL_TZ, local_day_bounds, local_today
+from logistat.extensions import db
+from logistat.models import ImportedCarton, ShiftAttendance, get_or_create_shift
+
 
 ZIEL = date(2026, 9, 10)
 
@@ -19,28 +23,28 @@ def utc(y, m, d, hh, mm=0):
 
 
 def carton(barcode, scan_end_at, user, stueckzahl=10):
-    c = logistat.ImportedCarton(
+    c = ImportedCarton(
         barcode=barcode, land='PL', stueckzahl=stueckzahl,
         ziel_datum=ZIEL, data_pliku=ZIEL, uebergabe_nr='UB-1',
         scan_start_at=scan_end_at - timedelta(minutes=5), scan_start_by=user.id,
         scan_end_at=scan_end_at, scan_end_by=user.id,
     )
-    logistat.db.session.add(c)
-    logistat.db.session.commit()
+    db.session.add(c)
+    db.session.commit()
     return c
 
 
 # ── Helpery stref ────────────────────────────────────────────────────────────
 
 def test_granice_doby_latem_to_utc_plus_2(flask_app):
-    start, end = logistat.local_day_bounds(date(2026, 9, 2))
+    start, end = local_day_bounds(date(2026, 9, 2))
 
     assert start == utc(2026, 9, 1, 22), 'polnoc 2.09 w Warszawie = 1.09 22:00 UTC'
     assert end == utc(2026, 9, 2, 22)
 
 
 def test_granice_doby_zima_to_utc_plus_1(flask_app):
-    start, end = logistat.local_day_bounds(date(2026, 1, 15))
+    start, end = local_day_bounds(date(2026, 1, 15))
 
     assert start == utc(2026, 1, 14, 23), 'zima Warszawa to UTC+1'
     assert end == utc(2026, 1, 15, 23)
@@ -48,7 +52,7 @@ def test_granice_doby_zima_to_utc_plus_1(flask_app):
 
 def test_granice_doby_w_dniu_zmiany_czasu(flask_app):
     """29.03.2026 — przejscie na czas letni, doba lokalna ma 23 godziny."""
-    start, end = logistat.local_day_bounds(date(2026, 3, 29))
+    start, end = local_day_bounds(date(2026, 3, 29))
 
     assert start == utc(2026, 3, 28, 23)
     assert end == utc(2026, 3, 29, 22)
@@ -57,9 +61,9 @@ def test_granice_doby_w_dniu_zmiany_czasu(flask_app):
 
 def test_local_today_to_data_warszawska(flask_app):
     from datetime import timezone
-    oczekiwana = datetime.now(timezone.utc).astimezone(logistat.LOCAL_TZ).date()
+    oczekiwana = datetime.now(timezone.utc).astimezone(LOCAL_TZ).date()
 
-    assert logistat.local_today() == oczekiwana
+    assert local_today() == oczekiwana
 
 
 # ── Dashboard per zmiana ─────────────────────────────────────────────────────
@@ -110,9 +114,9 @@ def test_kazda_paczka_dokladnie_w_jednej_dobie(leader_client):
 
 def test_przypisanie_do_zmiany_po_obecnosci(leader_client):
     w = make_user('operator', barcode_id='W1')
-    shift = logistat.get_or_create_shift(date(2026, 9, 2), 2)
-    logistat.db.session.add(logistat.ShiftAttendance(shift_id=shift.id, user_id=w.id))
-    logistat.db.session.commit()
+    shift = get_or_create_shift(date(2026, 9, 2), 2)
+    db.session.add(ShiftAttendance(shift_id=shift.id, user_id=w.id))
+    db.session.commit()
     carton('P-noc', utc(2026, 9, 1, 23, 30), w, stueckzahl=7)
 
     d = leader_client.get('/api/dashboard/shifts?date=2026-09-02').get_json()

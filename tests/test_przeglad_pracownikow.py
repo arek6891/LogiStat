@@ -7,26 +7,30 @@ zadana z gory norma (takiej system nie ma). Do 2026-09-28 byla to mediana.
 """
 from datetime import date, datetime, timedelta
 
-import app as logistat
 from conftest import make_user, strona_z_js
+
+from logistat.czas import local_day_bounds, local_today
+from logistat.extensions import db
+from logistat.models import ImportedCarton, UserOption, get_setting_int, set_setting
+
 
 ZIEL = date(2026, 9, 10)
 
 
 def paczka(barcode, kto, sztuk, start, koniec):
-    c = logistat.ImportedCarton(barcode=barcode, land='PL', stueckzahl=sztuk,
+    c = ImportedCarton(barcode=barcode, land='PL', stueckzahl=sztuk,
                                 ziel_datum=ZIEL, data_pliku=ZIEL, uebergabe_nr='UB-1',
                                 scan_start_at=start, scan_start_by=kto.id,
                                 scan_end_at=koniec, scan_end_by=kto.id)
-    logistat.db.session.add(c)
-    logistat.db.session.commit()
+    db.session.add(c)
+    db.session.commit()
     return c
 
 
 def godziny_pracy(kto, ile_paczek, sztuk_na_paczke, minut_na_paczke, dzien=None):
     """`ile_paczek` paczek jedna po drugiej, bez nakladania sie."""
-    dzien = dzien or logistat.local_today()
-    baza = logistat.local_day_bounds(dzien)[0] + timedelta(hours=1)
+    dzien = dzien or local_today()
+    baza = local_day_bounds(dzien)[0] + timedelta(hours=1)
     for i in range(ile_paczek):
         start = baza + timedelta(minutes=i * minut_na_paczke * 2)
         # Dzien w barcodzie, bo ten sam pracownik bywa obsadzany w kilku dniach
@@ -80,7 +84,7 @@ def test_nakladajace_sie_paczki_nie_licza_czasu_dwa_razy(leader_client):
     """Nic w schemacie nie zabrania trzymania dwoch paczek otwartych naraz.
     Suma dlugosci liczylaby ten sam kwadrans dwa razy i zanizala szt./h."""
     a = make_user('operator', username='rownolegle', display_name='Równolegle')
-    baza = logistat.local_day_bounds(logistat.local_today())[0] + timedelta(hours=1)
+    baza = local_day_bounds(local_today())[0] + timedelta(hours=1)
     # Dwie paczki po godzinie, calkowicie na sobie -> 1 h pracy, nie 2 h.
     paczka('R-1', a, 50, baza, baza + timedelta(hours=1))
     paczka('R-2', a, 50, baza, baza + timedelta(hours=1))
@@ -119,8 +123,8 @@ def test_za_malo_danych_nie_znika_ze_statystyk(leader_client):
 
 
 def test_prog_minimalny_jest_konfigurowalny(leader_client):
-    logistat.set_setting('min_packages_rank', 1)
-    logistat.db.session.commit()
+    set_setting('min_packages_rank', 1)
+    db.session.commit()
     malo = make_user('operator', username='malo', display_name='Malo')
     godziny_pracy(malo, 1, 60, 30)
 
@@ -151,7 +155,7 @@ def test_srednia_obejmuje_osoby_spoza_rankingu_wazone_czasem(leader_client):
         u = make_user('operator', username=nazwa.lower(), display_name=nazwa)
         godziny_pracy(u, 3, sztuk_na_paczke=50, minut_na_paczke=30)   # 100 szt./h
     t = make_user('operator', username='t', display_name='Test')
-    start = logistat.local_day_bounds(logistat.local_today())[0] + timedelta(hours=9)
+    start = local_day_bounds(local_today())[0] + timedelta(hours=9)
     paczka('BLYSK', t, 100, start, start + timedelta(minutes=1))     # 6000 szt./h
 
     dane = przeglad(leader_client)
@@ -165,10 +169,10 @@ def test_paczki_bez_czasu_nie_zawyzaja_sredniej(leader_client):
     a = make_user('operator', username='a', display_name='Ala')
     godziny_pracy(a, 3, sztuk_na_paczke=50, minut_na_paczke=30)       # 100 szt./h
     b = make_user('operator', username='b', display_name='Bez')
-    logistat.db.session.add(logistat.ImportedCarton(
+    db.session.add(ImportedCarton(
         barcode='BEZ-CZASU', land='PL', stueckzahl=5000, ziel_datum=ZIEL, data_pliku=ZIEL,
         uebergabe_nr='UB-1', scan_end_at=datetime.utcnow(), scan_end_by=b.id))
-    logistat.db.session.commit()
+    db.session.commit()
 
     assert przeglad(leader_client)['srednia_szt_h'] == 100.0
 
@@ -189,8 +193,8 @@ def test_oceny_dobra_ok_slaba(leader_client):
 
 
 def test_progi_oceny_sa_konfigurowalne(leader_client):
-    logistat.set_setting('norm_good_pct', 250)
-    logistat.db.session.commit()
+    set_setting('norm_good_pct', 250)
+    db.session.commit()
     for nazwa, sztuk in (('A', 50), ('B', 50), ('Lepsza', 100)):
         u = make_user('operator', username=nazwa.lower(), display_name=nazwa)
         godziny_pracy(u, 3, sztuk_na_paczke=sztuk, minut_na_paczke=30)
@@ -206,8 +210,8 @@ def test_progi_oceny_sa_konfigurowalne(leader_client):
 
 def test_prog_dobrego_wyniku_jest_domkniety(leader_client):
     """Rowno na progu = juz „dobra" (`>=`), nie „ok"."""
-    logistat.set_setting('norm_good_pct', 200)
-    logistat.db.session.commit()
+    set_setting('norm_good_pct', 200)
+    db.session.commit()
     # Srednia (100 + 100 + 400) / 3 = 200 szt./h, „Rowno" ma 400 = dokladnie 200%.
     for nazwa, sztuk in (('A', 50), ('B', 50), ('Rowno', 200)):
         u = make_user('operator', username=nazwa.lower(), display_name=nazwa)
@@ -223,11 +227,11 @@ def test_prog_dobrego_wyniku_jest_domkniety(leader_client):
 
 def test_filtr_dat_obcina_okres(leader_client):
     a = make_user('operator', username='a', display_name='Ala')
-    wczoraj = logistat.local_today() - timedelta(days=1)
+    wczoraj = local_today() - timedelta(days=1)
     godziny_pracy(a, 3, 40, 30)                      # dzis
     godziny_pracy(a, 3, 40, 30, dzien=wczoraj)
 
-    dzis = logistat.local_today().isoformat()
+    dzis = local_today().isoformat()
     tylko_dzis = wiersz(przeglad(leader_client, date_from=dzis, date_to=dzis), 'Ala')
 
     assert tylko_dzis['paczek'] == 3, 'wczorajsze paczki poza zakresem'
@@ -256,11 +260,11 @@ def test_brak_danych_nie_wywala(leader_client):
 
 def test_paczka_bez_startu_liczy_sztuki_ale_nie_czas(leader_client):
     a = make_user('operator', username='a', display_name='Ala')
-    c = logistat.ImportedCarton(barcode='BEZ-STARTU', land='PL', stueckzahl=10,
+    c = ImportedCarton(barcode='BEZ-STARTU', land='PL', stueckzahl=10,
                                 ziel_datum=ZIEL, data_pliku=ZIEL, uebergabe_nr='UB-1',
                                 scan_end_at=datetime.utcnow(), scan_end_by=a.id)
-    logistat.db.session.add(c)
-    logistat.db.session.commit()
+    db.session.add(c)
+    db.session.commit()
 
     r = wiersz(przeglad(leader_client), 'Ala')
 
@@ -273,7 +277,7 @@ def test_paczka_bez_startu_liczy_sztuki_ale_nie_czas(leader_client):
 def test_zerowy_czas_nie_dzieli_przez_zero(leader_client):
     """Paczka zaczeta i zakonczona w tej samej sekundzie."""
     a = make_user('operator', username='a', display_name='Ala')
-    t = logistat.local_day_bounds(logistat.local_today())[0] + timedelta(hours=1)
+    t = local_day_bounds(local_today())[0] + timedelta(hours=1)
     for i in range(3):
         paczka(f'ZERO-{i}', a, 10, t, t)
 
@@ -289,7 +293,7 @@ def test_zdezaktywowana_osoba_jest_widoczna_i_oznaczona(leader_client):
     a = make_user('operator', username='byla', display_name='Byla')
     godziny_pracy(a, 4, 40, 30)
     a.is_active_user = False
-    logistat.db.session.commit()
+    db.session.commit()
 
     r = wiersz(przeglad(leader_client), 'Byla')
 
@@ -306,11 +310,11 @@ def test_szablon_oznacza_nieaktywnych(leader_client):
 
 def test_wiersz_ma_rodzaj_pracownika_i_nazwe_zmiany(leader_client):
     a = make_user('operator', username='agencyjna', display_name='Agencyjna')
-    a.worker_type_id = logistat.UserOption.query.filter_by(
+    a.worker_type_id = UserOption.query.filter_by(
         kind='worker_type', name='Agencja 1').first().id
-    a.shift_group_id = logistat.UserOption.query.filter_by(
+    a.shift_group_id = UserOption.query.filter_by(
         kind='shift_group', name='Zmiana B').first().id
-    logistat.db.session.commit()
+    db.session.commit()
     godziny_pracy(a, 4, 40, 30)
     b = make_user('operator', username='bez-list', display_name='BezList')
     godziny_pracy(b, 1, 40, 30)                       # trafia do „za malo danych"
@@ -326,13 +330,13 @@ def test_wiersz_ma_rodzaj_pracownika_i_nazwe_zmiany(leader_client):
 def test_przeglad_nie_odpytuje_list_per_osoba(leader_client, queries):
     """Rodzaj i zmiana dochodza joinem do zapytania o uzytkownikow, nie osobnym
     SELECT-em na kazdy wiersz."""
-    opcja = logistat.UserOption.query.filter_by(kind='worker_type').first()
+    opcja = UserOption.query.filter_by(kind='worker_type').first()
     for i in range(5):
         u = make_user('operator', username=f'n1-{i}', display_name=f'N{i}')
         u.worker_type_id = opcja.id
-        logistat.db.session.commit()
+        db.session.commit()
         godziny_pracy(u, 3, 10, 10)
-    logistat.db.session.expire_all()
+    db.session.expire_all()
     queries.statements.clear()
 
     przeglad(leader_client)
@@ -437,12 +441,12 @@ def test_cel_odrzuca_smieci(leader_client):
 
 def test_endpoint_celu_nie_rusza_innych_ustawien(leader_client):
     """Lider dostal zapis do JEDNEGO klucza, nie do calych ustawien."""
-    przed = logistat.get_setting_int('max_work_minutes', 660)
+    przed = get_setting_int('max_work_minutes', 660)
 
     leader_client.put('/api/stats/target',
                       json={'target_szt_h': 100, 'max_work_minutes': 1})
 
-    assert logistat.get_setting_int('max_work_minutes', 660) == przed
+    assert get_setting_int('max_work_minutes', 660) == przed
 
 
 # ── skok do paczek zakonczonych przez osobe ──────────────────────────────────
@@ -452,7 +456,7 @@ def test_link_do_paczek_pokazuje_paczki_tej_osoby(leader_client):
     taki adres faktycznie zwraca jej zakonczone paczki."""
     a = make_user('operator', username='ala', display_name='Ala')
     b = make_user('operator', username='basia', display_name='Basia')
-    dzis = logistat.local_today()
+    dzis = local_today()
     godziny_pracy(a, 3, 40, 30, dzien=dzis)
     godziny_pracy(b, 3, 40, 30, dzien=dzis)
 
@@ -462,7 +466,7 @@ def test_link_do_paczek_pokazuje_paczki_tej_osoby(leader_client):
 
     # Pelne barcody, nie prefiks: `'ala-' in html` trafiloby tez w atrybut albo
     # klase i test przechodzilby niezaleznie od dzialania filtra.
-    widoczne = {c.barcode for c in logistat.ImportedCarton.query.all()
+    widoczne = {c.barcode for c in ImportedCarton.query.all()
                 if c.barcode in html}
 
     assert widoczne == {f'ala-{dzis:%m%d}-{i}' for i in range(3)}
