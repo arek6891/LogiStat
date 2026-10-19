@@ -19,6 +19,7 @@ from logistat.models.uzytkownicy import (  # noqa: F401
     user_options_by_kind,
     ROLES,
     PRIVILEGED_ROLES,
+    active_admin_count,
 )
 from logistat.models.zmiany import (  # noqa: F401
     Activity,
@@ -30,6 +31,7 @@ from logistat.models.zmiany import (  # noqa: F401
     ZNACZNIK_SZKOLEN_CZYNNOSCI,
     zaznacz_wszystkich_przeszkolonych,
     DailyStat,
+    get_or_create_shift,
 )
 from logistat.models.rozliczenie import (  # noqa: F401
     CountryMapping,

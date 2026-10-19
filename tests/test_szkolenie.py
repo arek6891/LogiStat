@@ -683,7 +683,10 @@ def test_dwie_stacje_naraz_daja_jeden_start_szkolenia(flask_app, leader, monkeyp
     nazwa_lidera = leader.username
     oryginal = logistat.stan_czasu_dzis
 
+    wywolania = []
+
     def wolno(user):
+        wywolania.append(1)   # dowod, ze podmiana dziala po przenosinach tras
         wynik = oryginal(user)
         time.sleep(0.3)
         return wynik
@@ -704,5 +707,6 @@ def test_dwie_stacje_naraz_daja_jeden_start_szkolenia(flask_app, leader, monkeyp
     for w in watki:
         w.join(timeout=15)
 
+    assert wywolania, 'wolna podmiana nie zostala wywolana — trasa uzywa innego modulu'
     assert wyniki == [200, 200]
     assert [z[0] for z in zdarzenia(t)] == ['training_start']

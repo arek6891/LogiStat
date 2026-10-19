@@ -410,7 +410,10 @@ def test_dwa_rownolegle_konce_zespolu_zamykaja_paczke_raz(flask_app, leader, mon
 
     oryginal = logistat.parse_scan_categories
 
+    wywolania = []
+
     def wolno(surowe):
+        wywolania.append(1)   # dowod, ze podmiana dziala (patrz test stanowiska)
         time.sleep(0.4)
         return oryginal(surowe)
 
@@ -431,6 +434,7 @@ def test_dwa_rownolegle_konce_zespolu_zamykaja_paczke_raz(flask_app, leader, mon
     for w in watki:
         w.join(timeout=10)
 
+    assert wywolania, 'wolna podmiana nie zostala wywolana — trasa uzywa innego modulu'
     assert sorted(wyniki) == [(200, False), (200, True)]
     c = k()
     assert c.scan_end_at and c.get_scan_categories() == {'labelling_on': 30}

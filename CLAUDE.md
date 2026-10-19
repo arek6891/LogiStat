@@ -15,13 +15,15 @@ docker compose down
 # Tests — need a Postgres; the compose file below provides one (port 55432, tmpfs)
 docker compose -f docker-compose.test.yml up -d
 pip install -r requirements-dev.txt
-pytest                               # 771 tests
+pytest                               # 776 tests
 docker compose -f docker-compose.test.yml down
 LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://u:p@host:5432/db pytest   # another DB
 # On .32 there is no pytest/venv — use the prebuilt runner image instead:
 docker run --rm --network host -v /opt/LogiStat:/app -w /app logistat-testrunner:latest pytest -q
 
-# Static check (npm i -g pyright; basic mode — pyrightconfig.json) — must be 0 errors (CI blocks)
+# Static check (npm i -g pyright; basic mode — pyrightconfig.json) — must be 0 errors (CI blocks).
+# On .32 the libraries are not installed, so local pyright is laxer than CI (Optional from
+# werkzeug/flask types) — CI is authoritative.
 pyright
 
 # Data consistency after every deploy (read-only; exit 1 = billing/data mismatch)
@@ -48,6 +50,7 @@ Every PR: **green CI** (`.github/workflows/testy.yml` — pytest on Postgres 16 
 - **`config.py`** (`resolve_secret_key`, `resolve_database_url`, defaults), **`extensions.py`** (`db = SQLAlchemy()`, `login_manager` — no app; `app.py` calls `init_app`).
 - **`models/`** by area: `uzytkownicy` (User, UserOption, `ROLES`), `zmiany` (Shift, attendance, activities, assignment, `SzkolenieCzynnosci`, DailyStat), `paczki` (ImportedCarton, UdzialPaczki), `rozliczenie` (GeneralStat, CostMapping, `rates_for`, CountryMapping, Forecast, category names), `czas_pracy` (WorkerTimeEvent, HistoriaCelu), `ustawienia` (AppSetting, `get_setting`). A new model goes into the right file **and** its import list in `models/__init__.py` (that is what `create_all()` sees). Request validation that `abort()`s or reads `current_user` (`resolve_user_option`, `ustaw_szkolenia`) stays in `app.py`.
 - **Services (DB, no request):** `rozliczenie.py` (`klucz_linii`, `recompute_general_stat`, `scan_category_totals`, `scan_coverage_map`, `przenies_linie`), `paczki.py` (`przelicz_ilosci_udzialow`, `odswiez_roznice`, `zapisz_tabele_kartonu`, `bledy_paczki`), `import_paczek.py` (`importuj_wiersze(rows, data_pliku, actor_id)`, CSV/Excel cell parsing). They never read `current_user`/`request` — the author comes as a parameter; `app.process_import_rows(rows, data_pliku)` is the thin wrapper that passes `current_user.id` (tests keep calling it with `acting_admin`).
+- **Web layer `logistat/web/`:** `wspolne.py` — `leader_required` / `admin_required` (roles from `PRIVILEGED_ROLES`), `acting_as_admin`, `json_body`, `parse_date`, `parse_shift_number`, `require_int`, `bezpieczny_next`, `blad_nieznanej_paczki`. Routes move here as **blueprints, one area per PR** (step 5). **URLs and methods are the contract** (JS, scanner stations, bookmarks): `tests/test_trasy.py` compares `app.url_map` with `tests/mapa_adresow.txt` (a new route = update the file in the same PR) and checks that every `url_for('…')` in templates/`app.py`/`logistat/` resolves, plus `login_view` and `BEZ_WYMOGU_ZMIANY_HASLA`. Renaming an endpoint to `blueprint.name` → fix all three in the same PR. The race tests that monkeypatch `app.parse_scan_categories` / `app.stan_czasu_dzis` assert the stub was called — when those routes move, patch the new module.
 - `app.py` imports and **re-exports** all of it, so `gunicorn app:app` and `logistat.X` in tests are unchanged. New pure logic → `logistat/`, not `app.py`.
 
 **Tests:** `tests/` (pytest). `conftest.py` sets `DATABASE_URL` **before importing `app`** (it runs `init_db()` at import) → `…@127.0.0.1:55432/logistat_test`, overridable with `LOGISTAT_TEST_DATABASE_URL`; unreachable DB → import raises with the start command. Each test gets a fresh schema + seed. Coverage is concentrated on money paths (import aggregation, `recompute_general_stat`, double rate, cost math) plus permissions, day boundaries, validation, page smoke test. `IsolatedClient` clears `g._login_user` / `g._rates_cache` per request — Flask reuses the test's app context, so two clients would otherwise share the cached login.

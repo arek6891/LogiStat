@@ -175,3 +175,13 @@ class DailyStat(db.Model):
             'user': self.user.to_dict(),
             'activity': self.activity.to_dict()
         }
+
+
+def get_or_create_shift(shift_date, shift_number):
+    """Get existing shift or create new one."""
+    shift = Shift.query.filter_by(date=shift_date, shift_number=shift_number).first()
+    if not shift:
+        shift = Shift(date=shift_date, shift_number=shift_number)
+        db.session.add(shift)
+        db.session.commit()
+    return shift
