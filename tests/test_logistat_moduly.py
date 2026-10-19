@@ -4,6 +4,7 @@ Granica architektury: moduly nie importuja `app` ani Flaska/SQLAlchemy, wiec
 da sie je testowac i uzywac bez bazy. Plus testy jednostkowe scalania okresow
 (dwie implementacje polaczone w jedna).
 """
+import os
 import subprocess
 import sys
 from datetime import date, datetime, timedelta
@@ -28,7 +29,8 @@ def test_modul_nie_ciagnie_aplikacji_ani_flaska(modul):
     assert wynik.stdout.strip() == '', f'{modul} importuje: {wynik.stdout.strip()}'
 
 
-@pytest.mark.parametrize('modul', ['logistat.config', 'logistat.extensions', 'logistat.models',
+@pytest.mark.parametrize('modul', ['logistat', 'logistat.config', 'logistat.extensions', 'logistat.models',
+                                   'logistat.baza', 'logistat.aplikacja',
                                    'logistat.rozliczenie', 'logistat.paczki', 'logistat.import_paczek',
                                    'logistat.web.wspolne', 'logistat.normy_dane',
                                    'logistat.dashboard_dane', 'logistat.przydzial',
@@ -59,6 +61,19 @@ def test_usluga_nie_importuje_warstwy_http(modul):
                            timeout=60, cwd='.')
     assert wynik.returncode == 0, wynik.stderr
     assert wynik.stdout.strip() == '', f'{modul} importuje warstwe HTTP: {wynik.stdout.strip()}'
+
+
+def test_create_app_nie_dotyka_bazy():
+    """Fabryka buduje aplikacje bez polaczenia z baza (krok 6): baza
+    nieosiagalna, a create_app() i tak przechodzi; schemat robi dopiero init_db()."""
+    kod = ('from logistat import create_app; a = create_app(); '
+           'print(len([r for r in a.url_map.iter_rules() if r.endpoint != "static"]))')
+    env = {**os.environ, 'DATABASE_URL': 'postgresql+psycopg2://nikt:nic@127.0.0.1:1/brak',
+           'SECRET_KEY': 'x' * 40}
+    wynik = subprocess.run([sys.executable, '-c', kod], capture_output=True, text=True,
+                           timeout=60, cwd='.', env=env)
+    assert wynik.returncode == 0, wynik.stderr
+    assert int(wynik.stdout.strip()) == 99
 
 
 def test_logistat_models_rejestruje_wszystkie_tabele():

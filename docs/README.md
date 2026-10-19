@@ -78,7 +78,6 @@ i `America/New_York`.
 
 ```
 LogiStat/
-├── app.py                  # Cały backend (modele, API, routing)
 ├── requirements.txt        # Zależności Python
 ├── requirements-dev.txt    # + pytest (testy)
 ├── pytest.ini              # Konfiguracja testów
@@ -118,6 +117,15 @@ LogiStat/
 ├── docker-compose.yml      # Aplikacja + PostgreSQL
 ├── docker-compose.test.yml # PostgreSQL pod pytest (port 55432, tmpfs)
 ├── .env.example            # Wzor konfiguracji lokalnej (SECRET_KEY, haslo bazy)
+├── app.py                  # Punkt wejścia: create_app() + init_db() (gunicorn app:app)
+├── logistat/               # Cały kod aplikacji (podział z 2026-10, opis w docs/ARCHITEKTURA.md)
+│   ├── aplikacja.py        # create_app(): konfiguracja, błędy, blueprinty (bez bazy)
+│   ├── baza.py             # init_db(): schemat, migracje kolumn, seed
+│   ├── config.py, extensions.py
+│   ├── models/             # Modele wg obszarów
+│   ├── web/                # Blueprinty (trasy) wg obszarów + wspolne.py
+│   ├── rozliczenie.py, paczki.py, import_paczek.py, normy_dane.py, … # usługi (baza, bez HTTP)
+│   └── czas.py, kategorie.py, tabela_ilosci.py, okresy.py, normy.py   # czysta logika
 ├── static/
 │   ├── style.css           # Motyw: grafit Logwin, wszystkie kolory jako tokeny
 │   ├── favicon.svg

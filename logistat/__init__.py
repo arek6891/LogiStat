@@ -1,7 +1,19 @@
-"""LogiStat — pakiet z logika aplikacji (podzial app.py, 2026-10-16).
+"""LogiStat — pakiet aplikacji.
 
-Moduly tu NIE importuja `app` ani Flaska: czysta logika, testowalna bez bazy.
-`app.py` je importuje i re-eksportuje, wiec `import app as logistat` w testach
-i `gunicorn app:app` dzialaja bez zmian. Plan dalszych krokow:
-docs/ARCHITEKTURA.md („Przeglad architektury i plan podzialu app.py").
+Uklad i kierunek zaleznosci (pilnuja tests/test_logistat_moduly.py i test_trasy.py):
+    web/ (blueprinty, warstwa HTTP) → uslugi (rozliczenie, paczki, normy_dane, …)
+    → models/ → extensions (db, login_manager);  czysta logika: czas, kategorie,
+    tabela_ilosci, okresy, normy — bez Flaska i bazy.
+Aplikacje buduje `create_app()` (logistat/aplikacja.py) — bez dotykania bazy;
+schemat, migracje i seed robi `logistat.baza.init_db()`. Punkt wejscia
+`gunicorn app:app` (app.py). Historia podzialu: docs/ARCHITEKTURA.md.
+
+Ten plik celowo nic nie importuje: import czystego modulu (np. `logistat.czas`)
+laduje najpierw pakiet, a nie moze przy tym ciagnac Flaska.
 """
+
+
+def create_app():
+    """Aplikacja Flask — patrz `logistat.aplikacja.create_app`."""
+    from logistat.aplikacja import create_app as _create_app
+    return _create_app()
