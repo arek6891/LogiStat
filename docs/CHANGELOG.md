@@ -1,5 +1,17 @@
 # LogiStat — Changelog
 
+## 2026-10-16 (3) — Poprawki z przeglądu architektury
+
+### Poprawione
+- **Logowanie:** adres `?next=` przyjmowany tylko jako ścieżka w aplikacji (wcześniej po
+  zalogowaniu można było zostać przekierowanym na obcą stronę).
+- **Domyślne hasło admina:** logowanie hasłem `admin123` wymusza jego zmianę — do tego czasu
+  każda strona odsyła do Profilu.
+- **Statystyki ogólne, Mapowanie kosztów:** cudzysłów albo `\` w nazwie kategorii (ustawianej
+  przez admina) psuł skrypt strony.
+- **Start aplikacji:** błąd przy dodawaniu kolumny lub indeksu do bazy zatrzymuje start
+  z nazwą kolumny, zamiast zostać po cichu pominięty.
+
 ## 2026-10-16 (2) — CI, lista kontrolna przeglądu, kontrola spójności
 
 ### Dodane

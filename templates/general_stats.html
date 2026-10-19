@@ -364,7 +364,7 @@
         if (await autoZapis.przedOpuszczeniem()) window.location.href = this.href;
     });
 
-    const ratesByYm = JSON.parse('{{ rates_by_ym|tojson|safe }}');
+    const ratesByYm = {{ rates_by_ym|tojson }};
     const TOTAL_AMOUNT_BEZ = {{ total_amount_bez | tojson }};
     // Ilosci ze skanow moga miec polowki (Labelling twice ×1,5).
     const ilosc = (v) => parseFloat(v) || 0;
@@ -373,7 +373,7 @@
     function updateRowTotal(row) {
         let total = 0;
         let totalAmount = 0;
-        const categories = JSON.parse('{{ categories|tojson|safe }}');
+        const categories = {{ categories|tojson }};
         const ym = row.dataset.ym;
         const rates = ratesByYm[ym] || {};
 
@@ -423,7 +423,7 @@
         if (sumTotAmtEl) sumTotAmtEl.textContent = pokazIlosc(sumTotalAmounts);
 
         // Category Amounts and Costs
-        const categories = JSON.parse('{{ categories|tojson|safe }}');
+        const categories = {{ categories|tojson }};
         categories.forEach(cat => {
             let catAmount = 0;
             let catCost = 0;

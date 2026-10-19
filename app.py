@@ -5,6 +5,7 @@ import json
 import calendar
 import hashlib
 import math
+from urllib.parse import urlsplit
 from types import SimpleNamespace
 from bisect import bisect_right
 from datetime import datetime, date, time, timedelta, timezone
@@ -1510,6 +1511,36 @@ def index():
     return redirect(url_for('login'))
 
 
+def bezpieczny_next(adres):
+    """`?next=` tylko jako sciezka w tej aplikacji. Pelny adres (`https://…`,
+    `//host`) po zalogowaniu wysylalby uzytkownika na obca strone (open redirect)."""
+    if not adres:
+        return None
+    czesci = urlsplit(adres)
+    if czesci.scheme or czesci.netloc or not adres.startswith('/') or adres.startswith('//') \
+            or '\\' in adres:
+        return None
+    return adres
+
+
+# Endpointy dostepne, gdy trzeba najpierw zmienic domyslne haslo.
+BEZ_WYMOGU_ZMIANY_HASLA = {'profile', 'logout', 'static', 'favicon', 'login'}
+
+
+@app.before_request
+def wymus_zmiane_domyslnego_hasla():
+    """Zalogowany domyslnym haslem (`DEFAULT_ADMIN_PASSWORD`) — dopoki go nie
+    zmieni, wszystko poza /profile odsyla tam (API: 403 JSON). Wczesniej
+    `admin123` mogl zostac na zawsze; dotyczy tez baz juz istniejacych, bo
+    sprawdzamy haslo przy logowaniu, nie znacznik w bazie."""
+    if not session.get('wymus_zmiane_hasla') or request.endpoint in BEZ_WYMOGU_ZMIANY_HASLA:
+        return None
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Najpierw zmień domyślne hasło (Profil).'}), 403
+    flash('Ze względów bezpieczeństwa zmień domyślne hasło, zanim przejdziesz dalej.', 'error')
+    return redirect(url_for('profile'))
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -1519,8 +1550,11 @@ def login():
         if (user and user.is_active_user and user.role in PRIVILEGED_ROLES
                 and user.check_password(password)):
             login_user(user)
-            next_page = request.args.get('next')
-            return redirect(next_page or url_for('index'))
+            session.pop('wymus_zmiane_hasla', None)
+            if password == DEFAULT_ADMIN_PASSWORD:
+                session['wymus_zmiane_hasla'] = True
+                return redirect(url_for('profile'))
+            return redirect(bezpieczny_next(request.args.get('next')) or url_for('index'))
         flash('Nieprawidłowy login lub hasło.', 'error')
     return render_template('login.html')
 
@@ -1528,6 +1562,7 @@ def login():
 @app.route('/logout')
 @login_required
 def logout():
+    session.pop('wymus_zmiane_hasla', None)
     logout_user()
     return redirect(url_for('login'))
 
@@ -1550,6 +1585,7 @@ def profile():
         else:
             current_user.set_password(new)
             db.session.commit()
+            session.pop('wymus_zmiane_hasla', None)
             flash('Hasło zostało zmienione.', 'success')
             return redirect(url_for('profile'))
     return render_template('profile.html')
@@ -6596,6 +6632,30 @@ def seed_data():
 #  MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 
+# (tabela, kolumna, definicja) — dokladane przez migrate_columns() do zyjacej
+# bazy. Kazda nowa kolumna modelu MUSI tu trafic (+ tests/test_migracje.py).
+MIGRACJE_KOLUMN = [
+    ("imported_carton", "scan_category_data", "TEXT DEFAULT '{}'"),
+    ("general_stat",    "category_source",    "VARCHAR(10) DEFAULT 'manual'"),
+    # "user" to slowo zastrzezone — bez cudzyslowu ALTER pada skladniowo,
+    # a do 2026-10-16 try/except w migrate_columns() polykal ten blad.
+    ('"user"', "worker_type_id", "INTEGER REFERENCES user_option(id)"),
+    ('"user"', "shift_group_id", "INTEGER REFERENCES user_option(id)"),
+    ("imported_carton", "data_pliku",         "DATE"),
+    ('"user"', "is_trainer", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    # "user" w REFERENCES tez musi byc w cudzyslowie.
+    ("worker_time_event", "training_lead_id", 'INTEGER REFERENCES "user"(id)'),
+    ("historia_celu", "zmienil_id", 'INTEGER REFERENCES "user"(id)'),
+    ("historia_celu", "zmieniono_at", "TIMESTAMP"),
+    # Tabela ilosci na koniec paczki (2026-10-15).
+    ("imported_carton", "tabela_ilosci", "TEXT"),
+    ("imported_carton", "roznica", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("imported_carton", "roznica_potwierdzona_at", "TIMESTAMP"),
+    ("imported_carton", "roznica_potwierdzona_przez", 'INTEGER REFERENCES "user"(id)'),
+    ("udzial_paczki", "tabela", "TEXT"),
+]
+
+
 def migrate_columns():
     """Add missing columns to existing tables without dropping data.
 
@@ -6607,39 +6667,23 @@ def migrate_columns():
     ktora juz zyje. Stad `test_migracji_kolumn`, ktory kasuje kolumne i sprawdza,
     czy wraca.
 
-    `ADD COLUMN IF NOT EXISTS` czyni to idempotentnym; try/except zostaje na
-    wypadek starszego serwera, a nieudany statement przerywa transakcje —
-    stad rollback.
+    `ADD COLUMN IF NOT EXISTS` czyni to idempotentnym, wiec blad tutaj to
+    zawsze prawdziwy blad (literowka w typie, FK do nieistniejacej tabeli,
+    `user` bez cudzyslowu). Do 2026-10-16 except go polykal i aplikacja
+    wstawala bez kolumny — `UndefinedColumn` wychodzil dopiero na pierwszym
+    zapytaniu. Teraz start pada od razu, z nazwa kolumny.
     """
     with db.engine.connect() as conn:
-        migrations = [
-            ("imported_carton", "scan_category_data", "TEXT DEFAULT '{}'"),
-            ("general_stat",    "category_source",    "VARCHAR(10) DEFAULT 'manual'"),
-            # "user" to slowo zastrzezone — bez cudzyslowu ALTER pada skladniowo,
-            # a try/except ponizej by to po cichu polknal.
-            ('"user"', "worker_type_id", "INTEGER REFERENCES user_option(id)"),
-            ('"user"', "shift_group_id", "INTEGER REFERENCES user_option(id)"),
-            ("imported_carton", "data_pliku",         "DATE"),
-            ('"user"', "is_trainer", "BOOLEAN NOT NULL DEFAULT FALSE"),
-            # "user" w REFERENCES tez musi byc w cudzyslowie.
-            ("worker_time_event", "training_lead_id", 'INTEGER REFERENCES "user"(id)'),
-            ("historia_celu", "zmienil_id", 'INTEGER REFERENCES "user"(id)'),
-            ("historia_celu", "zmieniono_at", "TIMESTAMP"),
-            # Tabela ilosci na koniec paczki (2026-10-15).
-            ("imported_carton", "tabela_ilosci", "TEXT"),
-            ("imported_carton", "roznica", "BOOLEAN NOT NULL DEFAULT FALSE"),
-            ("imported_carton", "roznica_potwierdzona_at", "TIMESTAMP"),
-            ("imported_carton", "roznica_potwierdzona_przez", 'INTEGER REFERENCES "user"(id)'),
-            ("udzial_paczki", "tabela", "TEXT"),
-        ]
 
-        for table, column, col_def in migrations:
+        for table, column, col_def in MIGRACJE_KOLUMN:
             try:
                 conn.execute(db.text(
                     f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {col_def}"))
                 conn.commit()
-            except Exception:
-                conn.rollback()  # kolumna juz istnieje
+            except Exception as e:
+                conn.rollback()
+                raise RuntimeError(
+                    f'migrate_columns: nie udalo sie dodac {table}.{column} ({col_def}): {e}') from e
 
         indexes = [
             "CREATE INDEX IF NOT EXISTS ix_carton_ziel_datum   ON imported_carton (ziel_datum)",
@@ -6657,8 +6701,9 @@ def migrate_columns():
             try:
                 conn.execute(db.text(sql))
                 conn.commit()
-            except Exception:
+            except Exception as e:
                 conn.rollback()
+                raise RuntimeError(f'migrate_columns: indeks nie powstal ({sql.split(" ON ")[0]}): {e}') from e
 
 
 ZNACZNIK_MIGRACJI_DATY_PLIKU = 'migracja_data_pliku'

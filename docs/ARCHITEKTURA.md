@@ -119,6 +119,20 @@ Quantities entered at package end are the **source of truth for `category_data`*
 - **Static assets:** `{{ static_v('style.css') }}` appends the file's mtime — no manual `?v=` bump.
 - **`escapeHtml()` in `base.html`** — everything interpolated into `innerHTML` from the DB (display names, activity names, barcodes, countries) goes through it. Barcodes arrive from CSV imports, so the risk is *stored* XSS.
 
+## Przeglad architektury i plan podzialu app.py (2026-10-16)
+
+**Zgloszenie.** „Architekt ma przejrzec aplikacje — czy jest zrobiona z glowa i czy nie walimy calego kodu do jednego pliku. Robimy zgodnie ze sztuka."
+
+**Ocena.** Dobre i do zachowania: restrykcyjna konfiguracja (`resolve_secret_key`/`resolve_database_url`), testy na Postgresie z liczeniem zapytan i testem wyscigu startu, `init_db()` pod advisory lockiem, `migrate_columns()` zamiast Alembica (zmiany tylko addytywne — Alembic dopiero przy pierwszej nieaddytywnej), dokumentacja decyzji. Dlug: `app.py` 6 836 linii (17 modeli, 99 tras); logika miesza sie z HTTP (`process_import_rows` czyta `current_user`, helpery robia `commit`); ~4 600 linii JS w szablonach bez zadnej kontroli; duplikaty (`_zlacz_okresy` vs `suma_zlaczonych_okresow`, dwa eksporty Excela); `import app` robi DDL i seed.
+
+**Plan (kazdy krok osobny PR, testy zielone, `app.py` zostaje punktem wejscia `gunicorn app:app` i re-eksportuje symbole dla testow):** 0) poprawki bezpieczenstwa/poprawnosci (ponizej); 1) JS z szablonow do `static/js/` — najwieksza wartosc, CI zacznie sprawdzac skladnie; 2) czyste moduly logiki (`logistat/services/`: tabela ilosci, normy, okresy, czas); 3) `extensions`/`config`/modele; 4) rozliczenie i import z `actor_id` zamiast `current_user`; 5) trasy w modulach przez te same nazwy endpointow; 6) `create_app()`, `init_db` poza importem. Nie robimy: przepisywania naraz, Alembica teraz, zmiany nazw endpointow razem z przenosinami. Pulapka: 3 testy wyscigow monkeypatchuja `app.parse_scan_categories` / `app.stan_czasu_dzis` — przy przenosinach przepiac cel patcha w tym samym PR.
+
+**Krok 0 — co i dlaczego.**
+- *Open redirect:* `redirect(request.args.get('next'))` przyjmowal pelny adres; `bezpieczny_next()` przepuszcza tylko sciezke tej aplikacji.
+- *Domyslne haslo:* `admin123` moglo zostac na zawsze. Sprawdzane przy logowaniu (nie znacznik w bazie), wiec obejmuje tez istniejace bazy; do zmiany hasla wszystko odsyla na `/profile`, API zwraca 403.
+- *`JSON.parse('{{ x|tojson|safe }}')`:* `tojson` w apostrofach JS — `"`/`\` w nazwie kategorii (edytuje admin) zmienialy literal i strona przestawala dzialac. Teraz `const x = {{ x|tojson }};` (tojson jest bezpieczny w `<script>`).
+- *`migrate_columns()`:* przy `IF NOT EXISTS` blad to zawsze prawdziwy blad, a except go polykal — aplikacja wstawala bez kolumny i padala na pierwszym zapytaniu. Teraz start przerywa `RuntimeError` z nazwa kolumny; lista w `MIGRACJE_KOLUMN` (stala modulu, test podmienia ja na zla kolumne).
+
 ## Motyw: ciemnoszary grafit w barwach Logwin (2026-10-16)
 
 **Zgloszenie.** Operacja chce aplikacje w barwach Logwin, z dominujaca szaroscia, „zeby nie meczylo oczu". Do wyboru byly jasnoszary i ciemnoszary grafit — wybrany **ciemnoszary grafit**.

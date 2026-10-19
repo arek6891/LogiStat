@@ -15,7 +15,7 @@ docker compose down
 # Tests — need a Postgres; the compose file below provides one (port 55432, tmpfs)
 docker compose -f docker-compose.test.yml up -d
 pip install -r requirements-dev.txt
-pytest                               # 667 tests
+pytest                               # 678 tests
 docker compose -f docker-compose.test.yml down
 LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://u:p@host:5432/db pytest   # another DB
 # On .32 there is no pytest/venv — use the prebuilt runner image instead:
@@ -35,7 +35,7 @@ DATABASE_URL=postgresql+psycopg2://logistat:pass@127.0.0.1:5432/logistat \
 docker compose down -v && docker compose up -d      # re-creates + seeds
 ```
 
-Default admin after seed: `admin` / `admin123` — override with `ADMIN_PASSWORD` **before the first start** (`docs/DEPLOY.md`).
+Default admin after seed: `admin` / `admin123` — override with `ADMIN_PASSWORD` **before the first start** (`docs/DEPLOY.md`). Logging in with `DEFAULT_ADMIN_PASSWORD` sets `session['wymus_zmiane_hasla']`: everything except `/profile` redirects there (API → 403 JSON) until the password is changed (checked at login, so it covers existing databases too).
 
 ## Review & CI
 
@@ -49,7 +49,7 @@ Every PR: **green CI** (`.github/workflows/testy.yml` — pytest on Postgres 16 
 
 **Database: PostgreSQL only.** `DATABASE_URL` is mandatory — `resolve_database_url()` raises at import if missing or SQLite. `.31` overrides the `db` service in `docker-compose.override.yml`. Flask-SQLAlchemy, no Flask-Migrate. **The ORM is the single source of truth for the schema** (`db.create_all()`); never reintroduce a hand-written DDL file (the old one broke `json.loads` with JSONB and wrote local time via `DEFAULT NOW()`).
 - New **tables**: `db.create_all()` handles them on startup.
-- New **columns**: **must** go into `migrate_columns()` (`ALTER TABLE … ADD COLUMN IF NOT EXISTS`). `create_all()` never adds a column to an existing table → `UndefinedColumn` after deploy, and ordinary tests can't see it (fresh schema). **Add a case to `tests/test_migracje.py`** with every new column.
+- New **columns**: **must** go into `MIGRACJE_KOLUMN` (applied by `migrate_columns()`, `ALTER TABLE … ADD COLUMN IF NOT EXISTS`). A failing ALTER / index **aborts startup** with the column name (2026-10-16; it used to be swallowed). `create_all()` never adds a column to an existing table → `UndefinedColumn` after deploy, and ordinary tests can't see it (fresh schema). **Add a case to `tests/test_migracje.py`** with every new column.
 - The `"user"` table name is a reserved word — quote it in `migrate_columns()`; unquoted, the try/except swallows the syntax error silently.
 - **No `func.date()` for day grouping** — group in Python via `local_day_bounds()`.
 - JSON lives in `db.Text` (JSONB is banned): `GeneralStat.category_data`, `CostMapping.rates_data`, `ImportedCarton.scan_category_data` — always via `get_…()` / `set_…()` accessors.
@@ -176,6 +176,8 @@ Every PR: **green CI** (`.github/workflows/testy.yml` — pytest on Postgres 16 
 - **Backups:** `pg_dump`.
 - **Remote work on .32 (2026-10-12):** Claude Code runs as a Remote Control session inside tmux session **`claude`** (`tmux new -d -s claude -c /opt/LogiStat 'claude --remote-control logistat'`), used from claude.ai/code. Check `tmux ls` before starting anything: **never start a second Claude session** next to it (it would just eat the server's resources), and never kill `claude` or the other tmux sessions (`gemini`, `linux`, `postgres`). It doesn't survive a reboot, so start it again with the same command.
 - **Config** (`docs/DEPLOY.md`): `SECRET_KEY` mandatory — `resolve_secret_key()` raises (bypass `LOGISTAT_ALLOW_DEV_SECRET=1`); from `.env` via Compose. **Never `${VAR:?}` in `docker-compose.yml`** — resolved before the override merges, breaks `.31` (no `.env`). `MAX_UPLOAD_MB` (32) → 413 JSON. `SESSION_COOKIE_SAMESITE=Lax` always; `SESSION_COOKIE_SECURE` opt-in (`.31` also on plain HTTP).
+- **Login `?next=`** only via `bezpieczny_next()` (a local path; full URLs, `//host`, `\` → index — open redirect).
+- **JSON into `<script>`:** `const x = {{ v | tojson }};` — never `JSON.parse('{{ v|tojson|safe }}')` (a `"` or `\` in an admin-edited category name broke the page).
 - **`/api/` errors are JSON** (one `@app.errorhandler(HTTPException)`): `abort(400, 'komunikat')`, front reads `data.error`. Helpers: `json_body()`, `parse_date()` (empty → today; for range filters call conditionally), `parse_shift_number()`, `require_int()`.
 - **Static:** `{{ static_v('style.css') }}` appends mtime.
 - **JSON in an HTML attribute → single quotes:** `data-x='{{ v | tojson }}'`. `tojson` escapes `'` but not `"`, so a double-quoted attribute is cut at the first `"` — the `/paczki` „✎ Ilości" modal showed all zeros and saving would have wiped the quantities (fixed 2026-10-13). CSS variable is `--bg-card-solid`; `--surface` does not exist (transparent modals) — check new `var(--x)` names against `:root`.

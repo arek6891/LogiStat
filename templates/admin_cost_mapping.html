@@ -63,8 +63,8 @@
 
 {% block scripts %}
 <script>
-    const categoryLabels = JSON.parse('{{ category_labels|tojson|safe }}');
-    const categories = JSON.parse('{{ categories|tojson|safe }}');
+    const categoryLabels = {{ category_labels|tojson }};
+    const categories = {{ categories|tojson }};
 
     // Ustaw dzisiejszy rok i miesiąc
     const today = new Date();
