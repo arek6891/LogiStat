@@ -55,8 +55,8 @@
                         class="{% if request.endpoint == 'data_entry' %}active{% endif %}">
                         <span class="icon">✏️</span> Wpis ilości
                     </a></li>
-                <li><a href="{{ url_for('stats') }}"
-                        class="{% if request.endpoint == 'stats' %}active{% endif %}">
+                <li><a href="{{ url_for('normy.stats') }}"
+                        class="{% if request.endpoint == 'normy.stats' %}active{% endif %}">
                         <span class="icon">📊</span> Normy
                     </a></li>
                 <li><a href="{{ url_for('paczki_view') }}"
