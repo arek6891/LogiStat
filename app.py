@@ -8,21 +8,15 @@ import math
 from urllib.parse import urlsplit
 from types import SimpleNamespace
 from bisect import bisect_right
-from datetime import datetime, date, time, timedelta, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime, date, timedelta, timezone
 from functools import wraps
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    flash, jsonify, session, g, has_request_context, abort, make_response
+    flash, jsonify, session, abort, make_response
 )
 from werkzeug.exceptions import BadRequest, HTTPException
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import (
-    LoginManager, UserMixin, login_user, login_required,
-    logout_user, current_user
-)
-from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import login_user, login_required, logout_user, current_user
 from sqlalchemy import func, and_, or_, case
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
@@ -43,65 +37,56 @@ from logistat.tabela_ilosci import (
     wczytaj_json_dict)
 from logistat.okresy import suma_zlaczonych_okresow
 from logistat.normy import policz_wydajnosc
+from logistat.config import DEV_SECRET_KEY, DEFAULT_MAX_UPLOAD_MB, DEFAULT_ADMIN_PASSWORD, resolve_secret_key, resolve_database_url
+from logistat.extensions import db, login_manager
+from logistat.models import (  # noqa: F401 — re-eksport dla testow i reszty app.py
+    AppSetting,
+    SETTING_DEFAULTS,
+    get_setting,
+    get_setting_int,
+    set_setting,
+    User,
+    USER_OPTION_KINDS,
+    USER_OPTION_DEFAULTS,
+    UserOption,
+    user_options_by_kind,
+    ROLES,
+    PRIVILEGED_ROLES,
+    Activity,
+    Shift,
+    ShiftAttendance,
+    ActivityAssignment,
+    SzkolenieCzynnosci,
+    szkolenia_czynnosci,
+    ZNACZNIK_SZKOLEN_CZYNNOSCI,
+    zaznacz_wszystkich_przeszkolonych,
+    DailyStat,
+    CountryMapping,
+    KLUCZ_NAZWY_PL,
+    NAZWA_PL_MAX,
+    nazwy_kategorii_pl,
+    etykieta_kategorii,
+    etykiety_kategorii,
+    empty_category_data,
+    Forecast,
+    GeneralStat,
+    CostMapping,
+    rates_for,
+    ImportedCarton,
+    UDZIAL_PRZEKAZANA,
+    UDZIAL_ZESPOL,
+    UdzialPaczki,
+    WorkerTimeEvent,
+    EVENT_TYPES,
+    TRYBY_CZASU,
+    TRYBY_SKANU,
+    KOMUNIKATY_TRWANIA,
+    HistoriaCelu,
+    historia_celu_lista,
+    POCZATEK_HISTORII_CELU,
+)
 from openpyxl.chart import BarChart, Reference
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-
-# ── App Config ───────────────────────────────────────────────────────────────
-
-DEV_SECRET_KEY = 'logistat-dev-key-change-me'
-# Gorny limit uploadu (import CSV/Excel czyta plik do pamieci przez file.read(),
-# a gunicorn ma 2 workery — bez limitu jeden plik potrafi wywalic kontener).
-DEFAULT_MAX_UPLOAD_MB = 32
-# Haslo konta 'admin' zakladanego przy pierwszym starcie; nadpisywalne
-# zmienna ADMIN_PASSWORD (patrz docs/DEPLOY.md).
-DEFAULT_ADMIN_PASSWORD = 'admin123'
-
-
-def resolve_secret_key(env=None):
-    """Zwroc SECRET_KEY albo rzuc.
-
-    Dotad brak klucza cicho spadal na staly klucz dev — sesje kazdego admina
-    dalyby sie podrobic i nikt by sie o tym nie dowiedzial. Odkad KAZDE
-    srodowisko jest serwerowe (Postgres, wlasny compose), klucz jest wymagany
-    zawsze. Swiadome pominiecie (lokalny eksperyment): LOGISTAT_ALLOW_DEV_SECRET=1.
-    """
-    env = os.environ if env is None else env
-    key = env.get('SECRET_KEY', '').strip()
-    if key:
-        return key
-    if env.get('LOGISTAT_ALLOW_DEV_SECRET') == '1':
-        return DEV_SECRET_KEY
-    raise RuntimeError(
-        'SECRET_KEY nie jest ustawiony. Wygeneruj go '
-        '(python3 -c "import secrets; print(secrets.token_hex(32))") i ustaw '
-        'w docker-compose.override.yml albo w srodowisku. '
-        'Swiadome pominiecie: LOGISTAT_ALLOW_DEV_SECRET=1.'
-    )
-
-
-def resolve_database_url(env=None):
-    """Zwroc DATABASE_URL albo rzuc — LogiStat chodzi wylacznie na PostgreSQL.
-
-    Dotad brak zmiennej cicho spadal na `sqlite:///logistat.db` obok kodu, wiec
-    zle skonfigurowany kontener startowal i zapisywal dane do pliku, ktorego
-    nikt nie backupuje. Lepiej nie wstac.
-    """
-    env = os.environ if env is None else env
-    url = env.get('DATABASE_URL', '').strip()
-    if not url:
-        raise RuntimeError(
-            'DATABASE_URL nie jest ustawiony. LogiStat dziala wylacznie na '
-            'PostgreSQL — ustaw np. '
-            'postgresql+psycopg2://logistat:haslo@db:5432/logistat '
-            '(patrz docker-compose.yml i docs/DEPLOY.md).'
-        )
-    if url.startswith('sqlite'):
-        raise RuntimeError(
-            f'SQLite nie jest juz wspierany (DATABASE_URL={url!r}). '
-            'LogiStat dziala wylacznie na PostgreSQL.'
-        )
-    return url
-
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = resolve_secret_key()
@@ -123,7 +108,7 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE') == '1'
 
-db = SQLAlchemy(app)
+db.init_app(app)
 
 
 @app.errorhandler(HTTPException)
@@ -148,7 +133,6 @@ def _upload_za_duzy(e):
     return komunikat, 413
 
 
-login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
@@ -177,95 +161,9 @@ def localdt_filter(dt, fmt='%d.%m.%Y %H:%M'):
         return '—'
     return utc_to_local(dt).strftime(fmt)
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  MODELS
-# ══════════════════════════════════════════════════════════════════════════════
-
-class User(UserMixin, db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(100), unique=True, nullable=False)
-    display_name = db.Column(db.String(150), nullable=False)
-    barcode_id = db.Column(db.String(100), unique=True, nullable=True)
-    password_hash = db.Column(db.String(200), nullable=True)  # only leaders/admins
-    role = db.Column(db.String(20), default='operator')  # operator | leader | admin
-    is_active_user = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    # Pola opisowe z list slownikowych, ktore admin definiuje sam (UserOption).
-    # `shift_group`, nie `shift` — `Shift` / `shift_id` to juz zmiana 1/2 danego
-    # dnia, a „Zmiana A/B/C" to stala brygada pracownika.
-    worker_type_id = db.Column(db.Integer, db.ForeignKey('user_option.id'), nullable=True)
-    shift_group_id = db.Column(db.Integer, db.ForeignKey('user_option.id'), nullable=True)
-    worker_type = db.relationship('UserOption', foreign_keys=[worker_type_id])
-    shift_group = db.relationship('UserOption', foreign_keys=[shift_group_id])
-    # „Szkolacy" — osoba szkolaca nowych. Tylko ona moze wbic sie na kafelek
-    # „Szkolenie" w Czasie pracy, a paczka, ktora choc czesciowo przypada na
-    # szkolenie, liczy sie jej w Normach cala jako 100% celu (`policz_wydajnosc()`).
-    is_trainer = db.Column(db.Boolean, default=False, nullable=False)
-
-    def set_password(self, password):
-        self.password_hash = generate_password_hash(password)
-
-    def check_password(self, password):
-        if not self.password_hash:
-            return False
-        return check_password_hash(self.password_hash, password)
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'username': self.username,
-            'display_name': self.display_name,
-            'barcode_id': self.barcode_id,
-            'role': self.role,
-            'is_active_user': self.is_active_user,
-            'worker_type_id': self.worker_type_id,
-            'worker_type': self.worker_type.name if self.worker_type else None,
-            'shift_group_id': self.shift_group_id,
-            'shift_group': self.shift_group.name if self.shift_group else None,
-            'is_trainer': bool(self.is_trainer),
-        }
-
-
-# Rodzaje list slownikowych przypisywanych uzytkownikom. Klucz = `kind` w
-# UserOption, wartosc = kolumna na User, ktora na nia wskazuje.
-USER_OPTION_KINDS = {
-    'worker_type': 'worker_type_id',   # Rodzaj pracownika: Logwin / agencje
-    'shift_group': 'shift_group_id',   # Nazwa zmiany: Zmiana A / B / C
-}
-
-USER_OPTION_DEFAULTS = {
-    'worker_type': ['Logwin', 'Agencja 1', 'Agencja 2'],
-    'shift_group': ['Zmiana A', 'Zmiana B', 'Zmiana C'],
-}
-
-
-class UserOption(db.Model):
-    """Pozycja listy rozwijanej na koncie uzytkownika — tresc ustala admin."""
-    id = db.Column(db.Integer, primary_key=True)
-    kind = db.Column(db.String(30), nullable=False)
-    name = db.Column(db.String(100), nullable=False)
-    sort_order = db.Column(db.Integer, default=0)
-
-    __table_args__ = (
-        db.UniqueConstraint('kind', 'name', name='uq_user_option_kind_name'),
-    )
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'kind': self.kind,
-            'name': self.name,
-            'sort_order': self.sort_order,
-        }
-
-
-def user_options_by_kind():
-    """{'worker_type': [UserOption…], 'shift_group': […]} — do szablonow."""
-    wynik = {k: [] for k in USER_OPTION_KINDS}
-    for o in UserOption.query.order_by(UserOption.sort_order, UserOption.name).all():
-        wynik.setdefault(o.kind, []).append(o)
-    return wynik
-
+# ── Walidacja danych z zadania dla modeli (400 przy zlej wartosci) ──────────
+# Zostaja w warstwie HTTP: uzywaja abort() i current_user, modele w
+# logistat/models/ nie wiedza nic o zadaniu.
 
 def resolve_user_option(value, kind):
     """Id opcji danego rodzaju albo None (puste = brak). Zly id / rodzaj → 400."""
@@ -275,115 +173,6 @@ def resolve_user_option(value, kind):
     if opt is None or opt.kind != kind:
         abort(400, 'Nieprawidłowa wartość listy.')
     return opt.id
-
-
-class Activity(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), unique=True, nullable=False)
-    sort_order = db.Column(db.Integer, default=0)
-    is_active = db.Column(db.Boolean, default=True)
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'name': self.name,
-            'sort_order': self.sort_order,
-            'is_active': self.is_active
-        }
-
-
-class Shift(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    date = db.Column(db.Date, nullable=False)
-    shift_number = db.Column(db.Integer, nullable=False)  # 1 or 2
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    __table_args__ = (
-        db.UniqueConstraint('date', 'shift_number', name='uq_shift_date_number'),
-    )
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'date': self.date.isoformat(),
-            'shift_number': self.shift_number
-        }
-
-
-class ShiftAttendance(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    shift_id = db.Column(db.Integer, db.ForeignKey('shift.id'), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    scanned_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    shift = db.relationship('Shift', backref=db.backref('attendances', lazy=True))
-    user = db.relationship('User', backref=db.backref('attendances', lazy=True))
-
-    __table_args__ = (
-        db.UniqueConstraint('shift_id', 'user_id', name='uq_attendance_shift_user'),
-    )
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'shift_id': self.shift_id,
-            'user_id': self.user_id,
-            'user': self.user.to_dict(),
-            'scanned_at': iso_z(self.scanned_at)
-        }
-
-
-class ActivityAssignment(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    shift_id = db.Column(db.Integer, db.ForeignKey('shift.id'), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    activity_id = db.Column(db.Integer, db.ForeignKey('activity.id'), nullable=False)
-    is_suggestion = db.Column(db.Boolean, default=False)
-    assigned_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    assigned_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    shift = db.relationship('Shift', backref=db.backref('assignments', lazy=True))
-    user = db.relationship('User', foreign_keys=[user_id],
-                           backref=db.backref('assignments', lazy=True))
-    activity = db.relationship('Activity', backref=db.backref('assignments', lazy=True))
-    assigner = db.relationship('User', foreign_keys=[assigned_by])
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'shift_id': self.shift_id,
-            'user_id': self.user_id,
-            'activity_id': self.activity_id,
-            'is_suggestion': self.is_suggestion,
-            'user': self.user.to_dict(),
-            'activity': self.activity.to_dict()
-        }
-
-
-class SzkolenieCzynnosci(db.Model):
-    """Osoba przeszkolona w czynnosci (2026-10-13, operacje) — tylko wtedy
-    mozna ja do tej czynnosci przydzielic. Wiersz = przeszkolony; brak wiersza
-    = nie (nowa osoba i nowa czynnosc startuja bez szkolen). Istniejacych
-    w dniu wdrozenia zaznacza raz `zaznacz_wszystkich_przeszkolonych()`.
-    """
-    __tablename__ = 'szkolenie_czynnosci'
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
-    activity_id = db.Column(db.Integer, db.ForeignKey('activity.id'), primary_key=True)
-    dodano_at = db.Column(db.DateTime, default=datetime.utcnow)
-    dodal_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-
-
-def szkolenia_czynnosci(user_ids=None):
-    """`{user_id: {activity_id, …}}` — jedno zapytanie (opcjonalnie dla wybranych)."""
-    q = db.session.query(SzkolenieCzynnosci.user_id, SzkolenieCzynnosci.activity_id)
-    if user_ids is not None:
-        if not user_ids:
-            return {}
-        q = q.filter(SzkolenieCzynnosci.user_id.in_(list(user_ids)))
-    wynik = {}
-    for uid, aid in q:
-        wynik.setdefault(uid, set()).add(aid)
-    return wynik
 
 
 def ustaw_szkolenia(user, activity_ids):
@@ -405,672 +194,6 @@ def ustaw_szkolenia(user, activity_ids):
     for aid in nowe - obecne.keys():
         db.session.add(SzkolenieCzynnosci(user_id=user.id, activity_id=aid,
                                           dodal_id=current_user.id))
-
-
-ZNACZNIK_SZKOLEN_CZYNNOSCI = 'migracja_szkolenia_czynnosci'
-
-
-def zaznacz_wszystkich_przeszkolonych():
-    """Jednorazowo (znacznik w AppSetting): kazdy istniejacy uzytkownik
-    przeszkolony w kazdej istniejacej czynnosci — decyzja operacji 2026-10-13
-    („wszystkich, ktorych mamy na tescie, zaznaczamy"). Kto przyjdzie pozniej,
-    startuje bez szkolen."""
-    if db.session.get(AppSetting, ZNACZNIK_SZKOLEN_CZYNNOSCI) is not None:
-        return
-    db.session.execute(db.text("""
-        INSERT INTO szkolenie_czynnosci (user_id, activity_id, dodano_at)
-        SELECT u.id, a.id, now() AT TIME ZONE 'UTC' FROM "user" u CROSS JOIN activity a
-        ON CONFLICT DO NOTHING
-    """))
-    db.session.add(AppSetting(key=ZNACZNIK_SZKOLEN_CZYNNOSCI, value=local_today().isoformat()))
-    db.session.commit()
-
-
-class DailyStat(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    shift_id = db.Column(db.Integer, db.ForeignKey('shift.id'), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    activity_id = db.Column(db.Integer, db.ForeignKey('activity.id'), nullable=False)
-    quantity = db.Column(db.Integer, default=0)
-    note = db.Column(db.String(300), nullable=True)
-
-    # Audit fields
-    entered_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    entered_at = db.Column(db.DateTime, default=datetime.utcnow)
-    modified_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    modified_at = db.Column(db.DateTime, nullable=True)
-
-    shift = db.relationship('Shift', backref=db.backref('stats', lazy=True))
-    user = db.relationship('User', foreign_keys=[user_id],
-                           backref=db.backref('stats', lazy=True))
-    activity = db.relationship('Activity', backref=db.backref('stats', lazy=True))
-    entered_by_user = db.relationship('User', foreign_keys=[entered_by])
-    modified_by_user = db.relationship('User', foreign_keys=[modified_by])
-
-    __table_args__ = (
-        db.UniqueConstraint('shift_id', 'user_id', 'activity_id',
-                            name='uq_stat_shift_user_activity'),
-    )
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'shift_id': self.shift_id,
-            'user_id': self.user_id,
-            'activity_id': self.activity_id,
-            'quantity': self.quantity,
-            'note': self.note,
-            'entered_by': self.entered_by,
-            'entered_at': iso_z(self.entered_at),
-            'modified_by': self.modified_by,
-            'modified_at': iso_z(self.modified_at),
-            'user': self.user.to_dict(),
-            'activity': self.activity.to_dict()
-        }
-
-
-class CountryMapping(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    country = db.Column(db.String(150), nullable=False)
-    innenauftrag = db.Column(db.String(100), nullable=False)
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'country': self.country,
-            'innenauftrag': self.innenauftrag
-        }
-
-
-KLUCZ_NAZWY_PL = 'kategoria_pl:'
-NAZWA_PL_MAX = 60
-
-
-def nazwy_kategorii_pl():
-    """Polska nazwa kazdej kategorii: nadpisana przez admina albo domyslna.
-
-    Jedno zapytanie na wszystkie kategorie — wolajacy w petli dostaja mape.
-    """
-    nadpisane = {
-        row.key[len(KLUCZ_NAZWY_PL):]: row.value
-        for row in AppSetting.query.filter(AppSetting.key.like(KLUCZ_NAZWY_PL + '%'))
-        if (row.value or '').strip()
-    }
-    return {k: nadpisane.get(k) or STAT_CATEGORY_LABELS_PL.get(k, '') for k in STAT_CATEGORIES}
-
-
-def etykieta_kategorii(kat, nazwy_pl=None):
-    """Etykieta na ekrany: najpierw polska nazwa, w nawiasie angielska ze
-    Statystyk ogolnych — „Niesprocesowane (Sorting)". Angielska czesc jest
-    stala (rozliczenie i eksport Excel jej uzywaja), wiec pracownik i
-    rozliczajacy zawsze mowia o tej samej kategorii."""
-    ang = STAT_CATEGORY_LABELS.get(kat, kat)
-    pl = (nazwy_pl if nazwy_pl is not None else nazwy_kategorii_pl()).get(kat)
-    return f'{pl} ({ang})' if pl else ang
-
-
-def etykiety_kategorii():
-    """Mapa kategoria → etykieta (do szablonow), jednym zapytaniem."""
-    nazwy = nazwy_kategorii_pl()
-    return {k: etykieta_kategorii(k, nazwy) for k in STAT_CATEGORIES}
-
-
-def empty_category_data():
-    """Return default empty category_data dict."""
-    return {cat: {'amount': 0, 'cost': 0.0} for cat in STAT_CATEGORIES}
-
-
-class ImportedCarton(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    barcode = db.Column(db.String(100), unique=True, nullable=False)
-    land = db.Column(db.String(150), nullable=True)
-    stueckzahl = db.Column(db.Integer, default=0)
-    kategorie = db.Column(db.String(100), nullable=True)
-    ziel_datum = db.Column(db.Date, nullable=True)
-    # Dzien pracy, ktorego dotyczy wrzucony plik — podawany przy imporcie
-    # (domyslnie dzis). GLOWNA data paczki: klucz linii rozliczenia (Loading
-    # date w Statystykach ogolnych), Dashboard, Forecast, filtry. Ziel-Datum
-    # zostaje tylko jako informacja z pliku. Patrz klucz_linii().
-    data_pliku = db.Column(db.Date, nullable=True)
-    uebergabe_nr = db.Column(db.String(100), nullable=True)
-    country_mapping_id = db.Column(db.Integer, db.ForeignKey('country_mapping.id'), nullable=True)
-    imported_at = db.Column(db.DateTime, default=datetime.utcnow)
-    imported_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    processed_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    processed_at = db.Column(db.DateTime, nullable=True)
-    double_rate = db.Column(db.Boolean, default=False)
-    scan_start_at = db.Column(db.DateTime, nullable=True)
-    scan_start_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    scan_end_at = db.Column(db.DateTime, nullable=True)
-    scan_end_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    added_manually = db.Column(db.Boolean, default=False)
-    modified_at = db.Column(db.DateTime, nullable=True)
-    modified_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    # Ilosci per kategoria wpisane przy skanie konca paczki (JSON {kategoria: sztuki}).
-    # Zrodlo prawdy dla GeneralStat.category_data linii oznaczonych category_source='scan'.
-    scan_category_data = db.Column(db.Text, default='{}')
-    # Pelna tabela ilosci z konca paczki (2026-10-15) — JSON, tylko przez
-    # get_tabela()/set_tabela(). NULL = paczka sprzed tabeli (stary formularz
-    # kategorii, stare reguly bledow). `scan_category_data` jest z niej liczone.
-    tabela_ilosci = db.Column(db.Text, nullable=True)
-    # ❗ Roznica do potwierdzenia przez lidera (Brak / Nadwyzka / Uszkodzone /
-    # suma kilku osob ≠ plik) — kolumna, a nie wyliczenie, zeby licznik na
-    # Dashboardzie byl jednym COUNT-em. Liczona w odswiez_roznice().
-    roznica = db.Column(db.Boolean, nullable=False, default=False)
-    roznica_potwierdzona_at = db.Column(db.DateTime, nullable=True)
-    roznica_potwierdzona_przez = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-
-    __table_args__ = (
-        db.Index('ix_carton_ziel_datum',    'ziel_datum'),
-        db.Index('ix_carton_data_pliku',    'data_pliku'),
-        db.Index('ix_carton_uebergabe_nr',  'uebergabe_nr'),
-        db.Index('ix_carton_processed_by',  'processed_by'),
-        db.Index('ix_carton_land',          'land'),
-        db.Index('ix_carton_imported_at',   'imported_at'),
-    )
-
-    country_mapping = db.relationship('CountryMapping', backref=db.backref('cartons', lazy=True))
-    processed_by_user = db.relationship('User', foreign_keys=[processed_by])
-    scan_start_by_user = db.relationship('User', foreign_keys=[scan_start_by])
-    scan_end_by_user = db.relationship('User', foreign_keys=[scan_end_by])
-    imported_by_user = db.relationship('User', foreign_keys=[imported_by])
-    modified_by_user = db.relationship('User', foreign_keys=[modified_by])
-    potwierdzajacy = db.relationship('User', foreign_keys=[roznica_potwierdzona_przez])
-
-    def get_tabela(self):
-        return wczytaj_json_dict(self.tabela_ilosci)
-
-    def set_tabela(self, tabela):
-        self.tabela_ilosci = json.dumps(tabela) if tabela else None
-
-    def tryb_tabeli(self):
-        """Paczka kilku osob → kazdy wpisuje swoje sztuki wprost (zespol)."""
-        return TRYB_ZESPOL if self.udzialy else TRYB_WZOR
-
-    def powody_roznicy(self):
-        osob = len({u.user_id for u in self.udzialy}) or 1
-        return roznice_tabeli(self.get_tabela(), self.stueckzahl, osob)
-
-    def roznica_do_potwierdzenia(self):
-        return bool(self.roznica) and not self.roznica_potwierdzona_at
-
-    def edytor_ilosci(self):
-        """Ktore okno „✎ Ilosci" na /paczki: 'tabela' (paczka jednej osoby),
-        'zespol' (kazda osoba osobno) albo 'stary' (paczka sprzed tabeli)."""
-        if self.udzialy:
-            zamkniete = [u for u in self.udzialy if u.end_at and not u.zamkniete_przez]
-            if all(u.tabela for u in zamkniete):
-                return 'zespol'
-            return 'stary'
-        if self.tabela_ilosci or not self.scan_end_at:
-            return 'tabela'
-        return 'stary'
-
-    def processing_seconds(self):
-        # Paczka kilku osob: czas pracy przy niej = zlaczone okresy udzialow
-        # (zespol rownolegle liczy sie raz, przerwa miedzy zmianami wcale).
-        # Rozpietosc start–koniec dawalaby przy przekazaniu cala noc.
-        if self.scan_end_at and self.udzialy:
-            return int(suma_zlaczonych_okresow(
-                [(u.start_at, u.end_at) for u in self.udzialy if u.end_at]))
-        if self.scan_start_at and self.scan_end_at:
-            return int((self.scan_end_at - self.scan_start_at).total_seconds())
-        return None
-
-    def udzialy_krotko(self):
-        """Kto ile wpisal — do okna „✎ Ilosci" na /paczki."""
-        return [{'id': u.id, 'kto': u.user.display_name if u.user else '?', 'suma': u.suma(),
-                 'sztuki': u.sztuki(), 'tabela': u.get_tabela(),
-                 'otwarty': u.end_at is None,
-                 'bez_ilosci': bool(u.zamkniete_przez)} for u in self.udzialy]
-
-    def do_dokonczenia(self):
-        """Przekazana przez poprzednia osobe, nikt jej jeszcze nie przejal."""
-        return (not self.scan_end_at and not self.scan_start_at
-                and bool(self.udzialy))
-
-    def get_scan_categories(self):
-        """Ilosci per kategoria ze skanu. Zawsze dict {kategoria: int}."""
-        try:
-            dane = json.loads(self.scan_category_data) if self.scan_category_data else {}
-        except (json.JSONDecodeError, TypeError):
-            return {}
-        if not isinstance(dane, dict):
-            return {}
-        return {k: liczba(v) for k, v in dane.items()
-                if k in STAT_CATEGORIES and isinstance(v, (int, float))}
-
-    def set_scan_categories(self, dane):
-        # liczba(), nie int(): Labelling twice ×1,5 daje polowki — int() po
-        # cichu ucinalby 4,5 do 4 w rozliczeniu.
-        self.scan_category_data = json.dumps(
-            {k: liczba(v) for k, v in (dane or {}).items() if k in STAT_CATEGORIES})
-
-    def has_scan_categories(self):
-        return bool(self.get_scan_categories())
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'barcode': self.barcode,
-            'land': self.land,
-            'stueckzahl': self.stueckzahl,
-            'kategorie': self.kategorie,
-            'ziel_datum': self.ziel_datum.isoformat() if self.ziel_datum else None,
-            'data_pliku': self.data_pliku.isoformat() if self.data_pliku else None,
-            'imported_at': iso_z(self.imported_at),
-            'uebergabe_nr': self.uebergabe_nr,
-            'country_mapping_id': self.country_mapping_id,
-            'processed_by': self.processed_by,
-            'double_rate': self.double_rate or False,
-            'processed_by_name': self.processed_by_user.display_name if self.processed_by_user else None,
-            'processed_at': iso_z(self.processed_at),
-            'scan_start_at': iso_z(self.scan_start_at),
-            'scan_start_by': self.scan_start_by,
-            'scan_start_by_name': self.scan_start_by_user.display_name if self.scan_start_by_user else None,
-            'scan_end_at': iso_z(self.scan_end_at),
-            'scan_end_by_name': self.scan_end_by_user.display_name if self.scan_end_by_user else None,
-            'processing_seconds': self.processing_seconds(),
-            'added_manually': self.added_manually or False,
-            'imported_by_login': self.imported_by_user.username if self.imported_by_user else None,
-            'modified_at': iso_z(self.modified_at),
-            'modified_by_login': self.modified_by_user.username if self.modified_by_user else None,
-            'scan_categories': self.get_scan_categories(),
-            'tabela': self.get_tabela(),
-            'tryb_tabeli': self.tryb_tabeli(),
-            'roznica': bool(self.roznica),
-            'roznica_potwierdzona_at': iso_z(self.roznica_potwierdzona_at),
-            # Wiele osob przy paczce (przekazanie / zespol) — to_dict jest
-            # wolane tylko dla pojedynczych paczek, wiec bez N+1.
-            'do_dokonczenia': self.do_dokonczenia(),
-            'udzialy': [u.to_dict() for u in self.udzialy],
-        }
-
-
-# Rodzaje udzialu: jak paczka stala sie paczka wielu osob.
-UDZIAL_PRZEKAZANA = 'przekazana'   # „Paczka do dokonczenia" — kolejno, po sobie
-UDZIAL_ZESPOL = 'zespol'           # „Pakowanie zespolowe" — rownolegle
-
-
-class UdzialPaczki(db.Model):
-    """Udzial jednej osoby w paczce, gdy pracuje przy niej wiecej niz jedna (2026-10-13).
-
-    Paczka jednej osoby NIE ma wierszy — czyta sie ja z pol kartonu jak dawniej
-    (16 tys. starych paczek bez migracji). Wiersze powstaja przy przekazaniu
-    („Paczka do dokonczenia") i przy dolaczeniu („Pakowanie zespolowe").
-    Karton trzyma agregat: `scan_category_data` = suma `ilosci` wszystkich
-    udzialow (z sumy, nigdy delta), `scan_end_*` dopiero przy zamknieciu.
-    Normy licza kazda osobe z jej udzialu: jej czas i jej wpisane ilosci.
-    """
-    __tablename__ = 'udzial_paczki'
-    id = db.Column(db.Integer, primary_key=True)
-    carton_id = db.Column(db.Integer, db.ForeignKey('imported_carton.id'), nullable=False, index=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
-    rodzaj = db.Column(db.String(20), nullable=False)
-    start_at = db.Column(db.DateTime, nullable=False)
-    end_at = db.Column(db.DateTime, nullable=True)
-    # JSON {kategoria: sztuki} — tylko przez get_ilosci()/set_ilosci().
-    ilosci = db.Column(db.Text, default='{}')
-    # Tabela ilosci tej osoby (tryb zespol, 2026-10-15); `ilosci` jest z niej
-    # liczone. NULL = udzial sprzed tabeli — Normy biora wtedy suma().
-    tabela = db.Column(db.Text, nullable=True)
-    # Kto zamknal CUDZY udzial (kolega „zamknij dla wszystkich" albo lider) —
-    # taki udzial nie ma ilosci i nie wchodzi do norm.
-    zamkniete_przez = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-
-    # delete-orphan: Odblokuj kasuje otwarte udzialy przez usuniecie z listy.
-    carton = db.relationship('ImportedCarton', backref=db.backref(
-        'udzialy', lazy='select', order_by='UdzialPaczki.start_at',
-        cascade='all, delete-orphan'))
-    user = db.relationship('User', foreign_keys=[user_id])
-    zamykajacy = db.relationship('User', foreign_keys=[zamkniete_przez])
-
-    def get_ilosci(self):
-        try:
-            dane = json.loads(self.ilosci) if self.ilosci else {}
-        except (json.JSONDecodeError, TypeError):
-            return {}
-        if not isinstance(dane, dict):
-            return {}
-        return {k: liczba(v) for k, v in dane.items()
-                if k in STAT_CATEGORIES and isinstance(v, (int, float))}
-
-    def set_ilosci(self, dane):
-        self.ilosci = json.dumps(
-            {k: liczba(v) for k, v in (dane or {}).items() if k in STAT_CATEGORIES})
-
-    def get_tabela(self):
-        return wczytaj_json_dict(self.tabela)
-
-    def set_tabela(self, tabela):
-        self.tabela = json.dumps(tabela) if tabela else None
-        self.set_ilosci(kategorie_z_tabeli(tabela))
-
-    def suma(self):
-        return liczba(sum(self.get_ilosci().values()))
-
-    def sztuki(self):
-        """Sztuki do Norm: z tabeli (Pojedynczo + Podwojnie + Potrojnie +
-        Uszkodzone), a dla udzialu sprzed tabeli — suma wpisanych kategorii."""
-        tabela = self.get_tabela()
-        return sztuki_tabeli(tabela) if tabela else self.suma()
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'user_id': self.user_id,
-            'user_name': self.user.display_name if self.user else None,
-            'rodzaj': self.rodzaj,
-            'start_at': iso_z(self.start_at),
-            'end_at': iso_z(self.end_at),
-            'otwarty': self.end_at is None,
-            'ilosci': self.get_ilosci(),
-            'suma': self.suma(),
-            'sztuki': self.sztuki(),
-            'tabela': self.get_tabela(),
-            'zamkniete_przez': self.zamykajacy.display_name if self.zamykajacy else None,
-        }
-
-
-class Forecast(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    date = db.Column(db.Date, nullable=False, unique=True)
-    quantity = db.Column(db.Integer, default=0)
-    notes = db.Column(db.String(500), nullable=True)
-    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=True)
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-
-    created_by_user = db.relationship('User', foreign_keys=[created_by])
-    updated_by_user = db.relationship('User', foreign_keys=[updated_by])
-
-
-class GeneralStat(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    loading_date = db.Column(db.Date, nullable=False)
-    week_number = db.Column(db.Integer, nullable=False)
-    list_id = db.Column(db.String(100), nullable=False)
-    country_of_destination = db.Column(db.String(150), nullable=True)
-    country_ledger = db.Column(db.String(150), nullable=False)
-    amounts = db.Column(db.Integer, default=0)
-    category_data = db.Column(db.Text, default='{}')
-    double_rate_category_data = db.Column(db.Text, default='{}')  # yellow row: manual per-category amounts for double-rate packages
-    # 'manual' = kategorie wpisane recznie (linie sprzed skanowania ilosci) — recompute ich NIE rusza.
-    # 'scan'   = kategorie sa suma skanow paczek — pole reczne zablokowane.
-    category_source = db.Column(db.String(10), default='manual')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=True)
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-
-    __table_args__ = (
-        db.UniqueConstraint('list_id', 'country_ledger', 'loading_date',
-                            name='uq_general_stat'),
-        db.Index('ix_gstat_loading_date', 'loading_date'),
-        db.Index('ix_gstat_list_id',      'list_id'),
-    )
-
-    def get_category_data(self):
-        try:
-            return json.loads(self.category_data) if self.category_data else empty_category_data()
-        except (json.JSONDecodeError, TypeError):
-            return empty_category_data()
-
-    def set_category_data(self, data):
-        self.category_data = json.dumps(data)
-
-    def get_double_rate_category_data(self):
-        try:
-            return json.loads(self.double_rate_category_data) if self.double_rate_category_data else empty_category_data()
-        except (json.JSONDecodeError, TypeError):
-            return empty_category_data()
-
-    def set_double_rate_category_data(self, data):
-        self.double_rate_category_data = json.dumps(data)
-
-    def to_dict(self):
-        """Serializacja linii razem z kosztem policzonym ze stawek jej miesiaca.
-
-        Front nie zapisuje kosztow — sa wyliczane z `CostMapping` przy kazdym
-        odczycie. Stawki idą przez `rates_for()` (cache na zadanie), bo inaczej
-        kazdy wiersz odpalalby wlasne SELECT-y (N+1 na calej liscie).
-        """
-        cd = self.get_category_data()
-        rates = rates_for(self.loading_date.year, self.loading_date.month)
-
-        # Iterujemy po STAT_CATEGORIES, nie po kluczach z bazy — inaczej kategoria
-        # usunieta z systemu dalej doliczalaby sie z historycznych wierszy.
-        total_cost = 0.0
-        for cat in STAT_CATEGORIES:
-            data = cd.setdefault(cat, {'amount': 0, 'cost': 0.0})
-            amt = data.get('amount', 0)
-            rate = rates.get(cat, 0.0)
-            data['computed_cost'] = amt * rate
-            total_cost += data['computed_cost']
-        cd = {kat: cd[kat] for kat in STAT_CATEGORIES}
-
-        return {
-            'id': self.id,
-            'loading_date': self.loading_date.isoformat(),
-            'week_number': self.week_number,
-            'category_source': self.category_source or 'manual',
-            'list_id': self.list_id,
-            'country_of_destination': self.country_of_destination,
-            'country_ledger': self.country_ledger,
-            'amounts': self.amounts,
-            'category_data': cd,
-            'total_cost': total_cost,
-        }
-
-
-class CostMapping(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    year = db.Column(db.Integer, nullable=False)
-    month = db.Column(db.Integer, nullable=False)
-    rates_data = db.Column(db.Text, default='{}')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=True)
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-
-    __table_args__ = (
-        db.UniqueConstraint('year', 'month', name='uq_cost_mapping_ym'),
-    )
-
-    def get_rates_data(self):
-        try:
-            return json.loads(self.rates_data) if self.rates_data else {}
-        except (json.JSONDecodeError, TypeError):
-            return {}
-
-    def set_rates_data(self, data):
-        self.rates_data = json.dumps(data)
-        
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'year': self.year,
-            'month': self.month,
-            'rates_data': self.get_rates_data()
-        }
-
-
-def rates_for(year, month):
-    """Stawki kategorii na dany miesiac, z cache na jedno zadanie.
-
-    `GeneralStat.to_dict()` jest wolane per wiersz, a stawek jest kilka na rok —
-    bez cache lista statystyk robila jedno SELECT na wiersz.
-    """
-    klucz = (year, month)
-    cache = g.get('_rates_cache') if has_request_context() else None
-    if cache is None:
-        cache = {}
-        if has_request_context():
-            g._rates_cache = cache
-    if klucz not in cache:
-        mapping = CostMapping.query.filter_by(year=year, month=month).first()
-        cache[klucz] = mapping.get_rates_data() if mapping else {}
-    return cache[klucz]
-
-
-class WorkerTimeEvent(db.Model):
-    id           = db.Column(db.Integer, primary_key=True)
-    user_id      = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    shift_id     = db.Column(db.Integer, db.ForeignKey('shift.id'), nullable=False)
-    event_type   = db.Column(db.String(20), nullable=False)  # patrz EVENT_TYPES
-    timestamp    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    recorded_by  = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    is_manual    = db.Column(db.Boolean, default=False)
-    note         = db.Column(db.String(300), nullable=True)
-    # Tylko przy 'trainee_*': kto prowadzi szkolenie. Dwa szkolenia naraz —
-    # koniec jednego zamyka tylko jego szkolonych (`zakoncz_szkolenie()`).
-    training_lead_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-
-    __table_args__ = (
-        db.Index('ix_wte_user_shift', 'user_id', 'shift_id'),
-        db.Index('ix_wte_shift_id',   'shift_id'),
-    )
-
-    user     = db.relationship('User', foreign_keys=[user_id],
-                               backref=db.backref('time_events', lazy=True))
-    shift    = db.relationship('Shift', backref=db.backref('time_events', lazy=True))
-    recorder = db.relationship('User', foreign_keys=[recorded_by])
-    training_lead = db.relationship('User', foreign_keys=[training_lead_id])
-
-    def to_dict(self):
-        return {
-            'id':             self.id,
-            'user_id':        self.user_id,
-            'user_name':      self.user.display_name,
-            'shift_id':       self.shift_id,
-            'event_type':     self.event_type,
-            'timestamp':      iso_z(self.timestamp),
-            'is_manual':      self.is_manual,
-            'note':           self.note or '',
-            'recorded_by_name': self.recorder.display_name if self.recorder else None,
-            'training_lead_id': self.training_lead_id,
-        }
-
-
-EVENT_TYPES = ('break_start', 'break_end', 'other_start', 'other_end',
-               'training_start', 'training_end', 'trainee_start', 'trainee_end',
-               'work_end')
-# 'other_*' — czas poza stanowiskiem inny niz przerwa (np. wyjscie do HR).
-# Liczony jak przerwa: pomniejsza czas pracy, ale raportowany osobno.
-# 'training_*' — szkolenie prowadzone przez osobe szkolaca (`User.is_trainer`).
-# To CZAS PRACY: niczego nie pomniejsza, raportowane osobno; w Normach paczka
-# zahaczajaca o szkolenie = cala po 100% celu (`policz_wydajnosc()`).
-# 'trainee_*' — osoba SZKOLONA na szkoleniu prowadzonym przez `training_lead_id`.
-# Tez czas pracy; jej paczki z tego czasu wypadaja z Norm i sredniej.
-# Szkolenie zaczyna sie dopiero od pierwszej osoby szkolonej, a konczy je
-# szkolacy — wszystkim naraz (zakladka „Szkolenie", `/api/time/training/*`).
-
-# Stany, ktore sie wzajemnie wykluczaja (otwarte = wiecej *_start niz *_end).
-TRYBY_CZASU = ('break', 'other', 'training', 'trainee')
-# Przelaczane zwyklym skanem w `/api/time/scan`; szkolenie ma wlasna zakladke.
-TRYBY_SKANU = ('break', 'other')
-KOMUNIKATY_TRWANIA = {
-    'break':    'jest na przerwie — najpierw zakończ przerwę.',
-    'other':    'jest na „Inne" — najpierw zakończ „Inne".',
-    'training': 'prowadzi szkolenie — najpierw zakończ szkolenie.',
-    'trainee':  'jest na szkoleniu jako osoba szkolona — zakończy je osoba szkoląca.',
-}
-
-
-class HistoriaCelu(db.Model):
-    """Cel szt./h obowiazujacy od dnia `dzien` (do nastepnego wpisu).
-
-    `AppSetting.target_szt_h` trzyma tylko biezaca wartosc, a paczka ze
-    szkolenia ma byc liczona celem z dnia, w ktorym ja zakonczono — bez historii
-    zmiana celu po fakcie przeliczylaby wszystkie stare szkolenia. Wpis robi `PUT /api/stats/target`
-    (ostatni zapis danego dnia wygrywa); pierwszy wiersz (`POCZATEK_HISTORII_CELU`)
-    zasiewa `zasiej_historie_celu()` biezaca wartoscia sprzed historii.
-    """
-    __tablename__ = 'historia_celu'
-    dzien = db.Column(db.Date, primary_key=True)
-    wartosc = db.Column(db.Integer, nullable=False)
-    # Kto i kiedy wpisal (2026-10-13) — lista zmian pod polem celu w Normach.
-    # Puste w wierszach sprzed tej daty i w zasiewie.
-    zmienil_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    zmieniono_at = db.Column(db.DateTime, nullable=True)
-    zmienil = db.relationship('User')
-
-    def to_dict(self):
-        return {
-            'od': None if self.dzien == POCZATEK_HISTORII_CELU else self.dzien.isoformat(),
-            'wartosc': self.wartosc,
-            'zmienil': self.zmienil.display_name if self.zmienil else None,
-            'zmieniono_at': iso_z(self.zmieniono_at),
-        }
-
-
-def historia_celu_lista():
-    """Wszystkie wpisy historii celu, od najnowszego — dla listy w Normach."""
-    return [w.to_dict() for w in HistoriaCelu.query.options(
-        joinedload(HistoriaCelu.zmienil)).order_by(HistoriaCelu.dzien.desc()).all()]
-
-
-POCZATEK_HISTORII_CELU = date(2000, 1, 1)
-
-
-class AppSetting(db.Model):
-    """Generic key/value store for app-wide configurable settings."""
-    key = db.Column(db.String(100), primary_key=True)
-    value = db.Column(db.String(500), nullable=True)
-
-
-# Defaults for known settings (used when a key is not yet stored)
-SETTING_DEFAULTS = {
-    'break_threshold_minutes': '30',
-    # Progi dla filtra bledow na ekranie „Czasy pracownikow"
-    'max_work_minutes': '660',      # 11 h
-    'min_break_minutes': '15',
-    # Progi przegladu ogolnego na ekranie „Normy" (/stats). Odniesieniem jest
-    # SREDNIA zespolu z wybranego okresu (wszystkie sztuki / wszystkie godziny),
-    # nie zadana z gory norma — takiej w systemie nie ma i nikt jej nie ustawia.
-    # Procenty ponizej to odchylenie od tej sredniej; `min_packages_rank` chroni
-    # RANKING przed osoba z jedna paczka, ktora wyladowalaby na szczycie albo
-    # dnie na czystym szumie (do samej sredniej wchodza wszyscy).
-    'norm_good_pct': '110',
-    'norm_weak_pct': '90',
-    'min_packages_rank': '3',
-    # Docelowa wydajnosc (szt./h) wpisana przez lidera. 0 = NIE USTAWIONO —
-    # wtedy kolumna celu w ogole sie nie pokazuje i nic sie przez nia nie dzieli.
-    'target_szt_h': '0',
-}
-
-
-def get_setting(key, default=None):
-    """Return a stored setting value, else its known default, else `default`."""
-    row = db.session.get(AppSetting, key)
-    if row is not None and row.value is not None:
-        return row.value
-    return SETTING_DEFAULTS.get(key, default)
-
-
-def get_setting_int(key, default=0):
-    try:
-        return int(get_setting(key, default))
-    except (TypeError, ValueError):
-        return default
-
-
-def set_setting(key, value):
-    row = db.session.get(AppSetting, key)
-    if row is None:
-        row = AppSetting(key=key, value=str(value))
-        db.session.add(row)
-    else:
-        row.value = str(value)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  AUTH HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
-
-ROLES = ('operator', 'leader', 'admin')
-# Role z dostepem do logowania i ekranow — konta uprzywilejowane. Zakladac je,
-# zmieniac im role/haslo i dezaktywowac moze wylacznie admin.
-PRIVILEGED_ROLES = ('leader', 'admin')
 
 
 @login_manager.user_loader
