@@ -197,7 +197,7 @@
                 <td>
                     <input type="text" class="inline-input cat-cost" data-cat="{{ cat }}" data-field="cost"
                         value="{{ '%.2f'|format(computed_cost) }}" readonly tabindex="-1"
-                        style="width:75px; background:rgba(255,255,255,0.08); border-color:transparent; color:var(--text-primary); border-radius:4px;">
+                        style="width:75px; background:var(--bg-hover); border-color:transparent; color:var(--text-primary); border-radius:4px;">
                 </td>
                 {% endif %}
                 {% endfor %}
@@ -239,7 +239,7 @@
                 <td>
                     <input type="text" class="inline-input cat-cost" data-cat="{{ cat }}" data-field="cost"
                         value="{{ '%.2f'|format(computed_cost) }}" readonly tabindex="-1"
-                        style="width:75px; background:rgba(255,255,255,0.08); border-color:transparent; color:var(--text-primary); border-radius:4px;">
+                        style="width:75px; background:var(--bg-hover); border-color:transparent; color:var(--text-primary); border-radius:4px;">
                 </td>
                 {% endif %}
                 {% endfor %}
@@ -274,7 +274,7 @@
     .scan-cov.niepelne { color: var(--warning); }
     .cat-amount.locked {
         width: 65px;
-        background: rgba(255,255,255,.05);
+        background: var(--bg-hover);
         border: 1px solid transparent;
         border-radius: 4px;
         color: var(--text-secondary);

@@ -1,5 +1,14 @@
 # LogiStat — Changelog
 
+## 2026-10-20 (4) — Jasny motyw C2
+
+### Zmienione
+- Cała aplikacja w jasnym motywie wybranym przez operację: szare tło, białe karty,
+  **zielone menu** z aktywną pozycją jako białą kartą z niebieskim paskiem.
+- **Przyciski tylko z ramką** i kolorowym tekstem (niebieski — zwykła akcja, zielony —
+  potwierdzenie, czerwony — usunięcie). Linki i aktywne zakładki w niebieskim Logwin.
+- Statusy, double rate i kolory zmian w ciemniejszych odcieniach — czytelne na białym.
+
 ## 2026-10-20 (3) — Testy importują z pakietu
 
 ### Zmienione (bez zmian w działaniu)

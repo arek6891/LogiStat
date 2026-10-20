@@ -202,7 +202,7 @@ function odswiezSzkolenie() {
                 </div>
             </div>
             <div style="display:flex;gap:6px;">
-                ${s.trwa ? '<button class="btn btn-sm" style="background:var(--danger);color:#fff;" onclick="zakonczSzkolenie()">🏁 Zakończ szkolenie</button>' : ''}
+                ${s.trwa ? '<button class="btn btn-sm btn-danger" onclick="zakonczSzkolenie()">🏁 Zakończ szkolenie</button>' : ''}
                 <button class="btn btn-ghost btn-sm" onclick="zmienSzkolacego()">Zmień szkolącego</button>
             </div>
         </div>
