@@ -15,7 +15,7 @@ docker compose down
 # Tests — need a Postgres; the compose file below provides one (port 55432, tmpfs)
 docker compose -f docker-compose.test.yml up -d
 pip install -r requirements-dev.txt
-pytest                               # 792 tests
+pytest                               # 799 tests
 docker compose -f docker-compose.test.yml down
 LOGISTAT_TEST_DATABASE_URL=postgresql+psycopg2://u:p@host:5432/db pytest   # another DB
 # On .32 there is no pytest/venv — use the prebuilt runner image instead:
@@ -68,7 +68,7 @@ Every PR: **green CI** (`.github/workflows/testy.yml` — pytest on Postgres 16 
 - `leader` — password login; scanner/assignment/data-entry/time-tracking + **CSV/Excel import** + **General Stats read-only, without costs**
 - `admin` — everything + admin panel, General Stats costs/editing, country/cost mappings
 
-`/api/users` is leader+ but only an **admin** may create/edit/deactivate `leader`/`admin` accounts, change roles or set passwords (403) — `ROLES` / `PRIVILEGED_ROLES` / `acting_as_admin()`. Degrading/deactivating the **last active admin** → 400. `login()` and `load_user()` both check `is_active_user`, so soft-delete (`DELETE /api/users/<id>`) kills live sessions.
+`/api/users` is leader+ but only an **admin** may create/edit/deactivate `leader`/`admin` accounts, change roles or set passwords (403) — `ROLES` / `PRIVILEGED_ROLES` / `acting_as_admin()`. Degrading/deactivating the **last active admin** → 400. `login()` and `load_user()` both check `is_active_user`, so soft-delete (`DELETE /api/users/<id>`) kills live sessions. **Login limit** (2026-10-19): 5 failed attempts per login (lower-cased) in 15 min (`MAKS_PROB_LOGOWANIA`, `OKNO_PROB_LOGOWANIA` in `web/auth.py`, table `proba_logowania`, in the DB because of 2 gunicorn workers) → 429 even with the right password; success clears the counter. **API without a session → 401 JSON** (`unauthorized_handler` in `aplikacja.py`), **without the role → 403 JSON** (`_odmowa_dostepu()` in `web/wspolne.py`); pages still redirect. **Logout is POST only** (form in `base.html`).
 
 **Sidebar** is grouped by **who operates the screen**, not by permission — the two can disagree: `Czasy paczek` sits under Pracownik but is still `@leader_required` (a station screen); don't "fix" either side: **👷 Pracownik** (Skaner zmian, Czas pracy, Czasy paczek, Paczki inspektor) · **🧑‍💼 Lider** (Dashboard, Forecast, Przydzielanie, Wpis ilości, Normy, Paczki (dane), Czasy pracowników, Import danych, Statystyki ogólne, Użytkownicy) · **🛡️ Admin** (Czynności, Panel Admina). Each group header sits **inside** the same role conditional as its items.
 

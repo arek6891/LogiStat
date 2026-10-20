@@ -94,15 +94,15 @@ def test_nieistniejaca_pozycja_odrzucona(leader_client):
 # ── Zarzadzanie listami (admin) ──────────────────────────────────────────────
 
 def test_lider_widzi_listy_ale_ich_nie_zmienia(leader_client):
-    """@admin_required odsyla przekierowaniem (302), jak wszedzie w aplikacji."""
+    """@admin_required na API zwraca 403 w JSON (od 2026-10-19; wczesniej 302 na HTML)."""
     logwin = opcja('worker_type', 'Logwin')
 
     assert leader_client.get('/api/user-options').status_code == 200
     assert leader_client.post('/api/user-options',
-                              json={'kind': 'worker_type', 'name': 'X'}).status_code == 302
+                              json={'kind': 'worker_type', 'name': 'X'}).status_code == 403
     assert leader_client.put(f'/api/user-options/{logwin.id}',
-                             json={'name': 'X'}).status_code == 302
-    assert leader_client.delete(f'/api/user-options/{logwin.id}').status_code == 302
+                             json={'name': 'X'}).status_code == 403
+    assert leader_client.delete(f'/api/user-options/{logwin.id}').status_code == 403
 
     assert opcja('worker_type', 'X') is None
     assert opcja('worker_type', 'Logwin') is not None

@@ -70,7 +70,7 @@ def test_wylogowanie_dziala_przy_wymuszonej_zmianie(client):
     u = admin_z_domyslnym_haslem()
     login(client, u.username, logistat.DEFAULT_ADMIN_PASSWORD)
 
-    r = client.get('/logout')
+    r = client.post('/logout')
 
     assert r.status_code == 302 and r.headers['Location'].startswith('/login')
     assert client.get('/dashboard').headers['Location'].startswith('/login')
@@ -121,3 +121,65 @@ def test_blad_migracji_kolumny_przerywa_start(flask_app, monkeypatch):
 
     with pytest.raises(RuntimeError, match='nie_ma_takiej_tabeli.kolumna'):
         logistat.migrate_columns()
+
+
+# ── Bezpieczenstwo logowania (2026-10-19) ────────────────────────────────────
+
+def test_limit_nieudanych_logowan(client):
+    """Po MAKS_PROB nieudanych probach w oknie login jest zablokowany — takze
+    dla poprawnego hasla; komunikat mowi, za ile minut."""
+    auth = importlib.import_module('logistat.web.auth')
+    lider = make_user('leader')
+    for _ in range(auth.MAKS_PROB_LOGOWANIA):
+        assert login(client, lider.username, 'zle-haslo').status_code == 200
+
+    r = login(client, lider.username)
+
+    assert r.status_code == 429
+    assert 'Spróbuj ponownie za' in r.get_data(as_text=True)
+    assert client.get('/dashboard').status_code == 302, 'nie zalogowal sie'
+
+
+def test_udane_logowanie_czysci_licznik(client):
+    auth = importlib.import_module('logistat.web.auth')
+    lider = make_user('leader')
+    for _ in range(auth.MAKS_PROB_LOGOWANIA - 1):
+        login(client, lider.username, 'zle-haslo')
+
+    assert login(client, lider.username).status_code == 302
+    assert logistat.ProbaLogowania.query.count() == 0
+
+
+def test_blokada_mija_po_oknie(client):
+    auth = importlib.import_module('logistat.web.auth')
+    lider = make_user('leader')
+    dawno = logistat.datetime.utcnow() - auth.OKNO_PROB_LOGOWANIA - auth.timedelta(minutes=1)
+    for _ in range(auth.MAKS_PROB_LOGOWANIA):
+        logistat.db.session.add(logistat.ProbaLogowania(login=lider.username.lower(), kiedy=dawno))
+    logistat.db.session.commit()
+
+    assert login(client, lider.username).status_code == 302
+
+
+def test_api_bez_sesji_zwraca_401_json(client):
+    r = client.get('/api/dashboard')
+
+    assert r.status_code == 401
+    assert r.get_json()['error'].startswith('Sesja wygasła')
+
+
+def test_strona_bez_sesji_przekierowuje_do_logowania(client):
+    r = client.get('/paczki?status=wszystkie')
+
+    assert r.status_code == 302 and r.headers['Location'].startswith('/login?next=')
+
+
+def test_api_bez_uprawnien_zwraca_403_json(leader_client):
+    r = leader_client.get('/api/general-stats')
+
+    assert r.status_code == 403 and r.get_json()['error']
+
+
+def test_wylogowanie_tylko_post(leader_client):
+    assert leader_client.get('/logout').status_code == 405
+    assert leader_client.post('/logout').status_code == 302

@@ -102,8 +102,11 @@
                 </div>
                 <a href="{{ url_for('auth.profile') }}" class="btn btn-ghost btn-sm"
                     style="margin-top:12px;width:100%;justify-content:center;">🔑 Zmień hasło</a>
-                <a href="{{ url_for('auth.logout') }}" class="btn btn-ghost btn-sm"
-                    style="margin-top:8px;width:100%;justify-content:center;">Wyloguj</a>
+                {# POST, nie link: zwykly link (GET) moglaby wywolac obca strona i wylogowac. #}
+                <form method="post" action="{{ url_for('auth.logout') }}" style="margin-top:8px;">
+                    <button type="submit" class="btn btn-ghost btn-sm"
+                        style="width:100%;justify-content:center;">Wyloguj</button>
+                </form>
             </div>
         </nav>
         <main class="main-content">

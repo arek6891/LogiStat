@@ -91,7 +91,7 @@ def test_jedno_zapytanie_na_wszystkie_etykiety(admin_client, queries):
 def test_lider_nie_zmieni_nazw(leader_client):
     r = ustaw(leader_client, sorting='X')
 
-    assert r.status_code == 302
+    assert r.status_code == 403 and r.get_json()['error']
     assert logistat.db.session.get(logistat.AppSetting, 'kategoria_pl:sorting') is None
 
 

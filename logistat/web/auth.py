@@ -1,10 +1,12 @@
 """Logowanie, wylogowanie, profil (zmiana hasla), wymuszona zmiana domyslnego hasla."""
+from datetime import datetime, timedelta
+
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
 from logistat.config import DEFAULT_ADMIN_PASSWORD
 from logistat.extensions import db
-from logistat.models import PRIVILEGED_ROLES, User
+from logistat.models import PRIVILEGED_ROLES, ProbaLogowania, User
 from logistat.web.wspolne import bezpieczny_next
 
 bp = Blueprint('auth', __name__)
@@ -42,25 +44,59 @@ def index():
     return redirect(url_for('auth.login'))
 
 
+# Limit nieudanych logowan na login (2026-10-19, przeglad architektury): bez niego
+# haslo dalo sie zgadywac bez ograniczen. Liczone w bazie, nie w pamieci —
+# gunicorn ma 2 workery, kazdy liczylby osobno.
+MAKS_PROB_LOGOWANIA = 5
+OKNO_PROB_LOGOWANIA = timedelta(minutes=15)
+
+
+def zablokowane_logowanie(login, teraz):
+    """Minuty do odblokowania albo None. Blokada = MAKS_PROB nieudanych prob
+    tego loginu w oknie; mija OKNO od najstarszej z nich."""
+    proby = (ProbaLogowania.query
+             .filter(ProbaLogowania.login == login,
+                     ProbaLogowania.kiedy >= teraz - OKNO_PROB_LOGOWANIA)
+             .order_by(ProbaLogowania.kiedy).all())
+    if len(proby) < MAKS_PROB_LOGOWANIA:
+        return None
+    odblokowanie = proby[-MAKS_PROB_LOGOWANIA].kiedy + OKNO_PROB_LOGOWANIA
+    return max(1, -(-int((odblokowanie - teraz).total_seconds()) // 60))
+
+
 @bp.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
+        teraz = datetime.utcnow()
+        klucz = username.lower()
+        minuty = zablokowane_logowanie(klucz, teraz)
+        if minuty:
+            # Nawet poprawne haslo nie przechodzi — inaczej limit nic by nie dawal.
+            flash(f'Zbyt wiele nieudanych prób logowania. Spróbuj ponownie za {minuty} min.', 'error')
+            return render_template('login.html'), 429
         user = User.query.filter_by(username=username).first()
         if (user and user.is_active_user and user.role in PRIVILEGED_ROLES
                 and user.check_password(password)):
+            ProbaLogowania.query.filter_by(login=klucz).delete()
+            db.session.commit()
             login_user(user)
             session.pop('wymus_zmiane_hasla', None)
             if password == DEFAULT_ADMIN_PASSWORD:
                 session['wymus_zmiane_hasla'] = True
                 return redirect(url_for('auth.profile'))
             return redirect(bezpieczny_next(request.args.get('next')) or url_for('auth.index'))
+        db.session.add(ProbaLogowania(login=klucz, kiedy=teraz,
+                                      adres_ip=(request.remote_addr or '')[:64]))
+        # Sprzatanie: proby starsze niz doba nie sa juz potrzebne.
+        ProbaLogowania.query.filter(ProbaLogowania.kiedy < teraz - timedelta(days=1)).delete()
+        db.session.commit()
         flash('Nieprawidłowy login lub hasło.', 'error')
     return render_template('login.html')
 
 
-@bp.route('/logout')
+@bp.route('/logout', methods=['POST'])
 @login_required
 def logout():
     session.pop('wymus_zmiane_hasla', None)
