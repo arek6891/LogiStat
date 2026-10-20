@@ -4,85 +4,93 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Montserrat:wght@600;700;800&display=swap');
 
-/* Motyw: ciemnoszary grafit w barwach Logwin (2026-10-16).
-   Barwy z arkusza www.logwin-logistics.com: zielony #8BC640 (akcent), grafit
-   #50554F, niebieski #325C96, czerwony #CC1122. Tlo to grafit z lekko zielonym
-   odcieniem logwinowskiej szarosci, tekst nie bialy (#E4E6E2) — caly dzien
-   przed ekranem mniej meczy niz czern z biela. Zielen tylko jako akcent;
-   statusy maja wlasne odcienie (turkus = OK), zeby przycisk nie wygladal jak
-   „spelnia". Kolory TYLKO stad: `var(--x)`, a z przezroczystoscia
-   `rgb(var(--x-rgb) / .12)`. Wykresy czytaja je przez `motyw()` (base.html). */
+/* Motyw: jasny C2 w barwach Logwin (operacja, 2026-10-20; zastapil ciemny grafit).
+   Wytyczne operacji: tlo szare (wyraznie, nie biale — wybrany odcien C2 #DFE2DC),
+   menu zielone z aktywna pozycja jako biala karta, przyciski TYLKO ramka i niebieska
+   czcionka. Barwy z www.logwin-logistics.com: zielen #8BC640 (menu — przyciemniona
+   do #6FA83A, bo bialy tekst na #8BC640 ma 2:1), niebieski #325C96 (akcent:
+   przyciski, linki, aktywne zakladki). Karty biale, tekst grafitowy (nie czarny).
+   Statusy w ciemniejszych odcieniach — kontrast na bialym >= 4,5:1.
+   Kolory TYLKO stad: `var(--x)`, z przezroczystoscia `rgb(var(--x-rgb) / .12)`.
+   Wykresy czytaja je przez `motyw()` (static/js/motyw.js). */
 :root {
-    /* Natywne kontrolki (kalendarz, przewijanie) tez ciemne */
-    color-scheme: dark;
+    color-scheme: light;
     accent-color: var(--accent);
-    /* Tla i ramki — grafit Logwin */
-    --bg-primary: #232622;
-    --bg-secondary: #2b2e2a;
-    --bg-card: #333732d9;
-    --bg-card-solid: #333732;
-    --bg-hover: #3c403a;
-    --bg-input: #282b27;
-    --border: #4a4f48;
-    --border-rgb: 74 79 72;
-    --border-focus: #8bc640;
 
-    --text-primary: #e4e6e2;
+    /* Tla i ramki */
+    --bg-primary: #dfe2dc;          /* tlo aplikacji (C2) */
+    --bg-secondary: #eef0ec;        /* powierzchnie pomocnicze: naglowki tabel, paski zakladek */
+    --bg-card: #ffffff;
+    --bg-card-solid: #ffffff;
+    --bg-hover: #f1f3ef;
+    --bg-input: #ffffff;
+    --border: #cfd3cb;
+    --border-rgb: 207 211 203;
+    --border-focus: #325c96;
+
+    --text-primary: #23271f;
     --text: var(--text-primary);
-    --text-secondary: #b3b7af;
-    --text-secondary-rgb: 179 183 175;
-    --text-muted: #8c9188;
+    --text-secondary: #4f564a;
+    --text-secondary-rgb: 79 86 74;
+    --text-muted: #646b5f;
 
-    /* Akcent — zielen Logwin; tekst na zielonym tle ciemny (biel ma 2:1) */
-    --accent: #8bc640;
-    --accent-rgb: 139 198 64;
-    --accent-hover: #9dd257;
-    --accent-glow: rgb(139 198 64 / 0.22);
-    --on-accent: #1c2018;
-    /* Drugi kolor marki — niebieski Logwin rozjasniony na ciemne tlo */
-    --accent-2: #6f9bd6;
-    --accent-2-rgb: 111 155 214;
+    /* Akcent — niebieski Logwin (przyciski z ramka, linki, aktywne zakladki) */
+    --accent: #325c96;
+    --accent-rgb: 50 92 150;
+    --accent-hover: #26497a;
+    --accent-glow: rgb(50 92 150 / 0.14);
+    --on-accent: #ffffff;
+    /* Drugi kolor marki — zielen Logwin (gradienty, wyroznienia) */
+    --accent-2: #6fa83a;
+    --accent-2-rgb: 111 168 58;
     --brand-blue: #325c96;
     --brand-red: #cc1122;
 
-    /* Statusy — odcienie inne niz akcent */
-    --success: #4cc3a5;
-    --success-rgb: 76 195 165;
-    --success-bg: rgb(76 195 165 / 0.14);
-    --warning: #e7b343;
-    --warning-rgb: 231 179 67;
-    --warning-bg: rgb(231 179 67 / 0.14);
-    --danger: #ec5a5f;
-    --danger-rgb: 236 90 95;
-    --danger-bg: rgb(236 90 95 / 0.14);
-    --info: #6f9bd6;
-    --info-rgb: 111 155 214;
-    --info-bg: rgb(111 155 214 / 0.14);
-    /* Double rate — pomaranczowy z palety Logwin */
-    --double-rate: #f0a04b;
-    --double-rate-rgb: 240 160 75;
+    /* Menu boczne — zielone, aktywna pozycja jako biala karta z niebieskim paskiem */
+    --menu: #6fa83a;
+    --menu-tekst: #ffffff;
+    --menu-tekst-2: rgb(255 255 255 / 0.82);
+    --menu-linia: rgb(255 255 255 / 0.25);
+    --menu-hover: rgb(255 255 255 / 0.16);
+    --menu-aktywna: #ffffff;
+    --menu-aktywna-tekst: #2f5a12;
+    --menu-pasek: #325c96;
 
-    /* Toasty — ciemne tlo w kolorze statusu, jasny tekst */
-    --toast-success-bg: #1f4239;
-    --toast-success-fg: #d5f3ea;
-    --toast-danger-bg: #4d2224;
-    --toast-danger-fg: #fbd7d8;
-    --toast-warning-bg: #4a3c18;
-    --toast-warning-fg: #f8ecc8;
-    --toast-info-bg: #22385a;
-    --toast-info-fg: #d8e6f8;
+    /* Statusy — ciemniejsze odcienie, czytelne na bialym */
+    --success: #237a5e;
+    --success-rgb: 35 122 94;
+    --success-bg: rgb(35 122 94 / 0.12);
+    --warning: #946410;
+    --warning-rgb: 148 100 16;
+    --warning-bg: rgb(201 145 37 / 0.16);
+    --danger: #b5313a;
+    --danger-rgb: 181 49 58;
+    --danger-bg: rgb(181 49 58 / 0.11);
+    --info: #2f6aa8;
+    --info-rgb: 47 106 168;
+    --info-bg: rgb(47 106 168 / 0.12);
+    /* Double rate — pomarancz Logwin, przyciemniony */
+    --double-rate: #b85e10;
+    --double-rate-rgb: 184 94 16;
 
-    /* Zmiany 1 / 2 — niebieski vs pomaranczowy: para czytelna takze dla
-       daltonistow i nie zajeta przez inne znaczenia (zolty = double rate /
-       ostrzezenia, turkus/czerwony = statusy, zielony = akcent). Kolor zawsze
-       idzie w parze z napisem „Zmiana N", nigdy sam. */
-    --shift-1: #38bdf8;
-    --shift-1-bg: rgba(56, 189, 248, 0.14);
-    --shift-2: #f97316;
-    --shift-2-bg: rgba(249, 115, 22, 0.14);
+    /* Toasty — jasne tlo w kolorze statusu, ciemny tekst */
+    --toast-success-bg: #e1f3ec;
+    --toast-success-fg: #1b5c47;
+    --toast-danger-bg: #fbe4e5;
+    --toast-danger-fg: #8c2328;
+    --toast-warning-bg: #fdf0d9;
+    --toast-warning-fg: #6e4a0b;
+    --toast-info-bg: #e3ecf8;
+    --toast-info-fg: #1f4a7a;
 
-    /* Typography — tresc Inter (czytelne cyfry w tabelach), naglowki
-       Montserrat jak na stronie Logwin */
+    /* Zmiany 1 / 2 — niebieski vs pomaranczowy, zawsze z napisem „Zmiana N"
+       (nigdy kolorem statusu, double rate ani akcentu). */
+    --shift-1: #0f7fb8;
+    --shift-1-bg: rgba(15, 127, 184, 0.13);
+    --shift-2: #c45a0c;
+    --shift-2-bg: rgba(196, 90, 12, 0.13);
+
+    /* Typography — tresc Inter, naglowki Montserrat (jak na stronie Logwin) */
     --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     --font-head: 'Montserrat', 'Inter', -apple-system, 'Segoe UI', sans-serif;
 
@@ -90,8 +98,8 @@
     --radius: 12px;
     --radius-sm: 8px;
     --radius-lg: 16px;
-    --shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
-    --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.4);
+    --shadow: 0 1px 2px rgba(35, 39, 31, 0.06), 0 4px 16px rgba(35, 39, 31, 0.06);
+    --shadow-lg: 0 2px 6px rgba(35, 39, 31, 0.08), 0 12px 32px rgba(35, 39, 31, 0.12);
 
     /* Transitions */
     --transition: all 0.2s ease;
@@ -122,8 +130,9 @@ html, body {
 
 .sidebar {
     width: 260px;
-    background: var(--bg-secondary);
-    border-right: 1px solid var(--border);
+    background: var(--menu);
+    color: var(--menu-tekst);
+    border-right: 1px solid rgb(0 0 0 / 0.06);
     padding: 24px 0;
     display: flex;
     flex-direction: column;
@@ -137,23 +146,20 @@ html, body {
 
 .sidebar-logo {
     padding: 0 24px 24px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--menu-linia);
     margin-bottom: 16px;
 }
 
 .sidebar-logo h1 {
     font-size: 1.4rem;
     font-weight: 700;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--menu-tekst);
     letter-spacing: -0.02em;
 }
 
 .sidebar-logo .subtitle {
     font-size: 0.75rem;
-    color: var(--text-muted);
+    color: var(--menu-tekst-2);
     margin-top: 4px;
 }
 
@@ -165,7 +171,7 @@ html, body {
     overflow-y: auto;
     overflow-x: hidden;
     scrollbar-width: thin;
-    scrollbar-color: var(--accent) transparent;
+    scrollbar-color: var(--menu-linia) transparent;
 }
 
 .sidebar-nav::-webkit-scrollbar {
@@ -177,7 +183,7 @@ html, body {
 }
 
 .sidebar-nav::-webkit-scrollbar-thumb {
-    background: var(--accent);
+    background: var(--menu-linia);
     border-radius: 4px;
 }
 
@@ -187,8 +193,7 @@ html, body {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.09em;
-    color: var(--text-muted);
-    opacity: 0.75;
+    color: var(--menu-tekst-2);
 }
 
 .sidebar-nav .nav-section:first-child {
@@ -200,7 +205,7 @@ html, body {
     align-items: center;
     gap: 12px;
     padding: 10px 16px;
-    color: var(--text-secondary);
+    color: var(--menu-tekst);
     text-decoration: none;
     border-radius: var(--radius-sm);
     font-size: 0.9rem;
@@ -210,13 +215,16 @@ html, body {
 }
 
 .sidebar-nav a:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
+    background: var(--menu-hover);
+    color: var(--menu-tekst);
 }
 
+/* Aktywna pozycja: biala karta z niebieskim paskiem (wariant C2, operacja). */
 .sidebar-nav a.active {
-    background: var(--accent-glow);
-    color: var(--accent);
+    background: var(--menu-aktywna);
+    color: var(--menu-aktywna-tekst);
+    font-weight: 700;
+    box-shadow: inset 3px 0 0 var(--menu-pasek), 0 1px 3px rgb(0 0 0 / 0.12);
 }
 
 .sidebar-nav a .icon {
@@ -227,7 +235,7 @@ html, body {
 
 .sidebar-footer {
     padding: 16px 24px;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--menu-linia);
 }
 
 .sidebar-footer .user-info {
@@ -302,12 +310,17 @@ html, body {
 
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 
+/* Przyciski: TYLKO ramka i kolorowa czcionka, bez wypelnienia (operacja,
+   2026-10-20). Glowny ma grubsza ramke; kolor mowi, co robi (niebieski = zwykla
+   akcja, zielony = potwierdzenie, czerwony = usuniecie). */
 .btn {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 20px;
-    border: none;
+    padding: 9px 19px;
+    background: transparent;
+    border: 1.5px solid var(--accent);
+    color: var(--accent);
     border-radius: var(--radius-sm);
     font-family: var(--font);
     font-size: 0.875rem;
@@ -318,36 +331,36 @@ html, body {
     white-space: nowrap;
 }
 
-.btn-primary {
-    background: var(--accent);
-    color: var(--on-accent);
-    box-shadow: 0 2px 12px var(--accent-glow);
+.btn:hover {
+    background: var(--accent-glow);
 }
 
-.btn-primary:hover {
-    background: var(--accent-hover);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 20px var(--accent-glow);
+.btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.btn-primary {
+    border-width: 2px;
+    padding: 8.5px 18.5px;
 }
 
 .btn-success {
-    background: var(--success);
-    color: var(--bg-primary);
+    border-color: var(--success);
+    color: var(--success);
 }
 
 .btn-success:hover {
-    filter: brightness(1.1);
-    transform: translateY(-1px);
+    background: var(--success-bg);
 }
 
 .btn-danger {
-    background: var(--danger);
-    color: white;
+    border-color: var(--danger);
+    color: var(--danger);
 }
 
 .btn-danger:hover {
-    filter: brightness(1.1);
-    transform: translateY(-1px);
+    background: var(--danger-bg);
 }
 
 /* `btn-secondary` nie mial stylu (rysowal sie jak bialy przycisk przegladarki)
@@ -355,15 +368,24 @@ html, body {
 .btn-ghost,
 .btn-secondary {
     background: transparent;
-    color: var(--text-secondary);
-    border: 1px solid var(--border);
+    color: var(--accent);
+    border: 1.5px solid var(--accent);
 }
 
 .btn-ghost:hover,
 .btn-secondary:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-    border-color: var(--text-muted);
+    background: var(--accent-glow);
+}
+
+/* Przyciski w menu (Zmien haslo, Wyloguj) — na zielonym tle biala ramka. */
+.sidebar .btn,
+.sidebar .btn-ghost {
+    color: var(--menu-tekst);
+    border-color: var(--menu-tekst-2);
+}
+
+.sidebar .btn:hover {
+    background: var(--menu-hover);
 }
 
 .btn-sm {
@@ -1197,13 +1219,13 @@ a.js-osoba {
 
 .shift-tab.active[data-shift="1"] {
     background: var(--shift-1);
-    color: #0b1220;
+    color: #ffffff;
     box-shadow: 0 2px 8px var(--shift-1-bg);
 }
 
 .shift-tab.active[data-shift="2"] {
     background: var(--shift-2);
-    color: #1a0d02;
+    color: #ffffff;
     box-shadow: 0 2px 8px var(--shift-2-bg);
 }
 

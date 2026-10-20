@@ -135,7 +135,13 @@ Quantities entered at package end are the **source of truth for `category_data`*
 - *`JSON.parse('{{ x|tojson|safe }}')`:* `tojson` w apostrofach JS — `"`/`\` w nazwie kategorii (edytuje admin) zmienialy literal i strona przestawala dzialac. Teraz `const x = {{ x|tojson }};` (tojson jest bezpieczny w `<script>`).
 - *`migrate_columns()`:* przy `IF NOT EXISTS` blad to zawsze prawdziwy blad, a except go polykal — aplikacja wstawala bez kolumny i padala na pierwszym zapytaniu. Teraz start przerywa `RuntimeError` z nazwa kolumny; lista w `MIGRACJE_KOLUMN` (stala modulu, test podmienia ja na zla kolumne).
 
-## Motyw: ciemnoszary grafit w barwach Logwin (2026-10-16)
+## Motyw: jasny „C2” (2026-10-20, zastapil grafit)
+
+**Zgloszenie.** Operacja po tygodniu z grafitem: „tlo szare (jasne mocno), tlo menu zielone, przyciski tylko ramki i czcionka niebieska”. Makiety trzech wariantow (artifact `V16e3Zme9bJbtJa4MbzZvm`) — wybrany **C** (menu w sredniej zieleni z bialym tekstem, aktywna pozycja jako biala karta), z prosba o ciemniejsze tlo; z czterech odcieni wybrane **C2 `#DFE2DC`** — biale karty i tabele wyraznie odcinaja sie od tla.
+
+**Decyzje.** Menu `#6FA83A` zamiast `#8BC640` ze strony Logwin — bialy tekst na `#8BC640` ma kontrast ~2:1. Akcent (linki, aktywne zakladki, ramki przyciskow) to niebieski Logwin `#325C96`; zielen tylko w menu i jako drugi kolor gradientow. Przyciski bez wypelnienia: kolor ramki mowi o rodzaju akcji (niebieski zwykla, zielony potwierdzenie, czerwony usuniecie); w menu ramka biala. Statusy, double rate i kolory zmian przyciemnione, zeby na bialym mialy kontrast >= 4,5:1 (zakladka zmiany: bialy tekst na `#0F7FB8` / `#C45A0C`). Menu ma wlasne tokeny `--menu-*` — `--bg-secondary` jest teraz jasna powierzchnia pomocnicza (naglowki tabel, paski zakladek). Sprzatniete resztki pod ciemny motyw: przezroczysta biel pod polami kosztu w Statystykach ogolnych (na jasnym znikala), wypelniony czerwony przycisk „Zakoncz szkolenie”. Sprawdzone zrzutami: logowanie, Dashboard, Paczki, Statystyki ogolne, Przydzielanie, Czasy paczek z tabela ilosci.
+
+## Motyw: ciemnoszary grafit w barwach Logwin (2026-10-16) — zastapiony motywem C2
 
 **Zgloszenie.** Operacja chce aplikacje w barwach Logwin, z dominujaca szaroscia, „zeby nie meczylo oczu". Do wyboru byly jasnoszary i ciemnoszary grafit — wybrany **ciemnoszary grafit**.
 
