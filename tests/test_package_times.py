@@ -5,22 +5,25 @@ dostaje 409, inny konczacy 403. Paczka zakonczona jest zamknieta na oba.
 """
 from datetime import date, datetime, timedelta
 
-import app as logistat
 from conftest import make_user
+
+from logistat.extensions import db
+from logistat.models import ImportedCarton
+
 
 ZIEL = date(2026, 9, 10)
 
 
 def make_carton(barcode='P1', stueckzahl=10):
-    c = logistat.ImportedCarton(barcode=barcode, land='PL', stueckzahl=stueckzahl,
+    c = ImportedCarton(barcode=barcode, land='PL', stueckzahl=stueckzahl,
                                 ziel_datum=ZIEL, data_pliku=ZIEL, uebergabe_nr='UB-1')
-    logistat.db.session.add(c)
-    logistat.db.session.commit()
+    db.session.add(c)
+    db.session.commit()
     return c
 
 
 def carton(barcode='P1'):
-    return logistat.ImportedCarton.query.filter_by(barcode=barcode).first()
+    return ImportedCarton.query.filter_by(barcode=barcode).first()
 
 
 def start(client, emp, pkg='P1'):
@@ -116,7 +119,7 @@ def test_nieznany_kod_pracownika_lub_paczki(leader_client):
 def test_nieaktywny_pracownik_nie_skanuje(leader_client):
     w = make_user('operator', barcode_id='W1')
     w.is_active_user = False
-    logistat.db.session.commit()
+    db.session.commit()
     make_carton()
 
     assert start(leader_client, 'W1').status_code == 404
@@ -126,7 +129,7 @@ def test_processing_seconds_liczy_roznice(flask_app):
     c = make_carton()
     c.scan_start_at = datetime(2026, 9, 1, 10, 0, 0)
     c.scan_end_at = datetime(2026, 9, 1, 10, 2, 30)
-    logistat.db.session.commit()
+    db.session.commit()
 
     assert carton().processing_seconds() == 150
 
@@ -135,5 +138,5 @@ def test_processing_seconds_none_bez_pary(flask_app):
     c = make_carton()
     assert c.processing_seconds() is None
     c.scan_start_at = datetime.utcnow()
-    logistat.db.session.commit()
+    db.session.commit()
     assert carton().processing_seconds() is None

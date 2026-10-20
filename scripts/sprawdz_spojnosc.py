@@ -18,9 +18,18 @@ paczki = kategorie_z_tabeli(), paczka kilku osob = suma tabel osob.
 import os
 import sys
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import timedelta
 
+# Uruchamiany jako plik (python scripts/…): katalog projektu na sciezke PRZED
+# importem pakietu.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from logistat.czas import teraz_utc, utc_to_local  # noqa: E402
+from logistat.extensions import db  # noqa: E402
+from logistat.kategorie import STAT_CATEGORIES, liczba  # noqa: E402
+from logistat.models import GeneralStat, ImportedCarton, WorkerTimeEvent  # noqa: E402
+from logistat.rozliczenie import klucz_linii, scan_category_totals  # noqa: E402
+from logistat.tabela_ilosci import kategorie_z_tabeli, suma_tabel  # noqa: E402
 
 PAKA_WISI_PO = timedelta(hours=12)
 STAN_CZASU_WISI_PO = timedelta(hours=14)
@@ -28,24 +37,24 @@ STANY_CZASU = ('break', 'other', 'training', 'trainee')
 POKAZ = 8
 
 
-def _kategorie_z_udzialow(L, carton):
+def _kategorie_z_udzialow(carton):
     suma = {}
     for u in carton.udzialy:
         for kat, ile in u.get_ilosci().items():
             suma[kat] = suma.get(kat, 0) + ile
-    return {k: L.liczba(v) for k, v in suma.items() if v}
+    return {k: liczba(v) for k, v in suma.items() if v}
 
 
-def sprawdz(L, teraz=None):
-    """→ (bledy, uwagi): listy (opis, przyklady). `L` = modul app."""
-    teraz = teraz or datetime.utcnow()
+def sprawdz(teraz=None):
+    """→ (bledy, uwagi): listy (opis, przyklady)."""
+    teraz = teraz or teraz_utc()
     bledy, uwagi = [], []
 
     def dodaj(lista, opis, przyklady):
         if przyklady:
             lista.append((opis, przyklady))
 
-    kartony = L.ImportedCarton.query.all()
+    kartony = ImportedCarton.query.all()
 
     # ── Paczki z tabela ilosci ───────────────────────────────────────────────
     zle_kategorie, zly_zespol, zla_flaga = [], [], []
@@ -55,11 +64,11 @@ def sprawdz(L, teraz=None):
             continue
         if c.udzialy:
             tabele = [t for t in (u.get_tabela() for u in c.udzialy) if t]
-            if tabele and L.suma_tabel(tabele) != tabela:
+            if tabele and suma_tabel(tabele) != tabela:
                 zly_zespol.append(c.barcode)
-            oczekiwane = _kategorie_z_udzialow(L, c)
+            oczekiwane = _kategorie_z_udzialow(c)
         else:
-            oczekiwane = L.kategorie_z_tabeli(tabela)
+            oczekiwane = kategorie_z_tabeli(tabela)
         if oczekiwane != c.get_scan_categories():
             zle_kategorie.append(c.barcode)
         if c.scan_end_at and bool(c.roznica) != bool(c.powody_roznicy()):
@@ -71,8 +80,8 @@ def sprawdz(L, teraz=None):
     # ── Linie rozliczenia (klucz_linii) ──────────────────────────────────────
     grupy = defaultdict(list)
     for c in kartony:
-        grupy[L.klucz_linii(c)].append(c)
-    linie = L.GeneralStat.query.all()
+        grupy[klucz_linii(c)].append(c)
+    linie = GeneralStat.query.all()
     zle_amounts, zle_skany, bez_paczek, reczne_ze_skanami = [], [], [], []
     for s in linie:
         klucz = (s.list_id, s.country_ledger, s.loading_date)
@@ -83,10 +92,10 @@ def sprawdz(L, teraz=None):
         if suma != (s.amounts or 0):
             zle_amounts.append((klucz, s.amounts, suma))
         if (s.category_source or 'manual') == 'scan':
-            oczekiwane = L.scan_category_totals(*klucz)
+            oczekiwane = scan_category_totals(*klucz)
             jest = s.get_category_data()
-            if any(L.liczba(oczekiwane[k]['amount'])
-                   != L.liczba((jest.get(k) or {}).get('amount', 0)) for k in L.STAT_CATEGORIES):
+            if any(liczba(oczekiwane[k]['amount'])
+                   != liczba((jest.get(k) or {}).get('amount', 0)) for k in STAT_CATEGORIES):
                 zle_skany.append(klucz)
         elif any(c.scan_end_at and c.has_scan_categories() for c in paczki):
             reczne_ze_skanami.append(klucz)
@@ -105,13 +114,13 @@ def sprawdz(L, teraz=None):
           [c.barcode for c in kartony if c.scan_end_at and c.scan_start_at
            and c.scan_end_at < c.scan_start_at])
     dodaj(uwagi, f'paczki rozpoczęte i niezakończone ponad {PAKA_WISI_PO} (🔓 Odblokuj albo koniec)',
-          [(c.barcode, f'{L.utc_to_local(c.scan_start_at):%d.%m %H:%M}') for c in kartony
+          [(c.barcode, f'{utc_to_local(c.scan_start_at):%d.%m %H:%M}') for c in kartony
            if c.scan_start_at and not c.scan_end_at and teraz - c.scan_start_at > PAKA_WISI_PO])
     dodaj(uwagi, 'paczki z ❗ do potwierdzenia przez lidera',
           [c.barcode for c in kartony if c.roznica_do_potwierdzenia()])
 
     # ── Czas pracy: stan = liczba startow − liczba koncow ───────────────────
-    E = L.WorkerTimeEvent
+    E = WorkerTimeEvent
     licznik, ostatnie = defaultdict(int), {}
     for e in E.query.order_by(E.timestamp, E.id).all():
         rodzaj, _, koncowka = e.event_type.rpartition('_')
@@ -122,11 +131,11 @@ def sprawdz(L, teraz=None):
     dodaj(bledy, 'więcej końców niż startów (przerwa / Inne / szkolenie)',
           [k for k, v in licznik.items() if v < 0])
     dodaj(uwagi, f'niezamknięte przerwy / Inne / szkolenia starsze niż {STAN_CZASU_WISI_PO}',
-          [(k, f'{L.utc_to_local(ostatnie[k]):%d.%m %H:%M}') for k, v in licznik.items()
+          [(k, f'{utc_to_local(ostatnie[k]):%d.%m %H:%M}') for k, v in licznik.items()
            if v > 0 and teraz - ostatnie[k] > STAN_CZASU_WISI_PO])
 
     # ── Konta ────────────────────────────────────────────────────────────────
-    duplikaty = L.db.session.execute(L.db.text(
+    duplikaty = db.session.execute(db.text(
         'SELECT barcode_id FROM "user" WHERE barcode_id IS NOT NULL '
         'GROUP BY barcode_id HAVING COUNT(*) > 1')).scalars().all()
     dodaj(bledy, 'zduplikowany kod pracownika', list(duplikaty))
@@ -134,11 +143,11 @@ def sprawdz(L, teraz=None):
 
 
 def main():
-    import app as L
-    with L.app.app_context():
-        bledy, uwagi = sprawdz(L)
-        print(f'Paczek: {L.ImportedCarton.query.count()}, linii rozliczenia: '
-              f'{L.GeneralStat.query.count()}')
+    from app import app
+    with app.app_context():
+        bledy, uwagi = sprawdz()
+        print(f'Paczek: {ImportedCarton.query.count()}, linii rozliczenia: '
+              f'{GeneralStat.query.count()}')
         for naglowek, lista in (('BLAD', bledy), ('UWAGA', uwagi)):
             for opis, przyklady in lista:
                 print(f'{naglowek}: {opis} — {len(przyklady)}: {przyklady[:POKAZ]}')

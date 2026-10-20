@@ -10,7 +10,10 @@ i sprawdzaja, czy wraca.
 import pytest
 from sqlalchemy import text
 
-import app as logistat
+from logistat.baza import migrate_columns
+from logistat.extensions import db
+from logistat.models import GeneralStat
+
 
 KOLUMNY = [
     ('general_stat', 'category_source'),
@@ -31,7 +34,7 @@ KOLUMNY = [
 
 
 def _kolumny(tabela):
-    rows = logistat.db.session.execute(text(
+    rows = db.session.execute(text(
         'SELECT column_name FROM information_schema.columns '
         'WHERE table_name = :t'), {'t': tabela}).fetchall()
     return {r[0] for r in rows}
@@ -40,19 +43,19 @@ def _kolumny(tabela):
 @pytest.mark.parametrize('tabela,kolumna', KOLUMNY)
 def test_migracja_przywraca_skasowana_kolumne(flask_app, tabela, kolumna):
     # "user" to slowo zastrzezone w Postgresie — bez cudzyslowu ALTER pada.
-    logistat.db.session.execute(text(f'ALTER TABLE "{tabela}" DROP COLUMN {kolumna}'))
-    logistat.db.session.commit()
+    db.session.execute(text(f'ALTER TABLE "{tabela}" DROP COLUMN {kolumna}'))
+    db.session.commit()
     assert kolumna not in _kolumny(tabela), 'przygotowanie testu zawiodlo'
 
-    logistat.migrate_columns()
+    migrate_columns()
 
     assert kolumna in _kolumny(tabela)
 
 
 def test_migracja_jest_idempotentna(flask_app):
     """Leci przy kazdym starcie kazdego workera — nie moze wybuchac."""
-    logistat.migrate_columns()
-    logistat.migrate_columns()
+    migrate_columns()
+    migrate_columns()
 
     for tabela, kolumna in KOLUMNY:
         assert kolumna in _kolumny(tabela)
@@ -60,11 +63,11 @@ def test_migracja_jest_idempotentna(flask_app):
 
 def test_zapytanie_na_modelu_dziala_po_migracji(flask_app):
     """Sedno sprawy: brak kolumny = UndefinedColumn na kazdym zapytaniu."""
-    logistat.db.session.execute(text(
+    db.session.execute(text(
         'ALTER TABLE general_stat DROP COLUMN category_source'))
-    logistat.db.session.commit()
-    logistat.db.session.rollback()
+    db.session.commit()
+    db.session.rollback()
 
-    logistat.migrate_columns()
+    migrate_columns()
 
-    assert logistat.GeneralStat.query.count() == 0
+    assert GeneralStat.query.count() == 0

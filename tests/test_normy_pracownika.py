@@ -7,21 +7,25 @@ na `.31` ma 3 wiersze — byl pusty niemal u kazdego.
 """
 from datetime import date, timedelta
 
-import app as logistat
 from conftest import make_user, strona_z_js
+
+from logistat.czas import local_day_bounds, local_today
+from logistat.extensions import db
+from logistat.models import Activity, ImportedCarton
+
 
 ZIEL = date(2026, 9, 10)
 
 
 def paczka(barcode, kto, sztuk, dzien, godzina=10, minut=30, ze_startem=True):
-    koniec = logistat.local_day_bounds(dzien)[0] + timedelta(hours=godzina)
-    logistat.db.session.add(logistat.ImportedCarton(
+    koniec = local_day_bounds(dzien)[0] + timedelta(hours=godzina)
+    db.session.add(ImportedCarton(
         barcode=barcode, land='PL', stueckzahl=sztuk, ziel_datum=ZIEL, data_pliku=ZIEL,
         uebergabe_nr='UB-1',
         scan_start_at=koniec - timedelta(minutes=minut) if ze_startem else None,
         scan_start_by=kto.id if ze_startem else None,
         scan_end_at=koniec, scan_end_by=kto.id))
-    logistat.db.session.commit()
+    db.session.commit()
 
 
 def osoba(client, kto, **params):
@@ -72,7 +76,7 @@ def test_ocena_ma_miejsce_w_rankingu(leader_client):
 
 def test_ocena_nie_zalezy_od_filtra_czynnosci(leader_client):
     a, _ = zespol_trzech()
-    czynnosc = logistat.Activity.query.first()
+    czynnosc = Activity.query.first()
 
     bez = osoba(leader_client, a, **ZAKRES)['norma']
     z = osoba(leader_client, a, activity_id=czynnosc.id, **ZAKRES)['norma']
@@ -175,7 +179,7 @@ def test_szablon_rysuje_wykresy_z_paczek(leader_client):
 
 def test_dashboard_podaje_id_pracownika(leader_client):
     a = make_user('operator', username='ala', display_name='Ala')
-    paczka('W1', a, 60, logistat.local_today(), godzina=1)
+    paczka('W1', a, 60, local_today(), godzina=1)
 
     d = leader_client.get('/api/dashboard').get_json()
 

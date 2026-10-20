@@ -1,9 +1,9 @@
 """Zdarzenia czasu pracy (przerwy, Inne, szkolenia) i historia celu Norm."""
-from datetime import date, datetime
+from datetime import date
 
 from sqlalchemy.orm import joinedload
 
-from logistat.czas import iso_z
+from logistat.czas import iso_z, teraz_utc
 from logistat.extensions import db
 
 
@@ -12,7 +12,7 @@ class WorkerTimeEvent(db.Model):
     user_id      = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     shift_id     = db.Column(db.Integer, db.ForeignKey('shift.id'), nullable=False)
     event_type   = db.Column(db.String(20), nullable=False)  # patrz EVENT_TYPES
-    timestamp    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    timestamp    = db.Column(db.DateTime, nullable=False, default=teraz_utc)
     recorded_by  = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     is_manual    = db.Column(db.Boolean, default=False)
     note         = db.Column(db.String(300), nullable=True)

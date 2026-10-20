@@ -10,7 +10,11 @@ import glob
 import os
 import re
 
-import app as logistat
+from app import app
+
+from logistat.extensions import login_manager
+from logistat.web.auth import BEZ_WYMOGU_ZMIANY_HASLA
+
 
 KATALOG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MIGAWKA = os.path.join(os.path.dirname(__file__), 'mapa_adresow.txt')
@@ -19,7 +23,7 @@ MIGAWKA = os.path.join(os.path.dirname(__file__), 'mapa_adresow.txt')
 def obecna_mapa():
     return sorted(
         f'{" ".join(sorted((r.methods or set()) - {"HEAD", "OPTIONS"}))} {r.rule}'
-        for r in logistat.app.url_map.iter_rules() if r.endpoint != 'static')
+        for r in app.url_map.iter_rules() if r.endpoint != 'static')
 
 
 def test_adresy_i_metody_bez_zmian():
@@ -48,7 +52,7 @@ def nazwy_url_for():
 
 
 def test_kazde_url_for_wskazuje_istniejaca_trase():
-    endpointy = set(logistat.app.view_functions)
+    endpointy = set(app.view_functions)
     zle = sorted(f'{plik}: {nazwa}' for plik, nazwa in nazwy_url_for()
                  if nazwa not in endpointy)
     assert not zle, f'url_for do nieistniejacych tras: {zle}'
@@ -57,6 +61,6 @@ def test_kazde_url_for_wskazuje_istniejaca_trase():
 def test_nazwy_tras_w_konfiguracji_istnieja():
     """Nazwy endpointow poza url_for: strona logowania Flask-Login i lista
     tras dostepnych przy wymuszonej zmianie hasla (porownuje request.endpoint)."""
-    endpointy = set(logistat.app.view_functions)
-    assert logistat.login_manager.login_view in endpointy
-    assert set(logistat.BEZ_WYMOGU_ZMIANY_HASLA) <= endpointy
+    endpointy = set(app.view_functions)
+    assert login_manager.login_view in endpointy
+    assert set(BEZ_WYMOGU_ZMIANY_HASLA) <= endpointy

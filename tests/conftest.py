@@ -32,7 +32,7 @@ os.environ['DATABASE_URL'] = (
 os.environ.setdefault('SECRET_KEY', 'test-secret-key')
 
 try:
-    import app as logistat  # noqa: E402  (import po ustawieniu env)
+    from app import app as aplikacja  # noqa: E402  (import po ustawieniu env — init_db)
 except Exception as blad:  # pragma: no cover — tylko gdy baza nie odpowiada
     raise RuntimeError(
         f"Nie udalo sie polaczyc z baza testowa ({os.environ['DATABASE_URL']}).\n"
@@ -40,6 +40,12 @@ except Exception as blad:  # pragma: no cover — tylko gdy baza nie odpowiada
         '    docker compose -f docker-compose.test.yml up -d\n'
         f'Blad zrodlowy: {blad}'
     ) from blad
+
+# Po imporcie app (env ustawiony, init_db zrobiony). `db` jako nazwa zajeta przez
+# fixture ponizej — stad alias.
+from logistat.baza import seed_data  # noqa: E402
+from logistat.extensions import db as baza_danych  # noqa: E402
+from logistat.models import Activity, SzkolenieCzynnosci, User  # noqa: E402
 
 
 class IsolatedClient(FlaskClient):
@@ -63,19 +69,19 @@ class IsolatedClient(FlaskClient):
 @pytest.fixture
 def flask_app():
     """Czysta baza na kazdy test."""
-    logistat.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
-    logistat.app.test_client_class = IsolatedClient
-    with logistat.app.app_context():
-        logistat.db.drop_all()
-        logistat.db.create_all()
-        logistat.seed_data()
-        yield logistat.app
-        logistat.db.session.remove()
+    aplikacja.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
+    aplikacja.test_client_class = IsolatedClient
+    with aplikacja.app_context():
+        baza_danych.drop_all()
+        baza_danych.create_all()
+        seed_data()
+        yield aplikacja
+        baza_danych.session.remove()
 
 
 @pytest.fixture
 def db(flask_app):
-    return logistat.db
+    return baza_danych
 
 
 @pytest.fixture
@@ -96,7 +102,7 @@ def make_user(role='operator', username=None, barcode_id=None, display_name=None
     `POST /api/assignment/save` odrzuca nowy przydzial).
     """
     username = username or f'{role}-{os.urandom(4).hex()}'
-    user = logistat.User(
+    user = User(
         username=username,
         display_name=display_name or username.upper(),
         role=role,
@@ -104,12 +110,12 @@ def make_user(role='operator', username=None, barcode_id=None, display_name=None
     )
     if role in ('leader', 'admin'):
         user.set_password(PASSWORD)
-    logistat.db.session.add(user)
-    logistat.db.session.commit()
+    baza_danych.session.add(user)
+    baza_danych.session.commit()
     if przeszkolony:
-        for a in logistat.Activity.query.all():
-            logistat.db.session.add(logistat.SzkolenieCzynnosci(user_id=user.id, activity_id=a.id))
-        logistat.db.session.commit()
+        for a in Activity.query.all():
+            baza_danych.session.add(SzkolenieCzynnosci(user_id=user.id, activity_id=a.id))
+        baza_danych.session.commit()
     return user
 
 
@@ -168,7 +174,7 @@ def queries(flask_app):
     def before(conn, cursor, statement, params, context, executemany):
         counter.statements.append(statement)
 
-    engine = logistat.db.engine
+    engine = baza_danych.engine
     event.listen(engine, 'before_cursor_execute', before)
     try:
         yield counter

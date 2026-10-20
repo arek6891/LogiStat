@@ -8,7 +8,7 @@ from flask import Blueprint, abort, jsonify, render_template, request
 from flask_login import current_user
 from sqlalchemy import and_, case, func, or_
 
-from logistat.czas import LOCAL_TZ, iso_z, local_day_bounds, local_today
+from logistat.czas import LOCAL_TZ, iso_z, local_day_bounds, local_today, teraz_utc
 from logistat.extensions import db
 from logistat.import_paczek import detect_csv_encoding, normalize_header
 from logistat.models import GeneralStat, ImportedCarton, User
@@ -210,7 +210,7 @@ def api_imports_zmien_date():
         db.session.rollback()
         return jsonify({**skutki, 'podglad': True}), 200
 
-    teraz = datetime.utcnow()
+    teraz = teraz_utc()
     for c in do_zmiany:
         c.data_pliku = nowa
         c.modified_at = teraz

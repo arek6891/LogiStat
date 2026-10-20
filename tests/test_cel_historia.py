@@ -6,18 +6,22 @@ pod polem celu.
 """
 from datetime import date, timedelta
 
-import app as logistat
 from conftest import make_user
 from test_przeglad_pracownikow import godziny_pracy, przeglad, wiersz
+
+from logistat.czas import local_today
+from logistat.extensions import db
+from logistat.models import HistoriaCelu, POCZATEK_HISTORII_CELU, set_setting
+
 
 D1 = date(2026, 9, 14)
 D2 = date(2026, 9, 15)
 
 
 def cel_od(dzien, wartosc):
-    logistat.db.session.merge(logistat.HistoriaCelu(dzien=dzien, wartosc=wartosc))
-    logistat.set_setting('target_szt_h', wartosc)
-    logistat.db.session.commit()
+    db.session.merge(HistoriaCelu(dzien=dzien, wartosc=wartosc))
+    set_setting('target_szt_h', wartosc)
+    db.session.commit()
 
 
 def dwa_dni(nazwa='Ala'):
@@ -25,7 +29,7 @@ def dwa_dni(nazwa='Ala'):
     u = make_user('operator', username=nazwa.lower(), display_name=nazwa)
     godziny_pracy(u, 3, sztuk_na_paczke=50, minut_na_paczke=30, dzien=D1)
     godziny_pracy(u, 3, sztuk_na_paczke=50, minut_na_paczke=30, dzien=D2)
-    cel_od(logistat.POCZATEK_HISTORII_CELU, 100)
+    cel_od(POCZATEK_HISTORII_CELU, 100)
     cel_od(D2, 200)
     return u
 
@@ -68,7 +72,7 @@ def test_godziny_z_dnia_bez_celu_nie_wchodza(leader_client):
     u = make_user('operator', username='ala', display_name='Ala')
     godziny_pracy(u, 3, 50, 30, dzien=D1)
     godziny_pracy(u, 3, 50, 30, dzien=D2)
-    cel_od(logistat.POCZATEK_HISTORII_CELU, 0)
+    cel_od(POCZATEK_HISTORII_CELU, 0)
     cel_od(D2, 200)
 
     r = wiersz(przeglad(leader_client, date_from=D1.isoformat(), date_to=D2.isoformat()), 'Ala')
@@ -77,7 +81,7 @@ def test_godziny_z_dnia_bez_celu_nie_wchodza(leader_client):
 
 
 def test_okres_bez_pracy_pokazuje_cel_ostatniego_dnia(leader_client):
-    cel_od(logistat.POCZATEK_HISTORII_CELU, 100)
+    cel_od(POCZATEK_HISTORII_CELU, 100)
     cel_od(D2, 200)
 
     assert przeglad(leader_client, date_from=D1.isoformat(),
@@ -106,7 +110,7 @@ def test_zapis_celu_pamieta_kto_i_kiedy(leader_client):
     r = leader_client.put('/api/stats/target', json={'target_szt_h': 320})
 
     h = r.get_json()['historia']
-    assert h[0]['od'] == logistat.local_today().isoformat()
+    assert h[0]['od'] == local_today().isoformat()
     assert h[0]['wartosc'] == 320
     assert h[0]['zmienil'] and h[0]['zmieniono_at'].endswith('Z')
     assert h[-1]['od'] is None, 'zasiew „od poczatku" na koncu listy'

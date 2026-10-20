@@ -1,11 +1,10 @@
 """Administracja: uzytkownicy (role, szkolenia z czynnosci), czynnosci, listy
 slownikowe, ustawienia, nazwy kategorii, mapowanie krajow i stawek."""
-from datetime import datetime
-
 from flask import Blueprint, abort, jsonify, render_template
 from flask_login import current_user
 from sqlalchemy import func
 
+from logistat.czas import teraz_utc
 from logistat.extensions import db
 from logistat.kategorie import STAT_CATEGORIES, STAT_CATEGORY_LABELS, STAT_CATEGORY_LABELS_PL
 from logistat.models import (
@@ -510,7 +509,7 @@ def api_cost_mapping_save(year, month):
     mapping = CostMapping.query.filter_by(year=year, month=month).first()
     if mapping:
         mapping.set_rates_data(rates)
-        mapping.updated_at = datetime.utcnow()
+        mapping.updated_at = teraz_utc()
         mapping.updated_by = current_user.id
     else:
         mapping = CostMapping(

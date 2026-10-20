@@ -1,5 +1,25 @@
 # LogiStat — Changelog
 
+## 2026-10-20 (3) — Testy importują z pakietu
+
+### Zmienione (bez zmian w działaniu)
+- Testy biorą nazwy prosto z modułów `logistat/` zamiast przez `app.py`;
+  `app.py` to już tylko ~30 linii punktu wejścia (bez listy re-eksportów).
+- Skrypt kontroli spójności importuje z pakietu (bez przekazywania modułu `app`).
+
+## 2026-10-20 (2) — Porządki techniczne
+
+### Zmienione (bez zmian w działaniu)
+- `teraz_utc()` zamiast przestarzałego `datetime.utcnow()` (43 miejsca).
+- Komunikaty startu (seed, migracje) przez dziennik (`logging`) z poziomem i czasem
+  zamiast `print()`.
+- Eksporty do Excela (Statystyki ogólne, Forecast) korzystają ze wspólnego modułu.
+
+### Poprawione
+- Eksport Forecast: oś wykresu „Ilość sztuk” zamiast „Ilość paczek” (dane są w sztukach).
+- Skrypt kontroli spójności uruchamiany z linii poleceń — import pakietu po ustawieniu
+  ścieżki (test uruchamia go tak jak po wdrożeniu).
+
 ## 2026-10-20 — Bezpieczeństwo logowania
 
 ### Zmienione

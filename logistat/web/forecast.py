@@ -1,17 +1,17 @@
 """Forecast vs Actual: plan sztuk per Loading date, wykresy, autozapis, eksport Excel."""
-import io
 from datetime import datetime, timedelta
 
 import openpyxl
-from flask import Blueprint, jsonify, make_response, render_template, request
+from flask import Blueprint, jsonify, render_template, request
 from flask_login import current_user
 from openpyxl.chart import BarChart, Reference
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import PatternFill
 from sqlalchemy import func
 
-from logistat.czas import local_today
+from logistat.czas import local_today, teraz_utc
 from logistat.extensions import db
 from logistat.models import Forecast, ImportedCarton
+from logistat.web.excel import odpowiedz_xlsx, styl_naglowka
 from logistat.web.wspolne import leader_required, require_int
 
 bp = Blueprint('forecast', __name__)
@@ -102,7 +102,7 @@ def api_forecast_save():
         if existing:
             existing.quantity = qty
             existing.notes = notes
-            existing.updated_at = datetime.utcnow()
+            existing.updated_at = teraz_utc()
             existing.updated_by = current_user.id
         else:
             db.session.add(Forecast(
@@ -162,21 +162,11 @@ def api_forecast_export():
     ws = wb.active
     ws.title = 'Forecast vs Actual'
 
-    header_font = Font(bold=True, color='FFFFFF')
-    col_fills = [
-        PatternFill('solid', fgColor='2D3250'),
-        PatternFill('solid', fgColor='4A6FD9'),
-        PatternFill('solid', fgColor='27AE60'),
-        PatternFill('solid', fgColor='C0392B'),
-        PatternFill('solid', fgColor='7D3C98'),
-    ]
+    kolory = ['2D3250', '4A6FD9', '27AE60', 'C0392B', '7D3C98']
     headers = ['Data', 'Forecast', 'Actual (Sztuki)', 'Różnica (A-F)', 'Notatki']
 
-    for col, (h, fill) in enumerate(zip(headers, col_fills), start=1):
-        cell = ws.cell(row=1, column=col, value=h)
-        cell.font = header_font
-        cell.fill = fill
-        cell.alignment = Alignment(horizontal='center')
+    for col, (h, kolor) in enumerate(zip(headers, kolory), start=1):
+        styl_naglowka(ws.cell(row=1, column=col, value=h), kolor)
 
     for row_idx, d in enumerate(days, start=2):
         forecast_qty = forecast_map.get(d, {}).get('quantity', 0)
@@ -203,7 +193,7 @@ def api_forecast_export():
         chart.type = 'col'
         chart.grouping = 'clustered'
         chart.title = 'Forecast vs Actual'
-        chart.y_axis.title = 'Ilość paczek'
+        chart.y_axis.title = 'Ilość sztuk'   # Forecast i Actual sa w sztukach (nie paczkach)
         chart.x_axis.title = 'Data'
         chart.width = 26
         chart.height = 14
@@ -220,13 +210,4 @@ def api_forecast_export():
 
         ws.add_chart(chart, 'G2')
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-
-    resp = make_response(buf.read())
-    resp.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    resp.headers['Content-Disposition'] = (
-        f'attachment; filename=forecast_{date_from_str}_{date_to_str}.xlsx'
-    )
-    return resp
+    return odpowiedz_xlsx(wb, f'forecast_{date_from_str}_{date_to_str}.xlsx')

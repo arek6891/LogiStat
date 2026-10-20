@@ -5,7 +5,7 @@ from flask import Blueprint, abort, jsonify, render_template, request
 from flask_login import current_user
 from sqlalchemy.orm import joinedload
 
-from logistat.czas import iso_z, local_today
+from logistat.czas import iso_z, local_today, teraz_utc
 from logistat.czas_pracy_dane import _compute_worker_times, otwarci_szkoleni
 from logistat.extensions import db
 from logistat.models import (
@@ -145,7 +145,7 @@ def api_time_scan():
 
     stan = stan_czasu_dzis(user)
     shift, trwajace = stan['shift'], stan['trwajace']
-    now = datetime.utcnow()
+    now = teraz_utc()
 
     if mode == 'work_end':
         if stan['work_ended']:
@@ -271,7 +271,7 @@ def api_training_szkolony():
             abort(409, f'{szkolony.display_name} już jest na tym szkoleniu.')
         abort(409, f'{szkolony.display_name} {KOMUNIKATY_TRWANIA[stan["trwajace"][0]]}')
 
-    now = datetime.utcnow()
+    now = teraz_utc()
     rozpoczete = 'training' not in stan_trenera['trwajace']
     if rozpoczete:
         db.session.add(WorkerTimeEvent(
@@ -303,7 +303,7 @@ def api_training_koniec():
     if 'training' not in stan['trwajace']:
         abort(409, f'{trener.display_name} nie prowadzi teraz szkolenia.')
     szkoleni = [u.display_name for u, _ in otwarci_szkoleni(trener.id)]
-    zakoncz_szkolenie(trener, stan['shift'], datetime.utcnow())
+    zakoncz_szkolenie(trener, stan['shift'], teraz_utc())
     db.session.commit()
     return jsonify({
         'message': f'Szkolenie zakończone — {trener.display_name}'

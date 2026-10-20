@@ -1,13 +1,13 @@
 """Paczki (kartony z importu) i udzialy osob w paczce."""
 import json
-from datetime import datetime
 
-from logistat.czas import iso_z
+from logistat.czas import iso_z, teraz_utc
 from logistat.extensions import db
 from logistat.kategorie import STAT_CATEGORIES, liczba
 from logistat.okresy import suma_zlaczonych_okresow
 from logistat.tabela_ilosci import (
-    TRYB_WZOR, TRYB_ZESPOL, kategorie_z_tabeli, roznice_tabeli, sztuki_tabeli, wczytaj_json_dict)
+    TRYB_WZOR, TRYB_ZESPOL, kategorie_z_tabeli, roznice_tabeli, sztuki_tabeli,
+    wczytaj_json_dict)
 
 
 class ImportedCarton(db.Model):
@@ -24,7 +24,7 @@ class ImportedCarton(db.Model):
     data_pliku = db.Column(db.Date, nullable=True)
     uebergabe_nr = db.Column(db.String(100), nullable=True)
     country_mapping_id = db.Column(db.Integer, db.ForeignKey('country_mapping.id'), nullable=True)
-    imported_at = db.Column(db.DateTime, default=datetime.utcnow)
+    imported_at = db.Column(db.DateTime, default=teraz_utc)
     imported_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     processed_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     processed_at = db.Column(db.DateTime, nullable=True)

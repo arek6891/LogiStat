@@ -6,13 +6,15 @@ daty z zakresu + suma.
 """
 from datetime import date, datetime
 
-import app as logistat
+from logistat.czas import local_today
+from logistat.extensions import db
+from logistat.models import ImportedCarton
 
 
 def karton(barcode, dzien, szt=10, start=None, koniec=None):
-    c = logistat.ImportedCarton(barcode=barcode, land='PL', stueckzahl=szt, uebergabe_nr='UB-1',
+    c = ImportedCarton(barcode=barcode, land='PL', stueckzahl=szt, uebergabe_nr='UB-1',
                                 data_pliku=dzien, scan_start_at=start, scan_end_at=koniec)
-    logistat.db.session.add(c)
+    db.session.add(c)
     return c
 
 
@@ -23,7 +25,7 @@ def dane():
     karton('B1', date(2026, 9, 5), 5, start=t)
     karton('C1', date(2026, 9, 9), 7)
     karton('Z0', None, 3)
-    logistat.db.session.commit()
+    db.session.commit()
 
 
 # ── Podsumowanie z zakresem ──────────────────────────────────────────────────
@@ -94,7 +96,7 @@ def test_per_loading_date_zgadza_sie_z_wybranym_dniem(leader_client):
 def test_per_loading_date_domyslnie_biezacy_miesiac(leader_client):
     d = leader_client.get('/api/dashboard/loading-dates').get_json()
 
-    dzis = logistat.local_today()
+    dzis = local_today()
     assert (d['date_from'], d['date_to']) == (dzis.replace(day=1).isoformat(), dzis.isoformat())
     assert d['dni'] == [] and d['suma']['paczek'] == 0
 

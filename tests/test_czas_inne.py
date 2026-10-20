@@ -6,19 +6,24 @@ moga trwac jednoczesnie — inaczej ten sam czas zostalby odjety dwa razy.
 """
 from datetime import datetime, timedelta
 
-import app as logistat
 from conftest import make_user
+
+from logistat.czas import local_today
+from logistat.czas_pracy_dane import _compute_worker_times
+from logistat.extensions import db
+from logistat.models import ShiftAttendance, WorkerTimeEvent, get_or_create_shift
+from logistat.okresy import suma_zlaczonych_okresow
 
 
 def zmiana_z_obecnoscia(barcode='W1', minut_temu=120):
     """Pracownik zeskanowany na dzisiejsza zmiane `minut_temu` minut temu."""
     user = make_user('operator', barcode_id=barcode)
-    shift = logistat.get_or_create_shift(logistat.local_today(), 1)
-    obecnosc = logistat.ShiftAttendance(
+    shift = get_or_create_shift(local_today(), 1)
+    obecnosc = ShiftAttendance(
         shift_id=shift.id, user_id=user.id,
         scanned_at=datetime.utcnow() - timedelta(minutes=minut_temu))
-    logistat.db.session.add(obecnosc)
-    logistat.db.session.commit()
+    db.session.add(obecnosc)
+    db.session.commit()
     return user, shift, obecnosc
 
 
@@ -27,8 +32,8 @@ def skan(client, barcode='W1', mode='other'):
 
 
 def typy(user, shift):
-    return [e.event_type for e in logistat.WorkerTimeEvent.query.filter_by(
-        user_id=user.id, shift_id=shift.id).order_by(logistat.WorkerTimeEvent.timestamp)]
+    return [e.event_type for e in WorkerTimeEvent.query.filter_by(
+        user_id=user.id, shift_id=shift.id).order_by(WorkerTimeEvent.timestamp)]
 
 
 # ── rejestracja ──────────────────────────────────────────────────────────────
@@ -86,10 +91,10 @@ def test_nieznany_tryb_konczy_sie_400(leader_client):
 # ── wplyw na podsumowanie ────────────────────────────────────────────────────
 
 def zdarzenie(user, shift, typ, minut_temu):
-    logistat.db.session.add(logistat.WorkerTimeEvent(
+    db.session.add(WorkerTimeEvent(
         user_id=user.id, shift_id=shift.id, event_type=typ,
         timestamp=datetime.utcnow() - timedelta(minutes=minut_temu)))
-    logistat.db.session.commit()
+    db.session.commit()
 
 
 def test_inne_odejmuje_sie_od_czasu_pracy_i_jest_raportowane_osobno(flask_app):
@@ -100,7 +105,7 @@ def test_inne_odejmuje_sie_od_czasu_pracy_i_jest_raportowane_osobno(flask_app):
     zdarzenie(user, shift, 'break_end', 40)      # 10 min przerwy
     zdarzenie(user, shift, 'work_end', 0)
 
-    p = logistat._compute_worker_times(user.id, shift, obecnosc.scanned_at)
+    p = _compute_worker_times(user.id, shift, obecnosc.scanned_at)
 
     assert p['other_minutes'] == 30
     assert p['break_minutes'] == 10
@@ -112,7 +117,7 @@ def test_otwarte_inne_widac_jako_trwajace(flask_app):
     user, shift, obecnosc = zmiana_z_obecnoscia(minut_temu=60)
     zdarzenie(user, shift, 'other_start', 20)
 
-    p = logistat._compute_worker_times(user.id, shift, obecnosc.scanned_at)
+    p = _compute_worker_times(user.id, shift, obecnosc.scanned_at)
 
     assert p['on_other'] is True
     assert p['others'][0]['end'] is None
@@ -127,7 +132,7 @@ def test_koniec_pracy_zamyka_otwarte_inne(leader_client):
 
     assert r.status_code == 200
     assert typy(user, shift) == ['other_start', 'other_end', 'work_end']
-    domkniete = logistat.WorkerTimeEvent.query.filter_by(
+    domkniete = WorkerTimeEvent.query.filter_by(
         user_id=user.id, event_type='other_end').first()
     assert 'Auto-zamknięcie' in (domkniete.note or '')
 
@@ -170,7 +175,7 @@ def test_nachodzaca_przerwa_i_inne_nie_odejmuja_czasu_dwa_razy(flask_app):
     zdarzenie(user, shift, 'other_start', 80)
     zdarzenie(user, shift, 'other_end', 50)      # 30 min „Inne", 20 min wspolne
 
-    p = logistat._compute_worker_times(user.id, shift, obecnosc.scanned_at)
+    p = _compute_worker_times(user.id, shift, obecnosc.scanned_at)
 
     assert p['break_minutes'] == 30, 'raportowanie zostaje bez zmian'
     assert p['other_minutes'] == 30
@@ -184,7 +189,7 @@ def test_okres_zawarty_w_drugim_liczy_sie_raz(flask_app):
     zdarzenie(user, shift, 'other_start', 70)
     zdarzenie(user, shift, 'other_end', 50)      # 20 min w srodku przerwy
 
-    p = logistat._compute_worker_times(user.id, shift, obecnosc.scanned_at)
+    p = _compute_worker_times(user.id, shift, obecnosc.scanned_at)
 
     assert p['work_minutes'] == 40, '100 - 60, „Inne" siedzi w calosci w przerwie'
 
@@ -196,7 +201,7 @@ def test_rozlaczne_okresy_sumuja_sie_normalnie(flask_app):
     zdarzenie(user, shift, 'other_start', 50)
     zdarzenie(user, shift, 'other_end', 30)      # 20 min
 
-    p = logistat._compute_worker_times(user.id, shift, obecnosc.scanned_at)
+    p = _compute_worker_times(user.id, shift, obecnosc.scanned_at)
 
     assert p['work_minutes'] == 90, '120 - 30'
 
@@ -207,10 +212,10 @@ def test_odwrocony_zakres_po_recznej_korekcie_jest_pomijany(flask_app):
     zdarzenie(user, shift, 'break_start', 20)
     zdarzenie(user, shift, 'break_end', 30)      # koniec 10 min PRZED startem
 
-    p = logistat._compute_worker_times(user.id, shift, obecnosc.scanned_at)
+    p = _compute_worker_times(user.id, shift, obecnosc.scanned_at)
 
     assert p['work_minutes'] <= 60
 
 
 def test_suma_zlaczonych_okresow_bez_danych():
-    assert logistat.suma_zlaczonych_okresow([]) == 0
+    assert suma_zlaczonych_okresow([]) == 0

@@ -8,7 +8,7 @@ from flask_login import current_user
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
 
-from logistat.czas import local_day_bounds, local_today
+from logistat.czas import local_day_bounds, local_today, teraz_utc
 from logistat.extensions import db
 from logistat.import_paczek import _cell_to_date
 from logistat.models import CountryMapping, ImportedCarton, UdzialPaczki, User, etykiety_kategorii
@@ -376,7 +376,7 @@ def api_package_update(carton_id):
     carton.uebergabe_nr = uebergabe_nr
     carton.double_rate = double_rate
     carton.country_mapping_id = mapping.id if mapping else None
-    carton.modified_at = datetime.utcnow()
+    carton.modified_at = teraz_utc()
     carton.modified_by = current_user.id
 
     new_group = klucz_linii(carton)
@@ -406,7 +406,7 @@ def api_package_reassign(carton_id):
     else:
         user = db.get_or_404(User, user_id)
         carton.processed_by = user.id
-        carton.processed_at = datetime.utcnow()
+        carton.processed_at = teraz_utc()
     db.session.commit()
     return jsonify({'carton': carton.to_dict()}), 200
 
@@ -435,7 +435,7 @@ def api_package_zamknij_zespol(carton_id):
     if not otwarte:
         return jsonify({'error': 'Paczka nie ma otwartego zespołu — dla zwykłej paczki użyj „🔓 Odblokuj".'}), 400
 
-    teraz = datetime.utcnow()
+    teraz = teraz_utc()
     for u in otwarte:
         u.end_at = teraz
         u.zamkniete_przez = current_user.id
@@ -469,7 +469,7 @@ def api_package_categories_update(carton_id):
         abort(400, blad)
 
     carton.set_scan_categories(kategorie)
-    carton.modified_at = datetime.utcnow()
+    carton.modified_at = teraz_utc()
     carton.modified_by = current_user.id
     recompute_general_stat(*klucz_linii(carton),
                            actor_id=current_user.id, from_scan=True)
@@ -515,7 +515,7 @@ def api_package_tabela_update(carton_id):
             abort(400, blad)
         zapisz_tabele_kartonu(carton, tabela, current_user.id)
 
-    teraz = datetime.utcnow()
+    teraz = teraz_utc()
     carton.modified_at = teraz
     carton.modified_by = current_user.id
     if carton.roznica:
@@ -534,7 +534,7 @@ def api_package_potwierdz_roznice(carton_id):
         abort(400, 'Ta paczka nie ma różnicy do potwierdzenia.')
     if carton.roznica_potwierdzona_at:
         return jsonify(carton.to_dict()), 200
-    carton.roznica_potwierdzona_at = datetime.utcnow()
+    carton.roznica_potwierdzona_at = teraz_utc()
     carton.roznica_potwierdzona_przez = current_user.id
     db.session.commit()
     return jsonify(carton.to_dict()), 200
@@ -566,7 +566,7 @@ def api_package_unlock_scan(carton_id):
         carton.udzialy.remove(u)
     carton.scan_start_at = None
     carton.scan_start_by = None
-    carton.modified_at = datetime.utcnow()
+    carton.modified_at = teraz_utc()
     carton.modified_by = current_user.id
     db.session.commit()
 

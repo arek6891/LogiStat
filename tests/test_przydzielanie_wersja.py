@@ -5,8 +5,13 @@ nieaktualnej dostaje 409 zamiast nadpisac cudzy przydzial.
 """
 import threading
 
-import app as logistat
 from conftest import login, make_user
+
+from logistat.extensions import db
+from logistat.models import Activity, ActivityAssignment, get_or_create_shift
+from logistat.przydzial import wersja_przydzialu
+from logistat.web.wspolne import parse_date
+
 
 DZIEN = '2026-09-01'
 
@@ -26,12 +31,12 @@ def wczytaj(client, shift_number=1):
 
 
 def test_odczyt_zwraca_wersje_takze_dla_nieistniejacej_zmiany(leader_client):
-    assert wczytaj(leader_client)['wersja'] == logistat.wersja_przydzialu([])
+    assert wczytaj(leader_client)['wersja'] == wersja_przydzialu([])
 
 
 def test_zapis_zwraca_wersje_zgodna_z_odczytem(leader_client):
     u = make_user('operator', przeszkolony=True)
-    akt = logistat.Activity.query.first()
+    akt = Activity.query.first()
     v0 = wczytaj(leader_client)['wersja']
 
     r = przydzial(leader_client, u.id, akt.id, wersja=v0)
@@ -44,7 +49,7 @@ def test_zapis_zwraca_wersje_zgodna_z_odczytem(leader_client):
 def test_kolejne_zapisy_z_wersja_z_poprzedniego_przechodza(leader_client):
     """Tak pracuje autozapis: kazdy zapis bierze wersje z odpowiedzi poprzedniego."""
     u = make_user('operator', przeszkolony=True)
-    a1, a2 = logistat.Activity.query.limit(2).all()
+    a1, a2 = Activity.query.limit(2).all()
     v = wczytaj(leader_client)['wersja']
 
     for akt in (a1, a2, a1):
@@ -52,12 +57,12 @@ def test_kolejne_zapisy_z_wersja_z_poprzedniego_przechodza(leader_client):
         assert r.status_code == 200
         v = r.get_json()['wersja']
 
-    assert logistat.ActivityAssignment.query.one().activity_id == a1.id
+    assert ActivityAssignment.query.one().activity_id == a1.id
 
 
 def test_nieaktualna_wersja_daje_409_i_nie_nadpisuje(flask_app):
     u = make_user('operator', przeszkolony=True)
-    a1, a2 = logistat.Activity.query.limit(2).all()
+    a1, a2 = Activity.query.limit(2).all()
     lider_a, lider_b = make_user('leader'), make_user('leader')
     ka, kb = flask_app.test_client(), flask_app.test_client()
     login(ka, lider_a.username)
@@ -76,13 +81,13 @@ def test_nieaktualna_wersja_daje_409_i_nie_nadpisuje(flask_app):
     assert dane['konflikt'] is True
     assert 'Ktoś inny' in dane['error']
     assert dane['wersja'] == wczytaj(kb)['wersja']
-    assert logistat.ActivityAssignment.query.one().activity_id == a1.id, \
+    assert ActivityAssignment.query.one().activity_id == a1.id, \
         'zapis z nieaktualna wersja nie moze nadpisac przydzialu drugiego lidera'
 
 
 def test_wersja_dotyczy_tylko_swojej_zmiany(leader_client):
     u = make_user('operator', przeszkolony=True)
-    akt = logistat.Activity.query.first()
+    akt = Activity.query.first()
     v2 = wczytaj(leader_client, shift_number=2)['wersja']
 
     assert przydzial(leader_client, u.id, akt.id, shift_number=1).status_code == 200
@@ -93,15 +98,15 @@ def test_wersja_dotyczy_tylko_swojej_zmiany(leader_client):
 
 def test_zapis_bez_wersji_dziala_jak_dawniej(leader_client):
     u = make_user('operator', przeszkolony=True)
-    akt = logistat.Activity.query.first()
+    akt = Activity.query.first()
     assert przydzial(leader_client, u.id, akt.id).status_code == 200
     assert przydzial(leader_client, u.id, akt.id).status_code == 200
-    assert logistat.ActivityAssignment.query.count() == 1
+    assert ActivityAssignment.query.count() == 1
 
 
 def test_zapis_blokuje_wiersz_zmiany(leader_client, queries):
     u = make_user('operator', przeszkolony=True)
-    akt = logistat.Activity.query.first()
+    akt = Activity.query.first()
 
     przydzial(leader_client, u.id, akt.id)
 
@@ -114,12 +119,12 @@ def test_rownolegle_zapisy_nie_dubluja_przydzialu(flask_app):
     """Delete + insert z dwoch stanowisk naraz: bez blokady wiersza zmiany oba
     wstawialy swoj komplet i zmiana miala przydzial podwojnie."""
     u = make_user('operator', przeszkolony=True)
-    akt = logistat.Activity.query.first()
+    akt = Activity.query.first()
     lider = make_user('leader')
-    logistat.get_or_create_shift(logistat.parse_date(DZIEN), 1)
+    get_or_create_shift(parse_date(DZIEN), 1)
     # Watki nie moga siegac do obiektow sesji glownego watku — tylko wartosci.
     user_id, activity_id, nazwa = u.id, akt.id, lider.username
-    logistat.db.session.commit()
+    db.session.commit()
     wyniki = []
 
     def zapisz():
@@ -127,7 +132,7 @@ def test_rownolegle_zapisy_nie_dubluja_przydzialu(flask_app):
             c = flask_app.test_client()
             login(c, nazwa)
             wyniki.append(przydzial(c, user_id, activity_id).status_code)
-            logistat.db.session.remove()
+            db.session.remove()
 
     watki = [threading.Thread(target=zapisz) for _ in range(4)]
     for w in watki:
@@ -136,4 +141,4 @@ def test_rownolegle_zapisy_nie_dubluja_przydzialu(flask_app):
         w.join(timeout=20)
 
     assert wyniki == [200] * 4
-    assert logistat.ActivityAssignment.query.count() == 1
+    assert ActivityAssignment.query.count() == 1

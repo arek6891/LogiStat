@@ -19,6 +19,15 @@ def iso_z(dt):
     return dt.isoformat() + 'Z' if dt else None
 
 
+def teraz_utc():
+    """Teraz jako naive UTC — tak zapisujemy wszystkie znaczniki czasu w bazie.
+
+    Zamiast `datetime.utcnow()`, przestarzalego od Pythona 3.12 (i do usuniecia).
+    Wynik ten sam: bez strefy, w UTC.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def local_today():
     """Dzisiejsza data w Europe/Warsaw — niezaleznie od strefy serwera.
 

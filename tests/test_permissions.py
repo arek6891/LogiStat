@@ -4,12 +4,15 @@ Trasa /admin/users i endpointy /api/users sa dostepne dla lidera (lider
 zaklada operatorow na zmianie). Ale lider nie moze przez nie zdobyc admina:
 ani zalozyc konta admina, ani podniesc sobie roli, ani zmienic hasla admina.
 """
-import app as logistat
+from app import app
 from conftest import PASSWORD, login, make_user
+
+from logistat.extensions import db
+from logistat.models import User
 
 
 def user(username):
-    return logistat.User.query.filter_by(username=username).first()
+    return User.query.filter_by(username=username).first()
 
 
 # ── Lider nie eskaluje uprawnien ─────────────────────────────────────────────
@@ -142,7 +145,7 @@ def test_nieznana_rola_odrzucona(admin_client):
 
 def test_nie_da_sie_usunac_ostatniego_admina(admin_client, admin):
     """Zabezpieczenie przed zablokowaniem sobie dostepu do panelu."""
-    seed_admin = logistat.User.query.filter_by(username='admin').first()
+    seed_admin = User.query.filter_by(username='admin').first()
     admin_client.delete(f'/api/users/{seed_admin.id}')
 
     r = admin_client.delete(f'/api/users/{admin.id}')
@@ -152,7 +155,7 @@ def test_nie_da_sie_usunac_ostatniego_admina(admin_client, admin):
 
 
 def test_nie_da_sie_zdegradowac_ostatniego_admina(admin_client, admin):
-    seed_admin = logistat.User.query.filter_by(username='admin').first()
+    seed_admin = User.query.filter_by(username='admin').first()
     admin_client.delete(f'/api/users/{seed_admin.id}')
 
     r = admin_client.put(f'/api/users/{admin.id}', json={'role': 'leader'})
@@ -166,7 +169,7 @@ def test_nie_da_sie_zdegradowac_ostatniego_admina(admin_client, admin):
 def test_dezaktywowany_lider_sie_nie_zaloguje(client, admin):
     lider = make_user('leader', username='lider-out')
     lider.is_active_user = False
-    logistat.db.session.commit()
+    db.session.commit()
 
     login(client, 'lider-out')
 
@@ -175,7 +178,7 @@ def test_dezaktywowany_lider_sie_nie_zaloguje(client, admin):
 
 def test_dezaktywacja_unieważnia_istniejaca_sesje(client, admin_client, admin):
     lider = make_user('leader', username='lider-live')
-    sesja = logistat.app.test_client()
+    sesja = app.test_client()
     login(sesja, 'lider-live')
     assert sesja.get('/dashboard').status_code == 200
 

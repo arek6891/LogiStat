@@ -1,8 +1,8 @@
 """Czas pracy — dane z bazy: podsumowanie przerw / Inne / szkolen osoby na zmianie
 (`_compute_worker_times`) i otwarci szkoleni danego trenera."""
-from datetime import datetime, timedelta
+from datetime import timedelta
 
-from logistat.czas import iso_z
+from logistat.czas import iso_z, teraz_utc
 from logistat.extensions import db
 from logistat.models import User, WorkerTimeEvent
 from logistat.okresy import suma_zlaczonych_okresow
@@ -79,7 +79,7 @@ def _compute_worker_times(uid, shift, attendance_time):
     if open_trainee:
         trainee_periods.append({'start': iso_z(open_trainee), 'end': None, 'minutes': None})
 
-    end_ref = work_end_ts or datetime.utcnow()
+    end_ref = work_end_ts or teraz_utc()
     # „Inne" (np. wyjscie do HR) pomniejsza czas pracy tak samo jak przerwa,
     # ale jest raportowane osobno — przerwa i „Inne" to rozne rzeczy dla operacji.
     #
@@ -112,7 +112,7 @@ def _compute_worker_times(uid, shift, attendance_time):
 
 def otwarci_szkoleni(trener_id):
     """`[(user, shift_id)]` osob szkolonych z otwartym szkoleniem u `trener_id`."""
-    od = datetime.utcnow() - timedelta(days=2)     # szkolenie nie trwa dluzej
+    od = teraz_utc() - timedelta(days=2)     # szkolenie nie trwa dluzej
     pary = {(e.user_id, e.shift_id) for e in WorkerTimeEvent.query.filter(
         WorkerTimeEvent.training_lead_id == trener_id,
         WorkerTimeEvent.event_type == 'trainee_start',

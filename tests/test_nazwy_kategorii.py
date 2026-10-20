@@ -7,7 +7,9 @@ import io
 
 import openpyxl
 
-import app as logistat
+from logistat.extensions import db
+from logistat.models import AppSetting, etykieta_kategorii, etykiety_kategorii
+from logistat.paczki import parse_scan_categories
 
 
 def ustaw(client, **nazwy):
@@ -15,8 +17,8 @@ def ustaw(client, **nazwy):
 
 
 def test_domyslnie_polska_nazwa_a_w_nawiasie_angielska(flask_app):
-    assert logistat.etykieta_kategorii('sorting') == 'Sortowanie (Sorting)'
-    assert logistat.etykieta_kategorii('labelling_on') == 'Etykietowanie pojedyncze (Labelling one)'
+    assert etykieta_kategorii('sorting') == 'Sortowanie (Sorting)'
+    assert etykieta_kategorii('labelling_on') == 'Etykietowanie pojedyncze (Labelling one)'
 
 
 def test_admin_zmienia_nazwe_kategorii(admin_client):
@@ -42,8 +44,8 @@ def test_pusta_nazwa_wraca_do_domyslnej_i_nie_zostawia_wpisu(admin_client):
     r = ustaw(admin_client, sorting='   ')
 
     assert r.status_code == 200
-    assert logistat.etykieta_kategorii('sorting') == 'Sortowanie (Sorting)'
-    assert logistat.db.session.get(logistat.AppSetting, 'kategoria_pl:sorting') is None
+    assert etykieta_kategorii('sorting') == 'Sortowanie (Sorting)'
+    assert db.session.get(AppSetting, 'kategoria_pl:sorting') is None
 
 
 def test_wpisanie_domyslnej_nie_zapisuje_kopii(admin_client):
@@ -51,13 +53,13 @@ def test_wpisanie_domyslnej_nie_zapisuje_kopii(admin_client):
     przestalaby dzialac dla tej kategorii."""
     ustaw(admin_client, sorting='Sortowanie')
 
-    assert logistat.db.session.get(logistat.AppSetting, 'kategoria_pl:sorting') is None
+    assert db.session.get(AppSetting, 'kategoria_pl:sorting') is None
 
 
 def test_nadmiarowe_spacje_sa_sciskane(admin_client):
     ustaw(admin_client, sorting='  Nie   sprocesowane ')
 
-    assert logistat.etykieta_kategorii('sorting') == 'Nie sprocesowane (Sorting)'
+    assert etykieta_kategorii('sorting') == 'Nie sprocesowane (Sorting)'
 
 
 def test_eksport_excel_zostaje_po_angielsku(admin_client):
@@ -74,7 +76,7 @@ def test_eksport_excel_zostaje_po_angielsku(admin_client):
 def test_komunikat_bledu_ilosci_uzywa_nazwy_dla_pracownika(admin_client):
     ustaw(admin_client, sorting='Niesprocesowane')
 
-    _, blad = logistat.parse_scan_categories({'sorting': 'abc'})
+    _, blad = parse_scan_categories({'sorting': 'abc'})
 
     assert blad and 'Niesprocesowane (Sorting)' in blad
 
@@ -83,7 +85,7 @@ def test_jedno_zapytanie_na_wszystkie_etykiety(admin_client, queries):
     ustaw(admin_client, sorting='Niesprocesowane')
     przed = len(queries.matching('app_setting'))
 
-    logistat.etykiety_kategorii()
+    etykiety_kategorii()
 
     assert len(queries.matching('app_setting')) - przed == 1
 
@@ -92,7 +94,7 @@ def test_lider_nie_zmieni_nazw(leader_client):
     r = ustaw(leader_client, sorting='X')
 
     assert r.status_code == 403 and r.get_json()['error']
-    assert logistat.db.session.get(logistat.AppSetting, 'kategoria_pl:sorting') is None
+    assert db.session.get(AppSetting, 'kategoria_pl:sorting') is None
 
 
 def test_nieznana_kategoria_daje_400(admin_client):
@@ -106,7 +108,7 @@ def test_za_dluga_nazwa_daje_400(admin_client):
     r = ustaw(admin_client, sorting='x' * 61)
 
     assert r.status_code == 400
-    assert logistat.db.session.get(logistat.AppSetting, 'kategoria_pl:sorting') is None
+    assert db.session.get(AppSetting, 'kategoria_pl:sorting') is None
 
 
 def test_zle_cialo_daje_400(admin_client):

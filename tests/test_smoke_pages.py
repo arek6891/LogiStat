@@ -2,7 +2,6 @@
 helper w base.html) i regresje uprawnien na trasach."""
 import pytest
 
-import app as logistat
 from conftest import strona_z_js
 
 # Trasy renderujace strony (bez API i eksportow)

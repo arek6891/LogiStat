@@ -1,5 +1,6 @@
 """Fabryka aplikacji Flask (`create_app`) i ladowanie uzytkownika sesji.
 `create_app()` NIE dotyka bazy — schemat, migracje i seed: `logistat.baza.init_db()`."""
+import logging
 import os
 
 from flask import Flask, jsonify, redirect, request, url_for
@@ -17,6 +18,7 @@ def create_app():
     """Aplikacja z konfiguracja ze srodowiska, obsluga bledow i blueprintami.
     Blad konfiguracji (brak SECRET_KEY / DATABASE_URL) = wyjatek tutaj."""
     app = Flask('logistat', root_path=KATALOG_PROJEKTU)
+    _dziennik()
     _konfiguruj(app)
     db.init_app(app)
     login_manager.init_app(app)
@@ -25,6 +27,18 @@ def create_app():
     _szablony(app)
     _blueprinty(app)
     return app
+
+
+def _dziennik():
+    """Komunikaty `logistat.*` (seed, migracje) na stderr — trafiaja do `docker logs`
+    obok logow gunicorna. Do 2026-10-20 bylo `print()` bez poziomu i czasu."""
+    log = logging.getLogger('logistat')
+    if not log.handlers:
+        uchwyt = logging.StreamHandler()
+        uchwyt.setFormatter(logging.Formatter('[%(asctime)s] [%(levelname)s] %(name)s: %(message)s'))
+        log.addHandler(uchwyt)
+        log.setLevel(logging.INFO)
+        log.propagate = False
 
 
 def _konfiguruj(app):
