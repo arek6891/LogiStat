@@ -46,15 +46,24 @@
     --brand-blue: #325c96;
     --brand-red: #cc1122;
 
-    /* Menu boczne — zielone, aktywna pozycja jako biala karta z niebieskim paskiem */
-    --menu: #6fa83a;
+    /* Menu boczne — przejscie niebieski → zielen jak w logo Logwin (wariant B,
+       operacja 2026-10-22); aktywna pozycja jako biala karta z zielonym paskiem.
+       Barwy logo: niebieski #164E94, zielen #6EC72D — w tle przyciemniona do
+       #4F8F22 / #5C9E2C, bo bialy tekst na #6EC72D ma ~2:1. */
+    --menu: #164e94;                /* kolor jednolity (fallback / dolna granica kontrastu) */
+    --menu-tlo: linear-gradient(160deg, #164e94 0%, #164e94 30%, #4f8f22 75%, #5c9e2c 100%);
     --menu-tekst: #ffffff;
     --menu-tekst-2: rgb(255 255 255 / 0.82);
     --menu-linia: rgb(255 255 255 / 0.25);
     --menu-hover: rgb(255 255 255 / 0.16);
     --menu-aktywna: #ffffff;
-    --menu-aktywna-tekst: #2f5a12;
-    --menu-pasek: #325c96;
+    --menu-aktywna-tekst: #164e94;
+    --menu-pasek: #6ec72d;
+    /* Pasek naglowka sekcji (Pracownik / Lider / Admin) — przyciemnienie tla,
+       wiec pasuje i na niebieskim, i na zielonym odcinku przejscia */
+    --menu-sekcja: rgb(0 0 0 / 0.22);
+    --menu-sekcja-tekst: #ffffff;
+    --logo-tlo: #ffffff;            /* plakietka pod logo Logwin (oba tryby) */
 
     /* Statusy — ciemniejsze odcienie, czytelne na bialym */
     --success: #237a5e;
@@ -89,6 +98,7 @@
     --shift-1-bg: rgba(15, 127, 184, 0.13);
     --shift-2: #c45a0c;
     --shift-2-bg: rgba(196, 90, 12, 0.13);
+    --on-shift: #ffffff;            /* tekst na aktywnej zakladce zmiany */
 
     /* Typography — tresc Inter, naglowki Montserrat (jak na stronie Logwin) */
     --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -104,6 +114,84 @@
     /* Transitions */
     --transition: all 0.2s ease;
     --transition-slow: all 0.35s ease;
+}
+
+/* Tryb ciemny (przycisk w menu, 2026-10-22) — wybor zapamietany w przegladarce
+   (`localStorage['logistat-motyw']`, ustawiany w <head> przez static/js/motyw.js,
+   zanim strona sie narysuje). Paleta = grafit Logwin z motywu 2026-10-16…20:
+   akcent zielony #8BC640 z ciemnym tekstem (biel ma na nim 2:1), statusy jasniejsze.
+   Nadpisuje TYLKO kolory — nowy token w :root musi dostac tu swoj odpowiednik. */
+:root[data-motyw="ciemny"] {
+    color-scheme: dark;
+
+    --bg-primary: #232622;
+    --bg-secondary: #2b2e2a;
+    --bg-card: #333732;
+    --bg-card-solid: #333732;
+    --bg-hover: #3c403a;
+    --bg-input: #282b27;
+    --border: #4a4f48;
+    --border-rgb: 74 79 72;
+    --border-focus: #8bc640;
+
+    --text-primary: #e4e6e2;
+    --text-secondary: #b3b7af;
+    --text-secondary-rgb: 179 183 175;
+    --text-muted: #8c9188;
+
+    --accent: #8bc640;
+    --accent-rgb: 139 198 64;
+    --accent-hover: #9dd257;
+    --accent-glow: rgb(139 198 64 / 0.22);
+    --on-accent: #1c2018;
+    --accent-2: #6f9bd6;
+    --accent-2-rgb: 111 155 214;
+
+    /* Menu — grafit, aktywna pozycja jako jasniejsza karta z zielonym paskiem */
+    --menu: #1c1f1b;
+    --menu-tlo: #1c1f1b;
+    --menu-tekst: #e4e6e2;
+    --menu-tekst-2: rgb(228 230 226 / 0.7);
+    --menu-linia: rgb(255 255 255 / 0.12);
+    --menu-hover: rgb(255 255 255 / 0.07);
+    --menu-aktywna: #333732;
+    --menu-aktywna-tekst: #b5e07c;
+    --menu-pasek: #8bc640;
+    --menu-sekcja: #2f4a1c;
+    --menu-sekcja-tekst: #d9efbd;
+
+    --success: #4cc3a5;
+    --success-rgb: 76 195 165;
+    --success-bg: rgb(76 195 165 / 0.14);
+    --warning: #e7b343;
+    --warning-rgb: 231 179 67;
+    --warning-bg: rgb(231 179 67 / 0.14);
+    --danger: #ec5a5f;
+    --danger-rgb: 236 90 95;
+    --danger-bg: rgb(236 90 95 / 0.14);
+    --info: #6f9bd6;
+    --info-rgb: 111 155 214;
+    --info-bg: rgb(111 155 214 / 0.14);
+    --double-rate: #f0a04b;
+    --double-rate-rgb: 240 160 75;
+
+    --toast-success-bg: #1f4239;
+    --toast-success-fg: #d5f3ea;
+    --toast-danger-bg: #4d2224;
+    --toast-danger-fg: #fbd7d8;
+    --toast-warning-bg: #4a3c18;
+    --toast-warning-fg: #f8ecc8;
+    --toast-info-bg: #22385a;
+    --toast-info-fg: #d8e6f8;
+
+    --shift-1: #38bdf8;
+    --shift-1-bg: rgba(56, 189, 248, 0.14);
+    --shift-2: #f97316;
+    --shift-2-bg: rgba(249, 115, 22, 0.14);
+    --on-shift: #10181f;
+
+    --shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.4);
 }
 
 * {
@@ -131,6 +219,7 @@ html, body {
 .sidebar {
     width: 260px;
     background: var(--menu);
+    background: var(--menu-tlo);
     color: var(--menu-tekst);
     border-right: 1px solid rgb(0 0 0 / 0.06);
     padding: 24px 0;
@@ -148,6 +237,22 @@ html, body {
     padding: 0 24px 24px;
     border-bottom: 1px solid var(--menu-linia);
     margin-bottom: 16px;
+}
+
+.sidebar-logo .logo-firmy {
+    /* Logo Logwin (static/img/logwin.svg) w kolorach marki — zawsze na bialym,
+       takze w trybie ciemnym (szary napis i zielony znak nie maja kontrastu na menu). */
+    background: var(--logo-tlo);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    line-height: 0;
+}
+
+.sidebar-logo .logo-firmy img {
+    width: 100%;
+    height: auto;
+    display: block;
 }
 
 .sidebar-logo h1 {
@@ -188,16 +293,41 @@ html, body {
 }
 
 .sidebar-nav .nav-section {
-    padding: 14px 16px 5px;
-    font-size: 0.66rem;
+    /* Pasek naglowka grupy (operacja 2026-10-22: sekcje maja byc widoczne) */
+    margin: 18px 0 6px;
+    padding: 6px 12px;
+    background: var(--menu-sekcja);
+    color: var(--menu-sekcja-tekst);
+    border-radius: var(--radius-sm);
+    font-size: 0.72rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.09em;
-    color: var(--menu-tekst-2);
+}
+
+/* Kreska oddzielajaca grupy — nad kazdym paskiem oprocz pierwszego */
+.sidebar-nav .nav-section {
+    position: relative;
+}
+
+.sidebar-nav .nav-section:not(:first-child)::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -10px;
+    border-top: 1px solid var(--menu-linia);
 }
 
 .sidebar-nav .nav-section:first-child {
-    padding-top: 2px;
+    margin-top: 0;
+}
+
+/* Przelacznik trybu ciemnego — ikona w wierszu uzytkownika (stopka menu) */
+.przelacznik-motywu {
+    margin-left: auto;
+    padding: 4px 10px;
+    font-size: 1rem;
 }
 
 .sidebar-nav a {
@@ -1219,13 +1349,13 @@ a.js-osoba {
 
 .shift-tab.active[data-shift="1"] {
     background: var(--shift-1);
-    color: #ffffff;
+    color: var(--on-shift);
     box-shadow: 0 2px 8px var(--shift-1-bg);
 }
 
 .shift-tab.active[data-shift="2"] {
     background: var(--shift-2);
-    color: #ffffff;
+    color: var(--on-shift);
     box-shadow: 0 2px 8px var(--shift-2-bg);
 }
 

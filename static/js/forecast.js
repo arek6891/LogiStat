@@ -87,6 +87,9 @@ function renderSummary(data) {
     document.getElementById('summaryBar').style.display = 'flex';
 }
 
+// Tryb ciemny przelaczony na stronie — przerysuj w nowych kolorach (motyw.js).
+document.addEventListener('zmiana-motywu', () => { if (chartBar) renderCharts(currentData); });
+
 function renderCharts(data) {
     const labels   = data.map(r => formatDate(r.date));
     const fcVals   = data.map(r => r.forecast);

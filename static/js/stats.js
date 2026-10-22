@@ -313,6 +313,7 @@ async function loadUserStats() {
         renderPaczkiPodsumowanie(data.paczki_podsumowanie);
         renderMonthly(data.monthly);
         renderDaily(data.daily);
+        ostatnieWykresy = data;
         dailyChart = rysujWykres('dailyChart', dailyChart, data.wykres_dzienny, data.norma);
         monthlyChart = rysujWykres('monthlyChart', monthlyChart, data.wykres_miesieczny, data.norma);
     } catch (err) {
@@ -444,6 +445,14 @@ function renderNorma(n) {
 // zespolu i celu. Rzad wielkosci sztuk i szt./h jest inny, stad dwie osie.
 // Dane z paczek, nie z „Wpisu ilosci" — ten jest wypelniany sporadycznie,
 // wiec stary wykres byl pusty niemal u kazdego.
+// Tryb ciemny przelaczony na stronie — przerysuj w nowych kolorach (motyw.js).
+let ostatnieWykresy = null;
+document.addEventListener('zmiana-motywu', () => {
+    if (!ostatnieWykresy) return;
+    dailyChart = rysujWykres('dailyChart', dailyChart, ostatnieWykresy.wykres_dzienny, ostatnieWykresy.norma);
+    monthlyChart = rysujWykres('monthlyChart', monthlyChart, ostatnieWykresy.wykres_miesieczny, ostatnieWykresy.norma);
+});
+
 function rysujWykres(idCanvas, poprzedni, punkty, norma) {
     if (poprzedni) poprzedni.destroy();
     const canvas = document.getElementById(idCanvas);
