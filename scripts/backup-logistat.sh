@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Kopia zapasowa bazy LogiStat (test) — PostgreSQL, kontener logistat-test-db.
+# Kopia zapasowa bazy LogiStat — PostgreSQL. Test (.31): kontener logistat-test-db
+# (domyslny); prod (.30): cron ustawia DB_CONTAINER=logistat-prod-db.
 #
 # Historia: do 2026-08-31 baza byla w SQLite i skrypt robil snapshot przez
 # sqlite3.Connection.backup(). Po przejsciu na Postgresa uzywamy pg_dump.
@@ -7,7 +8,8 @@
 # juz kopiowany — inaczej backup wygladalby zdrowo, a zamrazal stary stan.
 set -euo pipefail
 
-BASE="$HOME/logistat-test"
+# Katalog wdrozenia = katalog nad scripts/ (~/logistat-test na .31, ~/logistat na .30)
+BASE="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$BASE/backups"
 DB_CONTAINER="${DB_CONTAINER:-logistat-test-db}"
 PGUSER="${PGUSER:-logistat}"
