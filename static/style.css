@@ -46,17 +46,22 @@
     --brand-blue: #325c96;
     --brand-red: #cc1122;
 
-    /* Menu boczne — zielone, aktywna pozycja jako biala karta z niebieskim paskiem */
-    --menu: #6fa83a;
+    /* Menu boczne — przejscie niebieski → zielen jak w logo Logwin (wariant B,
+       operacja 2026-10-22); aktywna pozycja jako biala karta z zielonym paskiem.
+       Barwy logo: niebieski #164E94, zielen #6EC72D — w tle przyciemniona do
+       #4F8F22 / #5C9E2C, bo bialy tekst na #6EC72D ma ~2:1. */
+    --menu: #164e94;                /* kolor jednolity (fallback / dolna granica kontrastu) */
+    --menu-tlo: linear-gradient(160deg, #164e94 0%, #164e94 30%, #4f8f22 75%, #5c9e2c 100%);
     --menu-tekst: #ffffff;
     --menu-tekst-2: rgb(255 255 255 / 0.82);
     --menu-linia: rgb(255 255 255 / 0.25);
     --menu-hover: rgb(255 255 255 / 0.16);
     --menu-aktywna: #ffffff;
-    --menu-aktywna-tekst: #2f5a12;
-    --menu-pasek: #325c96;
-    /* Pasek naglowka sekcji (Pracownik / Lider / Admin) — ciemniejsza zielen */
-    --menu-sekcja: #4f7f25;
+    --menu-aktywna-tekst: #164e94;
+    --menu-pasek: #6ec72d;
+    /* Pasek naglowka sekcji (Pracownik / Lider / Admin) — przyciemnienie tla,
+       wiec pasuje i na niebieskim, i na zielonym odcinku przejscia */
+    --menu-sekcja: rgb(0 0 0 / 0.22);
     --menu-sekcja-tekst: #ffffff;
     --logo-tlo: #ffffff;            /* plakietka pod logo Logwin (oba tryby) */
 
@@ -144,6 +149,7 @@
 
     /* Menu — grafit, aktywna pozycja jako jasniejsza karta z zielonym paskiem */
     --menu: #1c1f1b;
+    --menu-tlo: #1c1f1b;
     --menu-tekst: #e4e6e2;
     --menu-tekst-2: rgb(228 230 226 / 0.7);
     --menu-linia: rgb(255 255 255 / 0.12);
@@ -213,6 +219,7 @@ html, body {
 .sidebar {
     width: 260px;
     background: var(--menu);
+    background: var(--menu-tlo);
     color: var(--menu-tekst);
     border-right: 1px solid rgb(0 0 0 / 0.06);
     padding: 24px 0;
