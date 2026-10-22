@@ -331,7 +331,7 @@
                             data-udzialy='{{ item.udzialy_krotko() | tojson }}'
                             data-koniec="{{ item.scan_end_at | localdt('%d.%m.%Y %H:%M') if item.scan_end_at else '' }}"
                             data-edytor="{{ item.edytor_ilosci() }}"
-                            data-tabela='{{ item.get_tabela() | tojson }}'
+                            data-tabela='{{ item.tabela_do_edycji() | tojson }}'
                             onclick="otworzQty(this)" title="Pokaż / popraw ilości">✎ Ilości</button>
                     </div>
                     {% if item.modified_at %}<div style="font-size:.7rem;color:var(--text-muted);" title="Ostatnia edycja">✏ {{ item.modified_by_user.username if item.modified_by_user else '' }} · {{ item.modified_at | localdt('%d.%m %H:%M') }}</div>{% endif %}

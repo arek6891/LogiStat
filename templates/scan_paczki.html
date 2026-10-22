@@ -166,15 +166,7 @@
         margin-bottom: 16px;
     }
     .qty-head .pkg { font-family: monospace; color: var(--accent); font-size: 1rem; }
-    .qty-count {
-        font-size: 1.05rem;
-        background: var(--accent-glow);
-        color: var(--accent);
-        padding: 6px 14px;
-        border-radius: var(--radius-sm);
-        font-weight: 700;
-    }
-    /* Tabela ilosci ma 8 kolumn — karta Koniec / Do dokonczenia jest szersza. */
+    /* Tabela ilosci (duze pola) — karta Koniec / Do dokonczenia jest szersza. */
     .scan-card.z-tabela { max-width: 760px; }
     .qty-foot {
         display: flex;
@@ -224,7 +216,6 @@
                     <div style="font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);">Paczka</div>
                     <div class="pkg" id="{{ prefix }}-qty-barcode"></div>
                 </div>
-                <div class="qty-count">W paczce: <span id="{{ prefix }}-qty-stueckzahl">–</span> szt.</div>
             </div>
             {# Paczka wielu osob: kto jeszcze pracuje (bez ich ilosci — kazdy deklaruje swoja czesc) #}
             <div class="inni-box" id="{{ prefix }}-qty-inni"></div>

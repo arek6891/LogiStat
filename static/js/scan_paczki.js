@@ -177,7 +177,6 @@ async function otworzPanelIlosci(prefix) {
     });
     paczkaPanelu[prefix] = { barcode: pkg, sztuk, tryb, tabela, pracuja: inni.pracuja };
     document.getElementById(prefix + '-qty-barcode').textContent = pkg;
-    document.getElementById(prefix + '-qty-stueckzahl').textContent = sztuk === null ? '?' : sztuk;
     document.getElementById(prefix + '-qty-panel').style.display = 'block';
     const pierwsze = tabela.pierwszePole();
     if (pierwsze) pierwsze.focus();
@@ -382,7 +381,7 @@ async function zapiszIlosci(prefix) {
         addRecent(prefix, pkg, pracownik[prefix]?.display_name || emp, opis || null);
     } else {
         showResult(prefix, '❌ ' + data.error, 'error');
-        // Blad w tabeli (np. ujemne „Pojedynczo") — zostaw panel z wpisanymi
+        // Blad w tabeli (np. liczba jak kod, pusta tabela) — zostaw panel z wpisanymi
         // liczbami do poprawy. Inny blad (paczka zamknieta, zmiana skladu) — od nowa.
         if (res.status === 400) { przywrocFokus(prefix); return; }
     }
