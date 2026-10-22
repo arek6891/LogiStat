@@ -23,10 +23,26 @@
     dashboard, per zmiana, sekwencje, `pg_dump` + odtworzenie
   - Szczegóły i procedura: `docs/DEPLOY.md`
 
-- [ ] **PROD na `10.153.1.30`** — te same kroki co na `.31`
-  - [ ] IT: dostęp SSH dla `optmtst_user` (klucz jak na `.31`; teraz `Permission denied`)
-  - [ ] Własne hasła w `docker-compose.override.yml` (nie kopiować testowych)
-  - [ ] Backup + cron, weryfikacja odtworzenia kopii
+- [x] **PROD na `10.153.1.30`** — działa od 2026-10-22 (main `13bef4f`),
+      `https://logistat-prod.logwin-logistics.com.pl/`; szczegóły w `docs/DEPLOY.md`
+  - [x] Dostęp SSH (`optm_user`), własne hasła w override, schemat z ORM
+  - [x] Kopia z `.31`: 142 użytkowników z hasłami, stawki, kraje, czynności, opcje
+        użytkowników, ustawienia, cel + historia, szkolenia z czynności (sumy zgodne)
+  - [x] Backup: cron 22:30 do `~/logistat/backups`, retencja 14 dni
+  - [ ] **Konta testowe na prod** (`admin`, `lider`, 2 z „test” w nazwie) — mają hasła
+        z testu; dezaktywować albo zmienić hasła
+  - [ ] **Hasło konta `admin`** — nieznane (losowe z sierpnia, nigdzie niezapisane);
+        ustawić nowe przez „Użytkownicy” albo zlecić reset (test i prod)
+  - [ ] **Liderzy/admini zmieniają hasła** na prod (te same co na teście)
+  - [ ] **Hasła do baz** (`logistat` na `.31` i `.30`) przenieść do firmowego menedżera
+        haseł — leżą tylko w `docker-compose.override.yml` na serwerach
+  - [ ] **Backup poza maszyną** — zrzuty leżą na tej samej VM co baza; zapytać IT
+        o ich system backupów / miejsce na kopie; zrobić próbę odtworzenia kopii prod
+  - [ ] **Stanowiska skanerów** — zakładki na adres https prod (po `http://10.153.1.30:5001`
+        logowanie nie działa: `SESSION_COOKIE_SECURE=1`)
+  - [ ] **Stawki kosztów na prod** — skopiowane są tylko za 03/2026; bez stawek za
+        bieżące miesiące koszt w Statystykach ogólnych = 0
+  - [ ] Każde kolejne wdrożenie: najpierw `.31`, potem `.30` (+ `sprawdz_spojnosc.py` na obu)
 
 - [x] **Domena + HTTPS** — `https://logistat-test.logwin-logistics.com.pl/` działa
   - IT opublikowało nazwy przez **Cloudflare**, nie przez firmowe proxy `10.15.12.67`
@@ -34,7 +50,7 @@
   - [ ] IT: potwierdzić, czy przed tymi nazwami jest reguła WAF / allowlista IP
         (Cloudflare Access **nie ma** — sprawdzone; do tego czasu zakładamy, że
         strona logowania jest osiągalna z internetu)
-  - [ ] IT: `logistat-prod` → `.30:5001` zadziała dopiero po wdrożeniu na produkcji
+  - [x] `logistat-prod` → proxy IT `10.15.12.67` → `.30:5001` działa (2026-10-22)
 
 - [x] **Import danych z Excela** — `POST /api/import/excel` (openpyxl), ten sam pipeline co CSV
   - Kolumny jak w CSV: `Barcode`, `Land`, `Stückzahl`, `Kategorie`, `Ziel-Datum`, `Übergabe Nr.`
@@ -178,7 +194,7 @@
 
 ### Docker
 - Port 5001 (nie 5000 — zajęty przez Jewelry-Tracker)
-- Baza: wolumen Postgresa (`logistat-test_pgdata` na `.31`) — **nigdy `down -v`**
+- Baza: wolumen Postgresa (`logistat-test_pgdata` na `.31`, `logistat_pgdata` na `.30`) — **nigdy `down -v`**
 - Gunicorn z 2 workerami (wystarczające dla <50 użytkowników)
 
 ### Deployment
