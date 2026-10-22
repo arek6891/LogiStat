@@ -99,6 +99,9 @@
                         <div style="font-weight:600;">{{ current_user.display_name }}</div>
                         <div style="color:var(--menu-tekst-2);font-size:0.75rem;">{{ current_user.role }}</div>
                     </div>
+                    {# Tryb ciemny — wybor per przegladarka (static/js/motyw.js) #}
+                    <button type="button" id="przelacznikMotywu" class="btn btn-ghost btn-sm przelacznik-motywu"
+                        onclick="przelaczMotyw()" title="Tryb ciemny" aria-label="Tryb ciemny">🌙</button>
                 </div>
                 <a href="{{ url_for('auth.profile') }}" class="btn btn-ghost btn-sm"
                     style="margin-top:12px;width:100%;justify-content:center;">🔑 Zmień hasło</a>
