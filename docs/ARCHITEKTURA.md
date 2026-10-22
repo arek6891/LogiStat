@@ -135,6 +135,16 @@ Quantities entered at package end are the **source of truth for `category_data`*
 - *`JSON.parse('{{ x|tojson|safe }}')`:* `tojson` w apostrofach JS — `"`/`\` w nazwie kategorii (edytuje admin) zmienialy literal i strona przestawala dzialac. Teraz `const x = {{ x|tojson }};` (tojson jest bezpieczny w `<script>`).
 - *`migrate_columns()`:* przy `IF NOT EXISTS` blad to zawsze prawdziwy blad, a except go polykal — aplikacja wstawala bez kolumny i padala na pierwszym zapytaniu. Teraz start przerywa `RuntimeError` z nazwa kolumny; lista w `MIGRACJE_KOLUMN` (stala modulu, test podmienia ja na zla kolumne).
 
+## Logo, paski sekcji menu, tryb ciemny (2026-10-22)
+
+**Zgloszenie.** Operacja: logo Logwin w menu nad/pod nazwa aplikacji; sekcje Pracownik / Lider / Admin maja byc w menu wyraznie wydzielone („paski”); przycisk trybu ciemnego.
+
+**Logo.** `static/img/logwin.svg` z Wikimedia Commons („File:Logo Logwin.svg” — strona logwin-logistics.com odrzucala polaczenia, takze z serwerow; zgodnosc kolorow sprawdzona z obrazkiem od uzytkownika: `#164E94`, `#6EC72D`, napis `#6A6566`). Dodany `viewBox`, bo plik mial tylko `width`/`height` i w `<img>` sie nie skalowal. Nad nazwa „LogiStat”, na **bialej plakietce** (`--logo-tlo`) w obu trybach — szary napis i zielony znak nie maja kontrastu ani na zielonym, ani na grafitowym menu; przemalowanie logo na bialo odpadlo (znak towarowy w kolorach marki).
+
+**Paski sekcji.** `.nav-section` to pasek w ciemniejszej zieleni (`--menu-sekcja`) z kreska nad kazda grupa oprocz pierwszej. Struktura `<li>` bez zmian (grupy nadal ida za rolami).
+
+**Tryb ciemny.** `:root[data-motyw="ciemny"]` nadpisuje tylko tokeny kolorow — paleta grafitu z 2026-10-16 (operacja juz ja znala, kontrasty sprawdzone wtedy), menu grafitowe z zielonym paskiem aktywnej pozycji. Domyslny pozostaje jasny C2 (wybor operacji), `prefers-color-scheme` celowo ignorowany. Wybor per przegladarka w `localStorage['logistat-motyw']`, nie per konto: stanowisko skanera i komputer lidera to rozne ekrany, a operatorzy sie nie loguja. Ustawiany w `<head>` przez `motyw.js` (przed narysowaniem — bez migniecia jasnego), z `try/catch` (tryb prywatny → jasny). Przelacznik to ikona w wierszu uzytkownika w stopce — trzeci pelny przycisk wypychal sekcje Admin pod przewijanie na laptopie. Chart.js nie rozumie `var()`, wiec `przelaczMotyw()` wysyla zdarzenie `zmiana-motywu`, na ktore Normy i Forecast przerysowuja wykresy. Jedyny literal koloru w regulach (`#ffffff` na aktywnej zakladce zmiany) stal sie tokenem `--on-shift` — jasne kolory zmian w ciemnym potrzebuja ciemnego tekstu. **Nowy token w `:root` musi dostac odpowiednik w bloku ciemnym** (inaczej zostanie jasny).
+
 ## Motyw: jasny „C2” (2026-10-20, zastapil grafit)
 
 **Zgloszenie.** Operacja po tygodniu z grafitem: „tlo szare (jasne mocno), tlo menu zielone, przyciski tylko ramki i czcionka niebieska”. Makiety trzech wariantow (artifact `V16e3Zme9bJbtJa4MbzZvm`) — wybrany **C** (menu w sredniej zieleni z bialym tekstem, aktywna pozycja jako biala karta), z prosba o ciemniejsze tlo; z czterech odcieni wybrane **C2 `#DFE2DC`** — biale karty i tabele wyraznie odcinaja sie od tla.

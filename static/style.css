@@ -58,6 +58,7 @@
     /* Pasek naglowka sekcji (Pracownik / Lider / Admin) — ciemniejsza zielen */
     --menu-sekcja: #4f7f25;
     --menu-sekcja-tekst: #ffffff;
+    --logo-tlo: #ffffff;            /* plakietka pod logo Logwin (oba tryby) */
 
     /* Statusy — ciemniejsze odcienie, czytelne na bialym */
     --success: #237a5e;
@@ -229,6 +230,22 @@ html, body {
     padding: 0 24px 24px;
     border-bottom: 1px solid var(--menu-linia);
     margin-bottom: 16px;
+}
+
+.sidebar-logo .logo-firmy {
+    /* Logo Logwin (static/img/logwin.svg) w kolorach marki — zawsze na bialym,
+       takze w trybie ciemnym (szary napis i zielony znak nie maja kontrastu na menu). */
+    background: var(--logo-tlo);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    line-height: 0;
+}
+
+.sidebar-logo .logo-firmy img {
+    width: 100%;
+    height: auto;
+    display: block;
 }
 
 .sidebar-logo h1 {
