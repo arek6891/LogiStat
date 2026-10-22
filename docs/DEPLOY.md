@@ -1,6 +1,6 @@
 # Wdrożenie LogiStat
 
-Stan na 2026-08-31.
+Stan na 2026-10-22.
 
 ## Środowiska
 
@@ -8,12 +8,30 @@ Stan na 2026-08-31.
 |---|---|---|---|---|
 | dev | `10.153.1.32` (pllas01) | `http://10.153.1.32:5001` | PostgreSQL 16 | działa |
 | **test** | `10.153.1.31` (ploptmtst01) | **`https://logistat-test.logwin-logistics.com.pl/`** | PostgreSQL 16 | działa |
-| prod | `10.153.1.30` | `https://logistat-prod.logwin-logistics.com.pl/` | PostgreSQL 16 | **brak dostępu SSH** |
+| **prod** | `10.153.1.30` (ploptm01) | **`https://logistat-prod.logwin-logistics.com.pl/`** | PostgreSQL 16 | działa od 2026-10-22 |
 
 Katalog wdrożenia na `.31`: `/home/optmtst_user/logistat-test`
 (nie `/opt` — `optmtst_user` nie ma tam prawa zapisu, a `sudo` wymaga hasła).
 
 Dostęp: `ssh -i ~/.ssh/id_ed25519 optmtst_user@10.153.1.31`
+
+**Produkcja `.30`:** `ssh -i ~/.ssh/id_ed25519 optm_user@10.153.1.30`, katalog
+`/home/optm_user/logistat` (do `/opt` brak zapisu), kontenery `logistat-prod` /
+`logistat-prod-db`, wolumen `logistat_pgdata`. Na tym samym hoście działa
+produkcyjny returns-hub (`/opt/Returns-Hub`, porty 3000/3002) — nie ruszać.
+Override ma `SESSION_COOKIE_SECURE=1`: logowanie **tylko przez domenę (https)**,
+po `http://10.153.1.30:5001` ciasteczko sesji nie poleci.
+Domena prod rozwiązuje się (w sieci firmowej) na proxy IT `10.15.12.67`, które
+przekierowuje http → https i kieruje na `.30:5001`.
+
+Start prod (2026-10-22, main `13bef4f`): schemat z ORM (`create_all()` +
+`migrate_columns()` w `docker compose run --no-deps app`, **przed** pierwszym
+startem aplikacji — inaczej seed założyłby `admin` i kolidował z kopią), potem
+jedna transakcja `pg_dump --data-only` z `.31`: `user`, `user_option`, `activity`,
+`country_mapping`, `cost_mapping`, `app_setting` (ze znacznikami migracji —
+bez `migracja_szkolenia_czynnosci` start zaznaczyłby wszystkich jako
+przeszkolonych), `historia_celu`, `szkolenie_czynnosci`. Dane operacyjne
+(paczki, rozliczenia, forecast, zmiany, czasy) startują puste.
 
 ## Publikacja pod domeną
 
@@ -157,7 +175,10 @@ tego pliku nie rusza (i odwrotnie).
 
 `scripts/backup-logistat.sh` — `pg_dump --clean --if-exists`, gzip, retencja
 14 dni, sprawdza kompletność zrzutu (`gzip` w potoku sam by błędu nie zgłosił).
-Cron 22:30. Odtworzenie:
+Katalog wdrożenia skrypt bierze ze swojego położenia (`scripts/..`), kontener
+z `DB_CONTAINER` (domyślnie `logistat-test-db`). Cron 22:30; na `.30`:
+`30 22 * * * DB_CONTAINER=logistat-prod-db /home/optm_user/logistat/scripts/backup-logistat.sh >> /home/optm_user/logistat/backups/backup.log 2>&1`.
+Zrzuty leżą na tej samej maszynie co baza. Odtworzenie:
 
 ```bash
 docker exec logistat-test-db psql -U logistat -d postgres -c "CREATE DATABASE restore_check;"
