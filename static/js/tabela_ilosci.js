@@ -165,10 +165,13 @@ const TabelaIlosci = (() => {
                 }
             }
             const w = przelicz();
-            // Jak na serwerze: paczka jednej osoby nie moze miec pustej tabeli
-            // (nic nie liczy sie samo — przypadkowy Enter zapisalby same zera).
-            if (tryb === 'wzor' && !w.sztuk && !w.tabela.karty) {
-                return { blad: 'Tabela jest pusta — wpisz ilości z paczki.', pole: pola()[0] || null };
+            // Nic nie liczy sie samo, wiec nietknieta tabela (wszystkie pola puste)
+            // to najczesciej przypadkowy Enter. Bez okna z pytaniem — Enter skanera
+            // by je zatwierdzil (docs/REVIEW.md). Pusta paczka = swiadomie wpisane
+            // „0” (cala ilosc wyjdzie jako Brak, ❗ dla lidera).
+            if (tryb === 'wzor' && wPaczce > 0 && pola().every(p => p.value.trim() === '')) {
+                return { blad: 'Nic nie wpisano. Jeśli paczka jest pusta (wszystko to brak), '
+                               + 'wpisz 0 w „Ilość” biżuterii.', pole: pola()[0] || null };
             }
             return { tabela: w.tabela, blad: null, wyliczone: w };
         }

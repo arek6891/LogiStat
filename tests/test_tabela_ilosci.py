@@ -138,12 +138,15 @@ def test_liczba_jak_kod_kreskowy_to_blad():
     assert blad and 'kod' in blad and 'Biżuteria' in blad
 
 
-def test_pusta_tabela_jednej_osoby_to_blad_w_zespole_nie():
-    _, blad = normalizuj_tabele(tab(), 'wzor', 10)
-    tabela, blad_zespolu = normalizuj_tabele(tab(), 'zespol', 10)
+def test_pusta_tabela_to_caly_brak():
+    """Paczka bez zadnej sztuki (przyszla pusta) da sie zakonczyc — cala ilosc
+    jako Brak, ❗ dla lidera. Przypadkowy Enter lapie pytanie na ekranie."""
+    tabela, blad = normalizuj_tabele(tab(), 'wzor', 10)
 
-    assert blad and 'pusta' in blad
-    assert blad_zespolu is None and sztuki_tabeli(tabela) == 0
+    assert blad is None
+    assert nadwyzka_brak(tabela, 10) == (0, 10)
+    assert kategorie_z_tabeli(tabela) == {}
+    assert roznice_tabeli(tabela, 10) == ['Brak 10 szt. (wpisano 0 przy 10 w paczce)']
 
 
 def test_stary_ksztalt_z_ekranu_odrzucony():

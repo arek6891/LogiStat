@@ -119,11 +119,9 @@ def normalizuj_tabele(surowe, tryb, stueckzahl):
         if blad:
             return None, blad
         tabela[pole] = n
-    # Paczka jednej osoby z pusta tabela = przypadkowy Enter (dawniej cala ilosc
-    # szla sama do biżuterii, teraz nic nie liczy sie samo). W zespole osoba
-    # moze nie miec sztuk — tam pusta tabela przechodzi.
-    if tryb == TRYB_WZOR and not sztuki_tabeli(tabela) and not tabela['karty']:
-        return None, 'Tabela jest pusta — wpisz ilości z paczki.'
+    # Pusta tabela przechodzi: paczka bez zadnej sztuki = cala ilosc jako Brak
+    # (❗ dla lidera). Przypadkowy Enter na nietknietej tabeli zatrzymuje ekran
+    # (static/js/tabela_ilosci.js) — tam widac, czy pole puste, czy wpisane „0”.
     return tabela, None
 
 
