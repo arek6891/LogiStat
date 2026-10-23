@@ -7,11 +7,19 @@
         <p style="color:var(--text-muted);">Przegląd i korekta rejestracji czasu pracy. Przerwa powyżej <strong>{{ break_threshold }} min</strong> oznaczona ⚠️.</p>
     </div>
     <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
-        <input type="date" id="dateFilter" class="form-control" style="width:160px;"
-               value="{{ '' }}">
-        <select id="workerFilter" class="form-control" style="width:200px;" onchange="rerender()">
+        {# Bez osoby: jeden dzien, wszyscy. Z osoba: zakres od–do, kazdy jej dzien (2026-10-23). #}
+        <input type="date" id="dateFilter" class="form-control" style="width:160px;" title="Dzień">
+        <select id="workerFilter" class="form-control" style="width:220px;" onchange="zmianaOsoby()">
             <option value="">— wszyscy pracownicy —</option>
+            {% for o in osoby %}
+            <option value="{{ o.id }}">{{ o.nazwa }}{% if not o.aktywna %} (nieaktywna){% endif %}</option>
+            {% endfor %}
         </select>
+        <span id="zakresOsoby" style="display:none;align-items:center;gap:.35rem;">
+            <input type="date" id="dateFrom" class="form-control" style="width:160px;" title="Od">
+            <span>–</span>
+            <input type="date" id="dateTo" class="form-control" style="width:160px;" title="Do">
+        </span>
         <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;white-space:nowrap;"
                title="Czas pracy ponad {{ max_work }} min, brak przerwy lub przerwa krótsza niż {{ min_break }} min">
             <input type="checkbox" id="errorFilter" style="width:16px;height:16px;cursor:pointer;" onchange="rerender()">
@@ -20,6 +28,17 @@
         <button class="btn btn-primary" onclick="loadData()">Pokaż</button>
     </div>
 </div>
+
+{# Legenda osi czasu — kolory jak paski na osi pod kazda osoba #}
+<div class="os-legenda">
+    <span><i class="os-praca"></i> praca (wejście → koniec)</span>
+    <span><i class="os-przerwa"></i> przerwa</span>
+    <span><i class="os-inne"></i> Inne</span>
+    <span><i class="os-szkolenie"></i> szkolenie</span>
+    <span><i class="os-szkolony"></i> szkolony/a</span>
+    <span class="os-legenda-opis">Kliknij znacznik na osi, żeby poprawić godzinę; kliknij pasek w innym miejscu, żeby dodać wpis o tej godzinie.</span>
+</div>
+<div id="podsumowanieOsoby" class="os-podsumowanie" style="display:none;"></div>
 
 <!-- Tabela -->
 <div id="tableWrap">
@@ -35,13 +54,16 @@
         <input type="hidden" id="modalEventId">
         <input type="hidden" id="modalUserId">
         <input type="hidden" id="modalShiftId">
+        {# 'zdarzenie' (WorkerTimeEvent) albo 'wejscie' (godzina skanu na zmianie) #}
+        <input type="hidden" id="modalTryb" value="zdarzenie">
+        <input type="hidden" id="modalAttendanceId">
 
         <div class="form-group">
             <label>Pracownik</label>
             <input type="text" id="modalUserName" class="form-control" readonly
                    style="background:var(--bg-hover);cursor:default;">
         </div>
-        <div class="form-group">
+        <div class="form-group" id="modalTypGrupa">
             <label>Typ zdarzenia</label>
             <select id="modalEventType" class="form-control">
                 <option value="break_start">☕ Wyjście na przerwę</option>
@@ -59,7 +81,8 @@
             <label>Czas (lokalny)</label>
             <input type="datetime-local" id="modalTimestamp" class="form-control">
         </div>
-        <div class="form-group">
+        <div id="modalWejscieInfo" style="display:none;font-size:.85rem;color:var(--text-muted);margin-bottom:.75rem;"></div>
+        <div class="form-group" id="modalNotatkaGrupa">
             <label>Notatka (opcjonalna)</label>
             <input type="text" id="modalNote" class="form-control" placeholder="Powód korekty...">
         </div>

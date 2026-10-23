@@ -1529,3 +1529,44 @@ h1, h2, h3, .page-title, .sidebar-logo h1, .login-card h1 {
     font-family: var(--font-head);
     letter-spacing: -0.01em;
 }
+
+/* ── Czasy pracowników: oś czasu pod każdą osobą (2026-10-23) ────────────── */
+/* Pasek wejście → koniec pracy, na nim przerwy / Inne / szkolenie; znaczniki
+   (▶ wejście, ikony zdarzeń) klikane do korekty; klik w pasek = nowy wpis. */
+.os-legenda { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin: 0 0 12px; font-size: .82rem; color: var(--text-secondary); }
+.os-legenda i { display: inline-block; width: 22px; height: 10px; border-radius: 3px; vertical-align: middle; margin-right: 4px; }
+.os-legenda .os-legenda-opis { color: var(--text-muted); }
+.os-podsumowanie { margin: 0 0 12px; padding: 10px 14px; border-radius: var(--radius-sm); background: var(--bg-card); border: 1px solid var(--border); }
+.os-wiersz > td { background: var(--bg-secondary); padding: 6px 16px 10px 48px; }
+.os-czasu { position: relative; padding-top: 16px; max-width: 1100px; }
+.os-godziny { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 1; }
+.os-godzina { position: absolute; top: 0; transform: translateX(-50%); font-size: .68rem; color: var(--text-muted); font-family: monospace; }
+/* Linia pelnej godziny przez pasek */
+.os-godzina::after {
+    content: ''; position: absolute; left: 50%; top: 16px; height: 28px;
+    border-left: 1px dashed rgb(var(--border-rgb) / .9);
+}
+.os-tor { position: relative; height: 28px; border-radius: 6px; cursor: copy; background: var(--bg-card-solid); border: 1px solid var(--border); }
+.os-odcinek { position: absolute; top: 3px; bottom: 3px; border-radius: 4px; pointer-events: none; }
+.os-praca, .os-legenda .os-praca { background: rgb(var(--success-rgb) / .28); border: 1px solid var(--success); }
+.os-odcinek.os-praca { top: 2px; bottom: 2px; }
+.os-odcinek.os-otwarta { border-right: 2px dashed var(--success); }
+.os-przerwa, .os-legenda .os-przerwa { background: var(--warning); }
+.os-inne, .os-legenda .os-inne { background: var(--text-secondary); }
+.os-szkolenie, .os-legenda .os-szkolenie { background: var(--info); }
+.os-szkolony, .os-legenda .os-szkolony {
+    background: repeating-linear-gradient(45deg, var(--info) 0 4px, rgb(var(--info-rgb) / .35) 4px 8px);
+}
+.os-odcinek.os-przerwa, .os-odcinek.os-inne, .os-odcinek.os-szkolenie, .os-odcinek.os-szkolony { top: 7px; bottom: 7px; }
+.os-znacznik {
+    position: absolute; top: 50%; transform: translate(-50%, -50%);
+    min-width: 22px; height: 22px; padding: 0 2px; border-radius: 11px; cursor: pointer;
+    border: 2px solid var(--kolor, var(--accent)); background: var(--bg-card-solid);
+    font-size: .7rem; line-height: 1; z-index: 2;
+}
+.os-znacznik:hover, .os-znacznik:focus { z-index: 3; box-shadow: 0 0 0 3px var(--accent-glow); outline: none; }
+.os-wejscie { --kolor: var(--success); color: var(--success); font-weight: 700; }
+.os-wejscie.os-poprawione { --kolor: var(--warning); color: var(--warning); }
+.os-czynnosci { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: .74rem; color: var(--text-muted); }
+.os-czynnosci span { background: var(--bg-hover); color: var(--text-secondary); padding: 1px 8px; border-radius: 8px; font-weight: 600; }
+.os-czynnosci.os-brak { font-style: italic; }

@@ -3,10 +3,9 @@ from datetime import date, datetime
 
 from flask import Blueprint, abort, jsonify, render_template, request
 from flask_login import current_user
-from sqlalchemy.orm import joinedload
 
-from logistat.czas import iso_z, local_today, teraz_utc
-from logistat.czas_pracy_dane import _compute_worker_times, otwarci_szkoleni
+from logistat.czas import iso_z, local_day_bounds, local_today, teraz_utc
+from logistat.czas_pracy_dane import MAX_DNI_OSOBY, otwarci_szkoleni, wiersze_czasow
 from logistat.extensions import db
 from logistat.models import (
     EVENT_TYPES, KOMUNIKATY_TRWANIA, Shift, ShiftAttendance, TRYBY_CZASU, TRYBY_SKANU, User,
@@ -118,7 +117,11 @@ def time_tracking():
 @bp.route('/worker-times')
 @leader_required
 def worker_times():
+    # Lista do filtra po osobie — wszyscy, takze nieaktywni (historia ich dni).
+    osoby = [{'id': u.id, 'nazwa': u.display_name, 'aktywna': bool(u.is_active_user)}
+             for u in User.query.order_by(User.display_name).all()]
     return render_template('worker_times.html',
+                           osoby=osoby,
                            break_threshold=get_setting_int('break_threshold_minutes', 30),
                            max_work=get_setting_int('max_work_minutes', 660),
                            min_break=get_setting_int('min_break_minutes', 15))
@@ -312,46 +315,70 @@ def api_training_koniec():
     }), 200
 
 
+def _data_lub_none(tekst):
+    try:
+        return date.fromisoformat(tekst or '')
+    except ValueError:
+        return None
+
+
 @bp.route('/api/worker-times')
 @leader_required
 def api_worker_times():
+    """Jeden dzien (`date`, wszyscy) albo jedna osoba w zakresie dni
+    (`user_id` + `date_from` / `date_to`, filtr po osobie — 2026-10-23)."""
+    if request.args.get('user_id'):
+        user_id = require_int(request.args.get('user_id'), 'user_id')
+        od = _data_lub_none(request.args.get('date_from'))
+        do = _data_lub_none(request.args.get('date_to'))
+        if od is None or do is None:
+            abort(400, 'Podaj zakres dat od–do.')
+            return
+        if od > do:
+            abort(400, 'Data „od” jest późniejsza niż „do”.')
+        if (do - od).days + 1 > MAX_DNI_OSOBY:
+            abort(400, f'Zakres najwyżej {MAX_DNI_OSOBY} dni.')
+        return jsonify({'workers': wiersze_czasow(od, do, user_id),
+                        'user_id': user_id, 'date_from': od.isoformat(),
+                        'date_to': do.isoformat()}), 200
+
     date_str = request.args.get('date', local_today().isoformat())
     try:
         query_date = date.fromisoformat(date_str)
     except ValueError:
         query_date = local_today()
+    return jsonify({'workers': wiersze_czasow(query_date, query_date),
+                    'date': query_date.isoformat()}), 200
 
-    shifts = Shift.query.filter_by(date=query_date).all()
-    if not shifts:
-        return jsonify({'workers': [], 'date': date_str}), 200
 
-    shift_ids = [s.id for s in shifts]
-    attendances = ShiftAttendance.query.filter(
-        ShiftAttendance.shift_id.in_(shift_ids)
-    ).options(joinedload(ShiftAttendance.user),
-              joinedload(ShiftAttendance.shift)).all()
-
-    # One entry per user — earliest attendance_in
-    by_user = {}
-    for att in attendances:
-        uid = att.user_id
-        if uid not in by_user or att.scanned_at < by_user[uid].scanned_at:
-            by_user[uid] = att
-
-    result = []
-    for uid, att in by_user.items():
-        summary = _compute_worker_times(uid, att.shift, att.scanned_at)
-        summary.update({
-            'user_id':      uid,
-            'user_name':    att.user.display_name,
-            'shift_id':     att.shift_id,
-            'shift_number': att.shift.shift_number,
-            'shift_in':     iso_z(att.scanned_at),
-        })
-        result.append(summary)
-
-    result.sort(key=lambda x: x['user_name'])
-    return jsonify({'workers': result, 'date': date_str}), 200
+@bp.route('/api/worker-times/wejscie/<int:attendance_id>', methods=['PUT'])
+@leader_required
+def api_wejscie_update(attendance_id):
+    """Korekta godziny wejscia (skan na zmianie) z osi czasu. Wejscie musi
+    zostac w dniu zmiany i przed pierwszym zdarzeniem czasu pracy osoby —
+    inaczej przerwa / koniec pracy wypadlyby przed poczatkiem pracy."""
+    att = db.get_or_404(ShiftAttendance, attendance_id)
+    data = json_body()
+    try:
+        ts = datetime.fromisoformat(str(data.get('timestamp', '')))
+    except ValueError:
+        abort(400, 'Nieprawidłowy format czasu.')
+    od, do = local_day_bounds(att.shift.date)
+    if not (od <= ts < do):
+        abort(400, f'Wejście musi być w dniu zmiany ({att.shift.date.strftime("%d.%m.%Y")}).')
+    pierwsze = (WorkerTimeEvent.query.filter_by(user_id=att.user_id, shift_id=att.shift_id)
+                .order_by(WorkerTimeEvent.timestamp).first())
+    if pierwsze and ts >= pierwsze.timestamp:
+        abort(400, 'Wejście musi być przed pierwszym zdarzeniem tej osoby na zmianie '
+                   '(przerwa, Inne, szkolenie albo koniec pracy) — popraw najpierw je.')
+    if att.pierwotny_skan is None:
+        att.pierwotny_skan = att.scanned_at
+    att.scanned_at = ts
+    att.poprawione_przez = current_user.id
+    att.poprawione_at = teraz_utc()
+    db.session.commit()
+    return jsonify({'id': att.id, 'scanned_at': iso_z(att.scanned_at),
+                    'pierwotny_skan': iso_z(att.pierwotny_skan)}), 200
 
 
 @bp.route('/api/worker-times/event', methods=['POST'])

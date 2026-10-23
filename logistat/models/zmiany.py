@@ -42,9 +42,16 @@ class ShiftAttendance(db.Model):
     shift_id = db.Column(db.Integer, db.ForeignKey('shift.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     scanned_at = db.Column(db.DateTime, default=teraz_utc)
+    # Korekta godziny wejscia na osi czasu (/worker-times, 2026-10-23): skan
+    # sprzed pierwszej korekty zostaje w `pierwotny_skan`, plus kto i kiedy.
+    pierwotny_skan = db.Column(db.DateTime, nullable=True)
+    poprawione_przez = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    poprawione_at = db.Column(db.DateTime, nullable=True)
 
     shift = db.relationship('Shift', backref=db.backref('attendances', lazy=True))
-    user = db.relationship('User', backref=db.backref('attendances', lazy=True))
+    user = db.relationship('User', foreign_keys=[user_id],
+                           backref=db.backref('attendances', lazy=True))
+    poprawiajacy = db.relationship('User', foreign_keys=[poprawione_przez])
 
     __table_args__ = (
         db.UniqueConstraint('shift_id', 'user_id', name='uq_attendance_shift_user'),

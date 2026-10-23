@@ -97,3 +97,4 @@ PUT /api/stats/target
 PUT /api/user-options/<int:option_id>
 PUT /api/users/<int:user_id>
 PUT /api/worker-times/event/<int:event_id>
+PUT /api/worker-times/wejscie/<int:attendance_id>

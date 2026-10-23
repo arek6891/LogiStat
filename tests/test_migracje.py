@@ -30,6 +30,9 @@ KOLUMNY = [
     ('imported_carton', 'roznica_potwierdzona_at'),
     ('imported_carton', 'roznica_potwierdzona_przez'),
     ('udzial_paczki', 'tabela'),
+    ('shift_attendance', 'pierwotny_skan'),
+    ('shift_attendance', 'poprawione_przez'),
+    ('shift_attendance', 'poprawione_at'),
 ]
 
 

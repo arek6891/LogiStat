@@ -135,6 +135,12 @@ Quantities entered at package end are the **source of truth for `category_data`*
 - *`JSON.parse('{{ x|tojson|safe }}')`:* `tojson` w apostrofach JS — `"`/`\` w nazwie kategorii (edytuje admin) zmienialy literal i strona przestawala dzialac. Teraz `const x = {{ x|tojson }};` (tojson jest bezpieczny w `<script>`).
 - *`migrate_columns()`:* przy `IF NOT EXISTS` blad to zawsze prawdziwy blad, a except go polykal — aplikacja wstawala bez kolumny i padala na pierwszym zapytaniu. Teraz start przerywa `RuntimeError` z nazwa kolumny; lista w `MIGRACJE_KOLUMN` (stala modulu, test podmienia ja na zla kolumne).
 
+## Czasy pracowników: oś czasu, filtr po osobie, korekta wejścia (2026-10-23)
+
+**Zgloszenie.** Operacja: pod kazdym pracownikiem os czasu (szkic: 8–16, odcinki czynnosci PP → Tex o 13:00, przerwy na odcinkach), klik w os = poprawa wbic i wybic; filtr po osobie pokazujacy kazdy jej dzien.
+
+**Decyzje (pytania 2026-10-23).** Czynnosci **bez godzin**: przydzial z Przydzielania nie ma godzin, a wszystkie sposoby ich zbierania (lider dzieli pasek, skan zmiany czynnosci, plan z godzinami) odrzucone — pokazujemy tylko, na jakie czynnosci osoba byla wbita tego dnia (`czynnosci`). Os = pasek wejscie → koniec pracy z przerwami / Inne / szkoleniem (to, co rejestrujemy). Klik = okienko korekty (nie przeciaganie — latwiej o przypadkowa zmiane, gorzej na tablecie); klik w znacznik edytuje, klik w pasek dodaje wpis o kliknietej godzinie. Wejscie tez poprawialne: `PUT /api/worker-times/wejscie/<id>`, w dniu zmiany i **przed pierwszym zdarzeniem** (inaczej przerwa/koniec wypadlyby przed poczatkiem pracy); pierwszy skan zostaje w `pierwotny_skan` (nowe kolumny `shift_attendance` przez `MIGRACJE_KOLUMN`). Filtr po osobie: zakres od–do (domyslnie biezacy miesiac), max 92 dni, jedna trasa `/api/worker-times` z `user_id` zamiast nowej. Wspolna skala godzin dla wszystkich wierszy — paski osob/dni da sie porownac wzrokiem. Wiersze buduje `wiersze_czasow()` (serwis) — dzien i osoba ta sama logika.
+
 ## Logo, paski sekcji menu, tryb ciemny (2026-10-22)
 
 **Zgloszenie.** Operacja: logo Logwin w menu nad/pod nazwa aplikacji; sekcje Pracownik / Lider / Admin maja byc w menu wyraznie wydzielone („paski”); przycisk trybu ciemnego.
