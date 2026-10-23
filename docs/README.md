@@ -153,7 +153,7 @@ LogiStat/
 │   ├── scan_paczki.html    # Czasy paczek — Start/Koniec
 │   ├── dashboard.html      # Dashboard dzienny
 │   ├── time_tracking.html  # Czas pracy (przerwa / Inne / szkolenie / koniec)
-│   ├── worker_times.html   # Czasy pracowników (korekty + filtry)
+│   ├── worker_times.html   # Czasy pracowników (oś czasu, korekty, filtr po osobie)
 │   ├── forecast.html       # Prognoza ilości
 │   └── profile.html        # Zmiana hasła
 └── docs/
@@ -198,7 +198,7 @@ zalogowanego lidera, bo to ekran stanowiskowy).
 - ✏️ **Wpis ilości** (`/data-entry`) — ilości zrobione per osoba
 - 📊 **Normy** (`/stats`) — przegląd całego zespołu (ranking szt./h względem średniej zespołu, cel lidera, rodzaj pracownika i nazwa zmiany) + per pracownik: ocena na tle zespołu, średnie dzienne/miesięczne paczek i sztuk, wykres dzienny i miesięczny
 - 📦 **Paczki (dane)** (`/paczki`) — surowe dane paczek z filtrami (patrz niżej)
-- 👥 **Czasy pracowników** (`/worker-times`) — przegląd i korekta czasów + filtry
+- 👥 **Czasy pracowników** (`/worker-times`) — oś czasu, korekta godzin (także wejścia), filtr po osobie
 - 📥 **Import danych** (`/import-csv`) — CSV (`;`) lub Excel (`.xlsx`), dedup po barcode; przed importem **okno z datą pliku**; niżej **📅 Popraw Loading date** (grupowo)
 - 💶 **Statystyki ogólne** (`/general-stats`) — rozliczenie wg list i dat (filtr Loading date od–do po lewej, pod tytułem) + eksport Excel; przy każdej kolumnie **ⓘ** — skąd ilość i jak liczony koszt; **Total Amount** = suma kolumn bez Labelling twice i triple. **Lider: tylko podgląd, bez kolumn kosztów** (ekran i Excel); koszty i edycja ilości — admin
 - 👤 **Użytkownicy** (`/admin/users`) — zakładanie i edycja kont, w tym **rodzaj pracownika** i **nazwa zmiany** (listy rozwijane)
@@ -289,12 +289,19 @@ roboczym edytowanej zmiany (Przydzielanie, Wpis ilości), skaner zmian, karty na
 Dashboardzie, etykiety w Normach i Czasach pracowników. Kolor zawsze stoi obok napisu
 „Zmiana N".
 
-### Czasy pracowników — filtry i błędy
-Poza wyborem daty są dwa filtry, oba liczone w przeglądarce na danych już pobranych
-(API ich nie przyjmuje, więc definicja „błędu" jest jedna):
+### Czasy pracowników — oś czasu, filtry i błędy
+Pod każdą osobą **oś czasu**: pasek od wejścia do końca pracy, na nim przerwy, „Inne”
+i szkolenie. **Kliknięcie znacznika** (▶ wejście, ☕, 🚪, 🎓, 🏁) poprawia jego godzinę,
+**kliknięcie paska** w innym miejscu dodaje wpis o tej godzinie. Godzinę wejścia można
+poprawić tylko w dniu zmiany i przed pierwszą przerwą / końcem pracy; system pamięta
+pierwotny skan oraz kto i kiedy poprawił (✎ przy godzinie). Przy nazwisku czynności,
+na które osoba była wbita w Przydzielaniu (bez godzin).
 
-- **filtr po pracowniku** — lista zawiera tylko osoby obecne w wybranym dniu,
-- **⚠️ Tylko błędy** — czas pracy ponad progiem, brak przerwy, przerwa poniżej progu.
+- **bez osoby** — jeden dzień, wszyscy obecni,
+- **filtr po osobie** — każdy jej dzień w zakresie od–do (domyślnie bieżący miesiąc,
+  najwyżej 92 dni) z podsumowaniem,
+- **⚠️ Tylko błędy** (w przeglądarce) — czas pracy ponad progiem, brak przerwy,
+  przerwa poniżej progu.
 
 Brak przerwy i za krótka przerwa liczą się **dopiero po zarejestrowaniu końca pracy** —
 pracownik, który wszedł godzinę temu, jeszcze nie ma przerwy i nie jest to pomyłka.
@@ -375,38 +382,42 @@ Filtr błędów łapie:
 3. paczkę sprzed tabeli: ilość w kategorii przekraczającą Stückzahl o **ponad 10%**
    (albo nadwyżkę przy kilku osobach).
 
-**❗ do potwierdzenia** pokazuje tylko paczki z różnicą w tabeli (Brak, Nadwyżka,
-Uszkodzone, przy kilku osobach suma inna niż w pliku), ze wszystkich dni — to ta sama
+**❗ do potwierdzenia** pokazuje tylko paczki z różnicą w tabeli (wyliczony Brak
+lub Nadwyżka, Uszkodzone), ze wszystkich dni — to ta sama
 lista co kafelek na Dashboardzie. Lider sprawdza (rozmowa z pracownikiem, przeliczenie
 kartonu) i klika **✔ Potwierdź**; zostaje wpis, kto i kiedy. Poprawka w **✎ Ilości**
 też potwierdza.
 
-### Tabela ilości na koniec paczki (od 15.10.2026)
-Wiersze to grupy artykułowe: **Biżuteria, Akcesoria, Okulary, Tekstylia**. Plik importu
-ma jedną ilość na karton, więc cała trafia do Biżuterii — operator wpisuje tylko, ile
-jest akcesoriów, okularów i tekstyliów (kolumna „Ilość”), a system odejmuje je od
-biżuterii. Dalej kolumny **Brak, Nadwyżka, Uszkodzone, Podwójnie, Potrójnie**;
-**Pojedynczo** = Ilość − Brak + Nadwyżka − Uszkodzone − Podwójnie − Potrójnie liczy
-system. Pod tabelą: sortowanie inne, podmiana karty (uszkodzonej / algorytm), worki.
-Pola są puste; puste = 0 przy zapisie. Ujemne „Pojedynczo” blokuje zapis.
+### Tabela ilości na koniec paczki (wersja 2, od 23.10.2026)
+Na górze duża ilość z pliku („W PACZCE 41 szt.”). Wiersze to grupy artykułowe:
+**Biżuteria, Akcesoria, Okulary, Tekstylia** — w każdej pracownik sam wpisuje
+**Ilość (pojedyncze), Uszkodzone, Niesprocesowane** (nic nie liczy się samo). Pod
+Tekstyliami **🚩 Flagi – Card Change** (liczba kart), niżej **Podwójne** i **Potrójne**
+dla całej paczki. **Nadwyżkę i Brak liczy system**: wpisane sztuki (Ilość + Uszkodzone
++ Niesprocesowane + Podwójne + Potrójne) minus ilość z pliku. Pola są puste; całkiem
+nietkniętej tabeli ekran nie zapisze — pustą paczkę zapisuje się wpisaniem „0”.
+Przyciski: czerwone **✖ Anuluj** po lewej, zielone **Zapisz koniec** po prawej (tablet).
 
 Do rozliczenia (Statystyki ogólne):
 
 | Kolumna | Skąd |
 |---|---|
-| Labelling one | Biżuteria · Pojedynczo |
-| Labelling twice | Biżuteria · Podwójnie × 1,5 (pierwsza etykieta 1, każda kolejna 0,5) |
-| Labelling triple | Biżuteria · Potrójnie × 2 |
-| Accessoire / Sunglasses / Textile | Akcesoria / Okulary / Tekstylia — wszystkie sztuki bez uszkodzonych |
-| Sorting | Uszkodzone ze wszystkich grup + sortowanie inne |
-| Card facture | obie podmiany karty |
-| Labelling polybag | worki |
+| Labelling one | Biżuteria · Ilość (pojedyncze) |
+| Labelling twice | Podwójne (wszystkie grupy) × 1,5 (pierwsza etykieta 1, każda kolejna 0,5) |
+| Labelling triple | Potrójne (wszystkie grupy) × 2 |
+| Accessoire / Sunglasses / Textile | Akcesoria / Okulary / Tekstylia · Ilość (pojedyncze) |
+| Sorting | Uszkodzone + Niesprocesowane ze wszystkich grup |
+| Card facture | Flagi – Card Change |
+| Labelling polybag | nie z tabeli |
 
 Brak nie trafia do rozliczenia. **Paczka kilku osób** (zespół, do dokończenia): każdy
-wpisuje swoje sztuki wprost (Pojedynczo, Podwójnie, Potrójnie, Uszkodzone) i nie widzi
-wpisów innych; karton = suma, a gdy suma ≠ ilość w pliku — ❗. **Normy** tej osoby =
-Pojedynczo + Podwójnie + Potrójnie + Uszkodzone z jej tabeli; paczka jednej osoby
-dalej liczy się ilością z pliku.
+wpisuje swoją część w tej samej tabeli i nie widzi wpisów innych; karton = suma,
+Nadwyżka/Brak liczone z sumy (❗ przy różnicy). **Normy** tej osoby = jej wpisane sztuki
+(jak wyżej, podwójne bez ×1,5); paczka jednej osoby dalej liczy się ilością z pliku.
+
+Paczki zapisane 15–22.10.2026 (stara tabela: Brak/Nadwyżka wpisywane, „Pojedynczo”
+liczone, sortowanie inne, podmiany kart, worki) rozliczają się dalej po staremu. Lider
+otwiera je w **✎ Ilości** już w nowym układzie — zapis przelicza paczkę po nowemu.
 
 Paczka w trakcie należy do pracownika, który ją rozpoczął — inny dostanie `409` przy
 starcie i `403` przy końcu. Jeśli ten pracownik już do niej nie wróci, lider zdejmuje

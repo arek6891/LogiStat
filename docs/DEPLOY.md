@@ -1,6 +1,6 @@
 # Wdrożenie LogiStat
 
-Stan na 2026-10-22.
+Stan na 2026-10-23 (`.31` i `.30` na main `a0574c7`).
 
 ## Środowiska
 
