@@ -194,7 +194,7 @@ zalogowanego lidera, bo to ekran stanowiskowy).
 ### 🧑‍💼 Lider
 - 🏠 **Dashboard** (`/dashboard`) — **Dziś** (plan dzisiejszego pliku + kafelek **❗ Do potwierdzenia**), **Wybrany dzień**, **Podsumowanie** (niezrobione wg Loading date, z filtrem zakresu), **Per Loading date** (tabela dni z zakresu), per pracownik, per zmiana; kliknięcie nazwiska otwiera Normy tej osoby
 - 📈 **Forecast** (`/forecast`) — prognoza ilości **sztuk** per dzień (Actual = suma sztuk wg Loading date); **Różnica = Actual − Forecast** (minus = przyjechało mniej niż plan)
-- 📋 **Przydzielanie** (`/assignment`) — drag & drop operatorów do czynności; pod każdą czynnością **estymacja** „≈ X szt./zmianę · Y szt./h” = przydzieleni × średnia osoby (30 dni, wszyscy pracownicy; Post Processing ze skanów paczek, reszta z Wpisu ilości; zmiana 7,5 h)
+- 📋 **Przydzielanie** (`/assignment`) — drag & drop operatorów do czynności; pod każdą czynnością **estymacja** „≈ X szt./zmianę · Y szt./h” = przydzieleni × średnia osoby (30 dni, wszyscy pracownicy; Post Processing ze skanów paczek, reszta z Wpisu ilości; zmiana 7,5 h); przy każdej osobie **grupa P1/P2/P3** (Normy, 20 dni pracy); przy Post Processingu **do zrobienia** (Actual / Forecast) vs obie zmiany; **Sugestie AI** obsadzają PP od P3
 - ✏️ **Wpis ilości** (`/data-entry`) — ilości zrobione per osoba
 - 📊 **Normy** (`/stats`) — przegląd całego zespołu (ranking szt./h względem średniej zespołu, cel lidera, rodzaj pracownika i nazwa zmiany) + per pracownik: ocena na tle zespołu, średnie dzienne/miesięczne paczek i sztuk, wykres dzienny i miesięczny
 - 📦 **Paczki (dane)** (`/paczki`) — surowe dane paczek z filtrami (patrz niżej)

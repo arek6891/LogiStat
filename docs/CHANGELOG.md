@@ -1,5 +1,18 @@
 # LogiStat — Changelog
 
+## 2026-10-23 (2) — Grupy P1/P2/P3 i plan Post Processingu w Przydzielaniu
+
+### Dodane
+- Każdy pracownik w Przydzielaniu ma znaczek grupy z Norm za ostatnie 20 dni pracy:
+  **P3** ponad normę (zielony), **P2** w normie (szary), **P1** poniżej normy (czerwony),
+  „—” za mało danych.
+- Przy Post Processingu: **ilość do zrobienia** na dzień (Actual z importu, bez niego
+  Forecast) i porównanie z estymacją obu zmian — „zapas” albo „brakuje”.
+
+### Zmienione
+- **Sugestie AI** obsadzają najpierw Post Processing od najlepszych (P3 → P2 → bez grupy →
+  P1), aż do pokrycia ilości do zrobienia; pozostali idą do innych czynności.
+
 ## 2026-10-23 — Czasy pracowników: oś czasu i filtr po osobie
 
 ### Dodane

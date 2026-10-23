@@ -135,6 +135,12 @@ Quantities entered at package end are the **source of truth for `category_data`*
 - *`JSON.parse('{{ x|tojson|safe }}')`:* `tojson` w apostrofach JS — `"`/`\` w nazwie kategorii (edytuje admin) zmienialy literal i strona przestawala dzialac. Teraz `const x = {{ x|tojson }};` (tojson jest bezpieczny w `<script>`).
 - *`migrate_columns()`:* przy `IF NOT EXISTS` blad to zawsze prawdziwy blad, a except go polykal — aplikacja wstawala bez kolumny i padala na pierwszym zapytaniu. Teraz start przerywa `RuntimeError` z nazwa kolumny; lista w `MIGRACJE_KOLUMN` (stala modulu, test podmienia ja na zla kolumne).
 
+## Grupy P1/P2/P3 i plan Post Processingu w Przydzielaniu (2026-10-23)
+
+**Zgloszenie.** Operacja: pracownik przypisany do grupy wg statystyk z ostatnich 20 dni roboczych — P1 najgorszy, P2 w normie, P3 ponad norme (to samo co czerwony / szary / zielony w Normach), widoczny z grupa w Przydzielaniu; sugestie AI maja przydzielac od najlepszych (P3); przy Post Processingu ilosc do zrobienia wg forecastu (Actual, bez niego Forecast).
+
+**Decyzje (pytania 2026-10-23).** „20 dni roboczych” = 20 ostatnich dni **pracy magazynu** (dni z zakonczonymi paczkami, bez dnia zmiany) — swieta i weekendy bez pracy nie zjadaja okna; jedno okno dla wszystkich. Grupa liczona **na biezaco** z `przeglad_zespolu()` za to okno — bez kolumny i bez zadania nocnego, wiec zawsze zgadza sie z Normami za ten sam zakres (jedna definicja oceny). Za malo danych → bez grupy, w kolejce AI miedzy P2 a P1 (nieznany przed znanym slabym). Grupy opisuja tylko Post Processing (Normy licza sie z paczek), wiec AI obsadza najpierw PP od P3, az estymacja obu zmian pokryje ilosc do zrobienia; druga zmiana liczona z jej **zapisanego** przydzialu (bez niego cala ilosc spada na te zmiane). Bez forecastu nie da sie policzyc potrzeby — wtedy do PP ida P3 i P2, P1 i bez grupy do innych czynnosci. Pozostale czynnosci jak dotad (srednia z Wpisu ilosci, potem najmniej obsadzona). Ilosc do zrobienia: na dzien (Loading date = dzien zmiany) vs obie zmiany, nie polowa na zmiane — zmiany bywaja nierowne. `sugestie_przydzialu()` jest bez bazy (dane podaje trasa) — testy algorytmu bez fixture'ow.
+
 ## Czasy pracowników: oś czasu, filtr po osobie, korekta wejścia (2026-10-23)
 
 **Zgloszenie.** Operacja: pod kazdym pracownikiem os czasu (szkic: 8–16, odcinki czynnosci PP → Tex o 13:00, przerwy na odcinkach), klik w os = poprawa wbic i wybic; filtr po osobie pokazujacy kazdy jej dzien.

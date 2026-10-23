@@ -7,6 +7,10 @@ let loadedDate = null;
 let wersja = null;
 // Srednia jednej osoby per czynnosc (/api/assignment/data → wydajnosc).
 let wydajnosc = {};
+// Grupy P1/P2/P3 {user_id: {grupa, proc_sredniej}} z ostatnich 20 dni pracy
+// magazynu + ilosc do zrobienia dla Post Processing (2026-10-23).
+let plan = { grupy: {}, okno_grup: null, do_zrobienia: null, pp_activity_id: null,
+             osob_pp_druga_zmiana: 0 };
 // Szkolenia {user_id: [activity_id]} i pary juz zapisane na tej zmianie —
 // zapisany przydzial zostaje, choc szkolenie odznaczono (serwer tak samo).
 let szkolenia = {};
@@ -40,6 +44,11 @@ async function loadData() {
         wersja = data.wersja;
         wydajnosc = data.wydajnosc || {};
         szkolenia = data.szkolenia || {};
+        plan = {
+            grupy: data.grupy || {}, okno_grup: data.okno_grup || null,
+            do_zrobienia: data.do_zrobienia || null, pp_activity_id: data.pp_activity_id,
+            osob_pp_druga_zmiana: data.osob_pp_druga_zmiana || 0,
+        };
         zapisanePary = new Set(data.assignments.map(a => para(a.user_id, a.activity_id)));
         renderBoard(data);
     } catch (err) {
@@ -75,10 +84,16 @@ function createUserCard(user) {
     card.className = 'assignment-user-card';
     card.dataset.userId = user.id;
     card.draggable = true;
+    const g = plan.grupy[String(user.id)];
+    const okno = plan.okno_grup;
+    const tytulGrupy = g
+        ? `${g.grupa} — ${g.proc_sredniej}% średniej zespołu (Normy, ${okno ? okno.dni : 20} dni pracy do ${okno ? okno.do : ''})`
+        : 'Bez grupy — za mało paczek z czasem w ostatnich 20 dniach pracy';
     card.innerHTML = `
     <div class="checkbox"></div>
     <div class="mini-avatar">${escapeHtml(user.display_name[0])}</div>
     <span>${escapeHtml(user.display_name)}</span>
+    <em class="grupa-p" data-grupa="${g ? g.grupa : ''}" title="${escapeHtml(tytulGrupy)}">${g ? g.grupa : '—'}</em>
 `;
 
     // Click to select/deselect
@@ -222,6 +237,50 @@ function pokazEstymacje() {
         el.title = `Na osobę: ${fmt(w.szt_zmiana_os)} szt./zmianę (7,5 h), `
             + `${fmt(w.szt_h_os)} szt./h — ${skad}, ostatnie 30 dni.`;
     });
+    pokazDoZrobienia();
+    const okno = document.getElementById('oknoGrup');
+    if (okno) {
+        const o = plan.okno_grup;
+        okno.textContent = o
+            ? `— wg Norm (% średniej zespołu), ostatnie ${o.dni} dni pracy: ${o.od.split('-').reverse().join('.')}–${o.do.split('-').reverse().join('.')}`
+            : '— brak zakończonych paczek do policzenia grup';
+    }
+}
+
+// Post Processing: ilosc do zrobienia na dzien (Loading date = dzien zmiany:
+// Actual z importu, bez niego Forecast) vs estymacja obu zmian — ta zmiana
+// z tablicy, druga z jej zapisanego przydzialu.
+function pokazDoZrobienia() {
+    const el = document.getElementById('doZrobieniaPP');
+    if (!el) return;
+    const fmt = n => Math.round(n).toLocaleString('pl');
+    const d = plan.do_zrobienia;
+    const ppId = plan.pp_activity_id;
+    if (!ppId) { el.style.display = 'none'; return; }
+    el.style.display = '';
+    if (!d) {
+        el.className = 'do-zrobienia pusta';
+        el.textContent = 'Do zrobienia: brak Actual i Forecast na ten dzień.';
+        return;
+    }
+    const w = wydajnosc[ppId];
+    const zone = document.getElementById(`zone-${ppId}`);
+    const ta = (zone ? zone.children.length : 0) * (w ? w.szt_zmiana_os : 0);
+    const druga = plan.osob_pp_druga_zmiana * (w ? w.szt_zmiana_os : 0);
+    const razem = ta + druga;
+    const zrodlo = d.zrodlo === 'actual' ? 'Actual (import)' : 'Forecast (plan)';
+    let wynik = '';
+    if (w) {
+        const roznica = razem - d.sztuk;
+        wynik = ` · obie zmiany ≈ ${fmt(razem)} (ta ${fmt(ta)} + druga ${fmt(druga)})`
+            + (roznica >= 0 ? ` · ✓ zapas ${fmt(roznica)}` : ` · brakuje ${fmt(-roznica)}`);
+        el.className = 'do-zrobienia ' + (roznica >= 0 ? 'ok' : 'brak');
+    } else {
+        el.className = 'do-zrobienia';
+    }
+    el.innerHTML = `<strong>Do zrobienia: ${fmt(d.sztuk)} szt.</strong> <span>(${zrodlo})</span>${wynik}`;
+    el.title = 'Loading date = dzień zmiany. Druga zmiana liczona z jej zapisanego przydziału '
+        + `(${plan.osob_pp_druga_zmiana} os. na Post Processing).`;
 }
 
 function pokazBrakSzkolenia(osoby, zone) {

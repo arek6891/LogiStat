@@ -5,6 +5,14 @@
 <div class="page-header">
     <h2>📋 Przydzielanie do czynności</h2>
     <p class="subtitle">Przeciągnij pracowników do odpowiednich czynności — każde przeciągnięcie zapisuje się od razu</p>
+        {# Grupy P1/P2/P3 — okno dni ustawia static/js/assignment.js #}
+        <p class="legenda-grup" id="legendaGrup">
+            <em class="grupa-p" data-grupa="P3">P3</em> ponad normę
+            <em class="grupa-p" data-grupa="P2">P2</em> w normie
+            <em class="grupa-p" data-grupa="P1">P1</em> poniżej normy
+            <em class="grupa-p" data-grupa="">—</em> za mało danych
+            <span id="oknoGrup"></span>
+        </p>
 </div>
 
 <div class="assignment-controls">
@@ -44,6 +52,10 @@
                 <div>
                     <span>{{ activity.name }}</span>
                     <div class="estymacja" data-est-for="{{ activity.id }}"></div>
+                    {% if activity.name == czynnosc_pp %}
+                    {# Ilosc do zrobienia na dzien vs obie zmiany (static/js/assignment.js) #}
+                    <div class="do-zrobienia" id="doZrobieniaPP"></div>
+                    {% endif %}
                 </div>
                 <span class="count" data-count-for="{{ activity.id }}">0</span>
             </div>
