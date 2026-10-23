@@ -1,11 +1,15 @@
-"""Tabela ilosci na koniec paczki (Post Processing, operacja 2026-10-15).
+"""Tabela ilosci na koniec paczki (Post Processing).
 
-Operator wpisuje tabele grup artykulowych (Brak / Nadwyzka / Uszkodzone /
-Podwojnie / Potrojnie), „Pojedynczo" liczy serwer. Z tabeli powstaja kolumny
-rozliczenia: Labelling one/twice/triple tylko z biżuterii (twice ×1,5, triple
-×2 — LOGIKA_KLEJENIA.xlsx), pozostale grupy do swoich kolumn, uszkodzone do
-Sorting. Paczka kilku osob: kazdy wpisuje swoje sztuki wprost, Normy licza
-to, co osoba wpisala. Roznica → ❗ do potwierdzenia przez lidera.
+Wersja 2 (operacja, 2026-10-23): operator wpisuje wszystko wprost — per grupa
+Ilosc (pojedyncze) / Uszkodzone / Niesprocesowane, na paczke Flagi – Card Change,
+Podwojne, Potrojne. Nadwyzka i Brak liczy system (wpisane sztuki − Stückzahl).
+Rozliczenie: Ilosc grupy → jej kolumna (biżuteria → Labelling one), Podwojne
+×1,5 / Potrojne ×2 → twice / triple (wszystkie grupy), Sorting = Uszkodzone +
+Niesprocesowane, Card facture = Flagi. Paczka kilku osob: kazdy wpisuje swoja
+czesc, Normy licza to, co osoba wpisala. Roznica → ❗ do potwierdzenia.
+
+Wersja 1 (15–22.10.2026) zostaje tylko do odczytu: zapisane paczki licza sie
+po staremu (sekcja „stare tabele" na dole).
 """
 from datetime import date, datetime
 
@@ -15,24 +19,26 @@ from logistat.extensions import db
 from logistat.kategorie import STAT_CATEGORIES, total_amount_wiersza
 from logistat.models import GeneralStat, ImportedCarton
 from logistat.normy_dane import prace_osob
-from logistat.paczki import bledy_paczki
+from logistat.paczki import bledy_paczki, przelicz_ilosci_udzialow
 from logistat.tabela_ilosci import (
-    ZRODLO_KATEGORII, kategorie_z_tabeli, normalizuj_tabele, sztuki_tabeli)
+    BLAD_STARY_EKRAN, ZRODLO_KATEGORII, kategorie_z_tabeli, na_wersje_2, nadwyzka_brak,
+    normalizuj_tabele, roznice_tabeli, suma_tabel, sztuki_tabeli)
 
 
 DZIEN = date(2026, 10, 15)
 
-# Przyklad z dokumentu dla operacji: 41 szt. w pliku = 20 biżuterii + 12 akcesoriow
-# + 5 okularow + 4 tekstylia (biżuteria = 41 − pozostale grupy).
-PRZYKLAD = {
-    'grupy': {
-        'bizuteria': {'brak': 1, 'podwojnie': 2, 'potrojnie': 3},
-        'akcesoria': {'ilosc': 12, 'nadwyzka': 1, 'uszkodzone': 1, 'podwojnie': 1},
-        'okulary': {'ilosc': 5},
-        'tekstylia': {'ilosc': 4},
-    },
-    'dodatki': {},
-}
+
+def tab(podwojnie=0, potrojnie=0, karty=0, **grupy):
+    """Tabela z ekranu: grupa=(ilosc, uszkodzone, niesprocesowane)."""
+    return {'wersja': 2, 'podwojnie': podwojnie, 'potrojnie': potrojnie, 'karty': karty,
+            'grupy': {g: dict(zip(('ilosc', 'uszkodzone', 'niesprocesowane'), v))
+                      for g, v in grupy.items()}}
+
+
+# 41 szt. w pliku: 14 biżuterii, 11 akcesoriow + 1 uszkodzone, 5 okularow,
+# 4 tekstylia, 2 podwojne, 3 potrojne = 40 → Brak 1.
+PRZYKLAD = tab(podwojnie=2, potrojnie=3, bizuteria=(14, 0, 0), akcesoria=(11, 1, 0),
+               okulary=(5, 0, 0), tekstylia=(4, 0, 0))
 
 
 def karton(barcode='P1', sztuk=41):
@@ -60,12 +66,6 @@ def koniec(c, emp, tabela, tryb='wzor', pkg='P1', **extra):
     return post(c, '/api/package-time/end', emp, pkg, tabela=tabela, tryb=tryb, **extra)
 
 
-def zespol(**grupy):
-    """Tabela jednej osoby w paczce kilku osob: {grupa: (poj, podw, potr, uszk)}."""
-    return {'grupy': {g: dict(zip(('pojedynczo', 'podwojnie', 'potrojnie', 'uszkodzone'), v))
-                      for g, v in grupy.items()}, 'dodatki': {}}
-
-
 def linia():
     db.session.expire_all()
     return GeneralStat.query.filter_by(list_id='UB-1').one()
@@ -77,84 +77,92 @@ def osoba(kod):
 
 # ── liczenie (czyste funkcje) ────────────────────────────────────────────────
 
-def test_przyklad_z_dokumentu():
+def test_przyklad():
     tabela, blad = normalizuj_tabele(PRZYKLAD, 'wzor', 41)
 
     assert blad is None
-    assert tabela['grupy']['bizuteria']['ilosc'] == 20
-    assert tabela['grupy']['bizuteria']['pojedynczo'] == 14
-    assert tabela['grupy']['akcesoria']['pojedynczo'] == 11
+    assert sztuki_tabeli(tabela) == 40
+    assert nadwyzka_brak(tabela, 41) == (0, 1)
     assert kategorie_z_tabeli(tabela) == {
         'labelling_on': 14, 'labelling_tvl': 3, 'labelling_try': 6,
-        'accessoire': 12, 'sunglasses': 5, 'textile': 4, 'sorting': 1,
+        'accessoire': 11, 'sunglasses': 5, 'textile': 4, 'sorting': 1,
     }
     kategorie = {kat: {'amount': v} for kat, v in kategorie_z_tabeli(tabela).items()}
-    assert total_amount_wiersza(kategorie) == 36
+    assert total_amount_wiersza(kategorie) == 35
 
 
 def test_logika_klejenia_z_excela():
     # LOGIKA_KLEJENIA.xlsx: 15 szt. = 10 pojedynczo + 2 podwojnie + 3 potrojnie.
-    tabela, blad = normalizuj_tabele(
-        {'grupy': {'bizuteria': {'podwojnie': 2, 'potrojnie': 3}}}, 'wzor', 15)
+    tabela, blad = normalizuj_tabele(tab(podwojnie=2, potrojnie=3, bizuteria=(10, 0, 0)), 'wzor', 15)
 
     assert blad is None
     assert kategorie_z_tabeli(tabela) == {
         'labelling_on': 10, 'labelling_tvl': 3, 'labelling_try': 6}
+    assert nadwyzka_brak(tabela, 15) == (0, 0)
+
+
+def test_podwojne_innych_grup_ida_do_labelling_twice():
+    """Operacja 2026-10-23: ×1,5 / ×2 dla wszystkich grup, nie tylko biżuterii."""
+    tabela, _ = normalizuj_tabele(tab(podwojnie=4, tekstylia=(6, 0, 0)), 'wzor', 10)
+
+    assert kategorie_z_tabeli(tabela) == {'textile': 6, 'labelling_tvl': 6}
 
 
 def test_nieparzyste_podwojnie_daje_polowke():
-    tabela, _ = normalizuj_tabele(
-        {'grupy': {'bizuteria': {'podwojnie': 3}}}, 'wzor', 10)
+    tabela, _ = normalizuj_tabele(tab(podwojnie=3, bizuteria=(7, 0, 0)), 'wzor', 10)
 
     assert kategorie_z_tabeli(tabela)['labelling_tvl'] == 4.5
 
 
-def test_brak_nie_trafia_do_rozliczenia_a_nadwyzka_tak():
+def test_uszkodzone_i_niesprocesowane_do_sorting_flagi_do_card_facture():
     tabela, _ = normalizuj_tabele(
-        {'grupy': {'bizuteria': {'brak': 2, 'nadwyzka': 5}}}, 'wzor', 10)
+        tab(karty=3, bizuteria=(5, 1, 2), okulary=(0, 1, 1)), 'wzor', 10)
 
-    assert kategorie_z_tabeli(tabela) == {'labelling_on': 13}
-
-
-def test_dodatki_ida_do_swoich_kolumn():
-    tabela, _ = normalizuj_tabele({
-        'grupy': {'okulary': {'ilosc': 2, 'uszkodzone': 1}},
-        'dodatki': {'sortowanie_inne': 4, 'karta_uszkodzona': 1, 'karta_algorytm': 2, 'worki': 3},
-    }, 'wzor', 10)
-
-    assert kategorie_z_tabeli(tabela) == {
-        'labelling_on': 8, 'sunglasses': 1, 'sorting': 5, 'card_facture': 3,
-        'labelling_polybag': 3}
+    assert kategorie_z_tabeli(tabela) == {'labelling_on': 5, 'sorting': 5, 'card_facture': 3}
+    assert sztuki_tabeli(tabela) == 10, 'Flagi to karty, nie sztuki'
 
 
-def test_ujemne_pojedynczo_to_blad_z_nazwa_wiersza():
-    _, blad = normalizuj_tabele(
-        {'grupy': {'okulary': {'ilosc': 2, 'podwojnie': 3}}}, 'wzor', 10)
+def test_nadwyzka_i_brak_liczy_system():
+    nadwyzka, _ = normalizuj_tabele(tab(bizuteria=(12, 0, 0)), 'wzor', 10)
+    brak, _ = normalizuj_tabele(tab(bizuteria=(7, 0, 1)), 'wzor', 10)
 
-    assert blad and blad.startswith('Okulary:')
-
-
-def test_pozostale_grupy_ponad_plik_to_blad():
-    _, blad = normalizuj_tabele(
-        {'grupy': {'tekstylia': {'ilosc': 11}}}, 'wzor', 10)
-
-    assert blad and 'więcej niż w paczce' in blad
+    assert nadwyzka_brak(nadwyzka, 10) == (2, 0)
+    assert nadwyzka_brak(brak, 10) == (0, 2)
+    assert roznice_tabeli(nadwyzka, 10) == ['Nadwyżka 2 szt. (wpisano 12 przy 10 w paczce)']
+    assert roznice_tabeli(brak, 10) == ['Brak 2 szt. (wpisano 8 przy 10 w paczce)']
 
 
 def test_liczba_jak_kod_kreskowy_to_blad():
-    _, blad = normalizuj_tabele(
-        {'grupy': {'bizuteria': {'brak': 5901234123457}}}, 'wzor', 10)
+    _, blad = normalizuj_tabele(tab(bizuteria=(5901234123457, 0, 0)), 'wzor', 10)
 
-    assert blad and 'kod' in blad
+    assert blad and 'kod' in blad and 'Biżuteria' in blad
+
+
+def test_pusta_tabela_to_caly_brak():
+    """Paczka bez zadnej sztuki (przyszla pusta) da sie zakonczyc — cala ilosc
+    jako Brak, ❗ dla lidera. Przypadkowy Enter lapie pytanie na ekranie."""
+    tabela, blad = normalizuj_tabele(tab(), 'wzor', 10)
+
+    assert blad is None
+    assert nadwyzka_brak(tabela, 10) == (0, 10)
+    assert kategorie_z_tabeli(tabela) == {}
+    assert roznice_tabeli(tabela, 10) == ['Brak 10 szt. (wpisano 0 przy 10 w paczce)']
+
+
+def test_stary_ksztalt_z_ekranu_odrzucony():
+    """Karta stanowiska otwarta przed wdrozeniem wysyla tabele bez `wersja`."""
+    _, blad = normalizuj_tabele({'grupy': {'bizuteria': {'podwojnie': 2}}, 'dodatki': {}}, 'wzor', 10)
+
+    assert blad == BLAD_STARY_EKRAN
 
 
 def test_tryb_zespol_bierze_sztuki_wprost():
-    tabela, blad = normalizuj_tabele(zespol(bizuteria=(7, 1, 0, 2)), 'zespol', 41)
+    tabela, blad = normalizuj_tabele(tab(podwojnie=1, bizuteria=(7, 2, 1)), 'zespol', 41)
 
     assert blad is None
-    assert sztuki_tabeli(tabela) == 10
+    assert sztuki_tabeli(tabela) == 11
     assert kategorie_z_tabeli(tabela) == {
-        'labelling_on': 7, 'labelling_tvl': 1.5, 'sorting': 2}
+        'labelling_on': 7, 'labelling_tvl': 1.5, 'sorting': 3}
 
 
 # ── stanowisko: paczka jednej osoby ─────────────────────────────────────────
@@ -168,7 +176,8 @@ def test_koniec_zapisuje_tabele_i_rozliczenie(leader_client):
 
     assert r.status_code == 200, r.get_json()
     c = k()
-    assert c.get_tabela()['grupy']['bizuteria']['pojedynczo'] == 14
+    assert c.get_tabela()['wersja'] == 2
+    assert c.get_tabela()['grupy']['bizuteria']['ilosc'] == 14
     assert c.get_scan_categories()['labelling_tvl'] == 3
     l = linia()
     assert l.category_source == 'scan'
@@ -181,7 +190,7 @@ def test_polowka_dochodzi_do_statystyk_ogolnych(leader_client):
     karton(sztuk=10)
     start(leader_client, 'A')
 
-    koniec(leader_client, 'A', {'grupy': {'bizuteria': {'podwojnie': 3}}})
+    koniec(leader_client, 'A', tab(podwojnie=3, bizuteria=(7, 0, 0)))
 
     assert linia().get_category_data()['labelling_tvl']['amount'] == 4.5
 
@@ -191,11 +200,24 @@ def test_blad_tabeli_nie_konczy_paczki(leader_client):
     karton(sztuk=5)
     start(leader_client, 'A')
 
-    r = koniec(leader_client, 'A', {'grupy': {'bizuteria': {'podwojnie': 6}}})
+    r = koniec(leader_client, 'A', tab(bizuteria=(5901234123457, 0, 0)))
 
     assert r.status_code == 400
     assert 'Biżuteria' in r.get_json()['error']
     assert k().scan_end_at is None
+
+
+def test_stary_ekran_stanowiska_nic_nie_zapisuje(leader_client):
+    osoba('A')
+    karton(sztuk=10)
+    start(leader_client, 'A')
+
+    r = koniec(leader_client, 'A', {'grupy': {'bizuteria': {'podwojnie': 3}}, 'dodatki': {}})
+
+    assert r.status_code == 400
+    assert 'Odśwież' in r.get_json()['error']
+    c = k()
+    assert c.scan_end_at is None and c.tabela_ilosci is None
 
 
 def test_zly_tryb_to_409_bez_zapisu(leader_client):
@@ -211,7 +233,7 @@ def test_zly_tryb_to_409_bez_zapisu(leader_client):
 
 
 def test_stary_formularz_kategorii_dalej_dziala(leader_client):
-    """Karta stanowiska otwarta przed wdrozeniem wysyla jeszcze `categories`."""
+    """Karta stanowiska sprzed 2026-10-15 wysyla jeszcze `categories`."""
     osoba('A')
     karton()
     start(leader_client, 'A')
@@ -234,7 +256,7 @@ def test_roznica_zapala_wykrzyknik(leader_client):
 
     c = k()
     assert c.roznica is True and c.roznica_do_potwierdzenia()
-    assert c.powody_roznicy() == ['Biżuteria: brak 1', 'Akcesoria: nadwyżka 1, uszkodzone 1']
+    assert c.powody_roznicy() == ['Brak 1 szt. (wpisano 40 przy 41 w paczce)', 'Akcesoria: uszkodzone 1']
     assert any(b.startswith('❗') for b in bledy_paczki(c))
     assert leader_client.get('/api/dashboard').get_json()['do_potwierdzenia'] == 1
 
@@ -243,7 +265,7 @@ def test_paczka_bez_roznicy_nie_ma_wykrzyknika(leader_client):
     osoba('A')
     karton(sztuk=10)
     start(leader_client, 'A')
-    koniec(leader_client, 'A', {'grupy': {'bizuteria': {'podwojnie': 2}}})
+    koniec(leader_client, 'A', tab(podwojnie=2, bizuteria=(8, 0, 0)))
 
     c = k()
     assert c.roznica is False
@@ -304,7 +326,7 @@ def test_niepotwierdzona_roznica_jest_w_filtrze_bledow(leader_client):
     html = leader_client.get('/paczki?bledy=1').get_data(as_text=True)
 
     assert '✔ Potwierdź' in html
-    assert 'Biżuteria: brak 1' in html
+    assert 'Brak 1 szt.' in html
 
 
 def test_poprawka_lidera_przelicza_i_potwierdza(leader_client):
@@ -312,14 +334,14 @@ def test_poprawka_lidera_przelicza_i_potwierdza(leader_client):
     karton()
     start(leader_client, 'A')
     koniec(leader_client, 'A', PRZYKLAD)
-    poprawiona = {'grupy': {**PRZYKLAD['grupy'], 'bizuteria': {'podwojnie': 2, 'potrojnie': 3}},
-                  'dodatki': {}}
+    poprawiona = tab(podwojnie=2, potrojnie=3, bizuteria=(15, 0, 0), akcesoria=(11, 1, 0),
+                     okulary=(5, 0, 0), tekstylia=(4, 0, 0))
 
     r = leader_client.put(f'/api/packages/{k().id}/tabela', json={'tabela': poprawiona})
 
     assert r.status_code == 200, r.get_json()
     c = k()
-    assert c.get_tabela()['grupy']['bizuteria']['pojedynczo'] == 15
+    assert c.get_tabela()['grupy']['bizuteria']['ilosc'] == 15
     assert linia().get_category_data()['labelling_on']['amount'] == 15
     assert c.roznica is True and c.roznica_potwierdzona_at is not None, 'akcesoria dalej z roznica'
     assert c.modified_by is not None
@@ -347,14 +369,14 @@ def test_zespol_kazdy_wpisuje_swoje_sztuki(leader_client):
     post(leader_client, '/api/package-time/dolacz', 'B')
 
     assert k().tryb_tabeli() == 'zespol'
-    r1 = koniec(leader_client, 'A', zespol(bizuteria=(8, 2, 0, 0)), tryb='zespol')
-    r2 = koniec(leader_client, 'B', zespol(bizuteria=(9, 0, 0, 1)), tryb='zespol')
+    r1 = koniec(leader_client, 'A', tab(podwojnie=2, bizuteria=(8, 0, 0)), tryb='zespol')
+    r2 = koniec(leader_client, 'B', tab(bizuteria=(9, 1, 0)), tryb='zespol')
 
     assert r1.status_code == 200 and r2.status_code == 200, (r1.get_json(), r2.get_json())
     c = k()
     assert c.scan_end_at is not None
-    assert c.get_tabela()['tryb'] == 'zespol'
-    assert c.get_tabela()['grupy']['bizuteria']['pojedynczo'] == 17
+    assert c.get_tabela()['tryb'] == 'zespol' and c.get_tabela()['wersja'] == 2
+    assert c.get_tabela()['grupy']['bizuteria']['ilosc'] == 17
     assert c.get_scan_categories() == {'labelling_on': 17, 'labelling_tvl': 3, 'sorting': 1}
     # Normy: kazda osoba to, co sama wpisala (podwojne jako zwykle sztuki).
     prace = prace_osob()
@@ -370,12 +392,12 @@ def test_zespol_suma_inna_niz_plik_to_wykrzyknik(leader_client):
     karton(sztuk=20)
     start(leader_client, 'A')
     post(leader_client, '/api/package-time/dolacz', 'B')
-    koniec(leader_client, 'A', zespol(bizuteria=(8, 0, 0, 0)), tryb='zespol')
-    koniec(leader_client, 'B', zespol(bizuteria=(9, 0, 0, 0)), tryb='zespol')
+    koniec(leader_client, 'A', tab(bizuteria=(8, 0, 0)), tryb='zespol')
+    koniec(leader_client, 'B', tab(bizuteria=(9, 0, 0)), tryb='zespol')
 
     c = k()
     assert c.roznica is True
-    assert c.powody_roznicy() == ['2 os. wpisało razem 17 szt. przy 20 w paczce']
+    assert c.powody_roznicy() == ['Brak 3 szt. (2 os. wpisało razem 17 przy 20 w paczce)']
 
 
 def test_przekazanie_z_tabela(leader_client):
@@ -385,12 +407,12 @@ def test_przekazanie_z_tabela(leader_client):
     start(leader_client, 'A')
 
     r = post(leader_client, '/api/package-time/przekaz', 'A',
-             tabela=zespol(bizuteria=(12, 0, 0, 0)), tryb='zespol')
+             tabela=tab(bizuteria=(12, 0, 0)), tryb='zespol')
     assert r.status_code == 200, r.get_json()
     assert 'wpisano 12 szt.' in r.get_json()['message']
 
     start(leader_client, 'B')
-    r = koniec(leader_client, 'B', zespol(bizuteria=(8, 0, 0, 0)), tryb='zespol')
+    r = koniec(leader_client, 'B', tab(bizuteria=(8, 0, 0)), tryb='zespol')
 
     assert r.status_code == 200, r.get_json()
     c = k()
@@ -404,18 +426,132 @@ def test_lider_poprawia_jedna_osobe_w_zespole(leader_client):
     karton(sztuk=20)
     start(leader_client, 'A')
     post(leader_client, '/api/package-time/dolacz', 'B')
-    koniec(leader_client, 'A', zespol(bizuteria=(8, 0, 0, 0)), tryb='zespol')
-    koniec(leader_client, 'B', zespol(bizuteria=(9, 0, 0, 0)), tryb='zespol')
+    koniec(leader_client, 'A', tab(bizuteria=(8, 0, 0)), tryb='zespol')
+    koniec(leader_client, 'B', tab(bizuteria=(9, 0, 0)), tryb='zespol')
     c = k()
     udzial_b = next(u for u in c.udzialy if u.user.barcode_id == 'B')
 
     r = leader_client.put(f'/api/packages/{c.id}/tabela', json={
-        'udzial_id': udzial_b.id, 'tabela': zespol(bizuteria=(12, 0, 0, 0))})
+        'udzial_id': udzial_b.id, 'tabela': tab(bizuteria=(12, 0, 0))})
 
     assert r.status_code == 200, r.get_json()
     c = k()
     assert c.get_scan_categories() == {'labelling_on': 20}
     assert c.roznica is False
+
+
+# ── stare tabele (wersja 1, paczki 15–22.10.2026) — tylko odczyt ─────────────
+
+# Tak zapisal serwer wersji 1 przyklad z dokumentu dla operacji (41 szt.).
+STARA = {
+    'tryb': 'wzor',
+    'grupy': {
+        'bizuteria': {'ilosc': 20, 'brak': 1, 'nadwyzka': 0, 'uszkodzone': 0,
+                      'podwojnie': 2, 'potrojnie': 3, 'pojedynczo': 14},
+        'akcesoria': {'ilosc': 12, 'brak': 0, 'nadwyzka': 1, 'uszkodzone': 1,
+                      'podwojnie': 1, 'potrojnie': 0, 'pojedynczo': 11},
+        'okulary': {'ilosc': 5, 'brak': 0, 'nadwyzka': 0, 'uszkodzone': 0,
+                    'podwojnie': 0, 'potrojnie': 0, 'pojedynczo': 5},
+        'tekstylia': {'ilosc': 4, 'brak': 0, 'nadwyzka': 0, 'uszkodzone': 0,
+                      'podwojnie': 0, 'potrojnie': 0, 'pojedynczo': 4},
+    },
+    'dodatki': {'sortowanie_inne': 2, 'karta_uszkodzona': 1, 'karta_algorytm': 1, 'worki': 3},
+}
+
+
+def test_stara_tabela_liczy_sie_po_staremu():
+    """Rozliczenie, Normy i ❗ zapisanych paczek nie zmieniaja sie wstecz."""
+    assert kategorie_z_tabeli(STARA) == {
+        'labelling_on': 14, 'labelling_tvl': 3, 'labelling_try': 6,
+        'accessoire': 12, 'sunglasses': 5, 'textile': 4, 'sorting': 3,
+        'card_facture': 2, 'labelling_polybag': 3,
+    }
+    assert sztuki_tabeli(STARA) == 14 + 2 + 3 + 11 + 1 + 1 + 5 + 4
+    assert roznice_tabeli(STARA, 41) == ['Biżuteria: brak 1', 'Akcesoria: nadwyżka 1, uszkodzone 1']
+
+
+def test_stara_tabela_na_wersje_2():
+    nowa = na_wersje_2(STARA)
+
+    assert nowa['wersja'] == 2 and nowa['tryb'] == 'wzor'
+    assert nowa['grupy']['bizuteria'] == {'ilosc': 14, 'uszkodzone': 0, 'niesprocesowane': 2}
+    assert nowa['grupy']['akcesoria'] == {'ilosc': 11, 'uszkodzone': 1, 'niesprocesowane': 0}
+    assert (nowa['podwojnie'], nowa['potrojnie'], nowa['karty']) == (3, 3, 2)
+    assert na_wersje_2(nowa) is nowa and na_wersje_2(None) is None
+
+
+def test_suma_tabel_starej_i_nowej_osoby():
+    """Paczka zespolu zaczeta przed wdrozeniem, dokonczona po nim."""
+    stara_osoba = {'tryb': 'zespol', 'dodatki': {},
+                   'grupy': {'bizuteria': {'pojedynczo': 5, 'podwojnie': 1, 'potrojnie': 0,
+                                           'uszkodzone': 1, 'ilosc': 7}}}
+    nowa_osoba = tab(podwojnie=1, bizuteria=(6, 0, 0))
+    nowa_osoba['tryb'] = 'zespol'
+
+    suma = suma_tabel([stara_osoba, nowa_osoba])
+
+    assert suma['wersja'] == 2
+    assert suma['grupy']['bizuteria'] == {'ilosc': 11, 'uszkodzone': 1, 'niesprocesowane': 0}
+    assert suma['podwojnie'] == 2
+    assert sztuki_tabeli(suma) == sztuki_tabeli(stara_osoba) + sztuki_tabeli(nowa_osoba)
+
+
+def test_suma_samych_starych_tabel_bez_zmian():
+    t = {'tryb': 'zespol', 'dodatki': {},
+         'grupy': {'bizuteria': {'pojedynczo': 5, 'podwojnie': 1, 'potrojnie': 0,
+                                 'uszkodzone': 1, 'ilosc': 7}}}
+
+    suma = suma_tabel([t, t])
+
+    assert 'wersja' not in suma
+    assert suma['grupy']['bizuteria']['pojedynczo'] == 10
+
+
+def test_okno_lidera_dla_starej_paczki_dostaje_nowa_tabele(leader_client):
+    c = karton()
+    c.scan_start_at = c.scan_end_at = datetime.utcnow()
+    c.set_tabela(STARA)
+    c.set_scan_categories(kategorie_z_tabeli(STARA))
+    db.session.commit()
+
+    assert k().edytor_ilosci() == 'tabela'
+    html = leader_client.get('/paczki?status=wszystkie&date_typ=plik'
+                             f'&date_from={DZIEN}&date_to={DZIEN}').get_data(as_text=True)
+    assert '&#34;niesprocesowane&#34;: 2' in html or '"niesprocesowane": 2' in html
+
+    # Zapis lidera = juz nowe zasady (Podwojne innych grup → Labelling twice).
+    r = leader_client.put(f'/api/packages/{k().id}/tabela', json={'tabela': na_wersje_2(STARA)})
+
+    assert r.status_code == 200, r.get_json()
+    c = k()
+    assert c.get_tabela()['wersja'] == 2
+    assert c.get_scan_categories()['labelling_tvl'] == 4.5
+    assert 'labelling_polybag' not in c.get_scan_categories()
+
+
+def test_zespol_ze_stara_i_nowa_osoba_liczy_sie_z_sumy(leader_client):
+    a, b = osoba('A'), osoba('B')
+    c = karton(sztuk=20)
+    start(leader_client, 'A')
+    post(leader_client, '/api/package-time/dolacz', 'B')
+    # A skonczyl przed wdrozeniem — jego udzial ma tabele w wersji 1.
+    c = k()
+    ua = next(u for u in c.udzialy if u.user_id == a.id)
+    ua.end_at = datetime.utcnow()
+    ua.set_tabela({'tryb': 'zespol', 'dodatki': {},
+                   'grupy': {'bizuteria': {'pojedynczo': 8, 'podwojnie': 2, 'potrojnie': 0,
+                                           'uszkodzone': 0, 'ilosc': 10}}})
+    przelicz_ilosci_udzialow(c, None)
+    db.session.commit()
+
+    r = koniec(leader_client, 'B', tab(bizuteria=(10, 0, 0)), tryb='zespol')
+
+    assert r.status_code == 200, r.get_json()
+    c = k()
+    assert c.scan_end_at is not None
+    assert c.get_tabela()['wersja'] == 2
+    assert c.get_scan_categories() == {'labelling_on': 18, 'labelling_tvl': 3}
+    assert c.roznica is False, '10 + 10 = 20 szt.'
 
 
 # ── ekrany ───────────────────────────────────────────────────────────────────
@@ -436,7 +572,7 @@ def test_statystyki_ogolne_maja_dymki_zrodla_kolumn(admin_client):
 def test_lider_nie_dostaje_opisu_stawek_w_dymku(leader_client):
     html = leader_client.get('/general-stats').get_data(as_text=True)
 
-    assert 'Biżuteria → „Pojedynczo”' in html
+    assert 'Biżuteria → „Ilość (pojedyncze)”' in html
     assert 'Amount × stawka' not in html
 
 
@@ -447,7 +583,7 @@ def test_kazda_kategoria_ma_opis_zrodla():
 def test_normy_maja_dymek_ktore_pola_sie_licza(leader_client):
     html = leader_client.get('/stats').get_data(as_text=True)
 
-    assert 'Pojedynczo + Podwójnie + Potrójnie + Uszkodzone' in html
+    assert 'Ilość + Uszkodzone + Niesprocesowane' in html
 
 
 def test_dashboard_ma_licznik_do_potwierdzenia(leader_client):

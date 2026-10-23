@@ -1475,23 +1475,31 @@ input.autozapis-blad {
     font-weight: 600;
 }
 
-/* ── Tabela ilości na koniec paczki (static/tabela_ilosci.js) ─────────────── */
+/* ── Tabela ilości na koniec paczki (static/js/tabela_ilosci.js) ──────────── */
 /* Ta sama tabela na stanowisku „Czasy paczek" i w oknie „✎ Ilości" na /paczki.
-   Kolor tła komórki mówi, kto ją wypełnia: pole = operator, szare = system. */
-.tabela-ilosci { display: flex; flex-direction: column; gap: 12px; }
+   Wersja 2 (2026-10-23): duże napisy i pola (operacja), ilość z pliku na górze,
+   Nadwyżka/Brak liczy system (pola z tłem = wpisuje operator, szare = system). */
+.tabela-ilosci { display: flex; flex-direction: column; gap: 14px; font-size: 1.1rem; }
+.tabela-ilosci .ti-w-paczce {
+    display: flex; align-items: baseline; justify-content: center; gap: 12px;
+    padding: 10px 16px; border-radius: var(--radius); background: var(--accent-glow);
+    color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+}
+.tabela-ilosci .ti-w-paczce strong { font-size: 3rem; line-height: 1; font-variant-numeric: tabular-nums; }
 .tabela-ilosci .ti-przewijanie { overflow-x: auto; }
 .tabela-ilosci table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
 .tabela-ilosci th,
-.tabela-ilosci td { border: 1px solid var(--border); padding: 4px 6px; text-align: center; }
+.tabela-ilosci td { border: 1px solid var(--border); padding: 6px 8px; text-align: center; }
 .tabela-ilosci th {
-    font-size: .74rem; font-weight: 600; color: var(--text-secondary); background: var(--bg-hover);
-    white-space: nowrap; text-transform: none; letter-spacing: 0; padding: 4px 4px;
+    font-size: .95rem; font-weight: 700; color: var(--text-secondary); background: var(--bg-hover);
+    text-transform: none; letter-spacing: 0;
 }
-.tabela-ilosci .ti-grupa { text-align: left; font-weight: 600; white-space: nowrap; }
+.tabela-ilosci .ti-grupa { text-align: left; font-weight: 700; white-space: nowrap; font-size: 1.15rem; }
 .tabela-ilosci input {
-    width: 56px;
-    padding: 6px 6px;
-    font-size: 1rem;
+    width: 96px;
+    padding: 8px 10px;
+    font-size: 1.5rem;
+    font-weight: 600;
     text-align: right;
     -moz-appearance: textfield;
     border-radius: var(--radius-sm);
@@ -1502,19 +1510,23 @@ input.autozapis-blad {
 .tabela-ilosci input::-webkit-outer-spin-button,
 .tabela-ilosci input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .tabela-ilosci input:focus { outline: none; border-color: var(--accent); background: var(--bg-primary); }
-.tabela-ilosci .ti-system { background: var(--bg-hover); color: var(--accent); font-weight: 700; }
-.tabela-ilosci th.ti-system { color: var(--accent); }
-.tabela-ilosci .ti-ujemne { background: var(--danger-bg); color: var(--danger); }
-.tabela-ilosci .ti-dodatki { display: flex; flex-direction: column; gap: 6px; }
-.tabela-ilosci .ti-dodatek {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 4px 8px; border-radius: var(--radius-sm); background: var(--bg-hover); font-size: .9rem;
+.tabela-ilosci .ti-flagi td { background: var(--bg-hover); }
+.tabela-ilosci .ti-na-dole { display: flex; flex-wrap: wrap; gap: 12px; }
+.tabela-ilosci .ti-pole-paczki {
+    display: flex; align-items: center; gap: 14px; padding: 8px 14px;
+    border-radius: var(--radius-sm); background: var(--bg-hover); font-weight: 700; font-size: 1.15rem;
 }
-.tabela-ilosci .ti-dodatek-system strong { color: var(--accent); padding-right: 8px; }
-.tabela-ilosci .ti-stopka { font-size: .9rem; color: var(--text-secondary); }
-.tabela-ilosci .ti-stopka strong { color: var(--text-primary); font-size: 1.05rem; }
-.tabela-ilosci .ti-blad { color: var(--danger); font-weight: 600; }
-.tabela-ilosci .ti-uwaga { font-size: .8rem; color: var(--text-muted); }
+.tabela-ilosci .ti-stopka { display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px; color: var(--text-secondary); }
+.tabela-ilosci .ti-wynik {
+    display: flex; flex-direction: column; align-items: center; min-width: 120px;
+    padding: 8px 14px; border-radius: var(--radius-sm); background: var(--bg-hover);
+}
+.tabela-ilosci .ti-wynik span { font-size: .85rem; font-weight: 600; }
+.tabela-ilosci .ti-wynik strong { font-size: 1.6rem; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.tabela-ilosci .ti-wynik.ti-ok strong { color: var(--success); }
+.tabela-ilosci .ti-wynik.ti-roznica { background: var(--danger-bg); }
+.tabela-ilosci .ti-wynik.ti-roznica strong { color: var(--danger); }
+.tabela-ilosci .ti-uwaga { font-size: .9rem; color: var(--text-muted); align-self: center; }
 
 /* ❗ Różnica w paczce do potwierdzenia przez lidera (/paczki) */
 .roznica-paczki {

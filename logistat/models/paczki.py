@@ -6,7 +6,7 @@ from logistat.extensions import db
 from logistat.kategorie import STAT_CATEGORIES, liczba
 from logistat.okresy import suma_zlaczonych_okresow
 from logistat.tabela_ilosci import (
-    TRYB_WZOR, TRYB_ZESPOL, kategorie_z_tabeli, roznice_tabeli, sztuki_tabeli,
+    TRYB_WZOR, TRYB_ZESPOL, kategorie_z_tabeli, na_wersje_2, roznice_tabeli, sztuki_tabeli,
     wczytaj_json_dict)
 
 
@@ -73,6 +73,11 @@ class ImportedCarton(db.Model):
     def set_tabela(self, tabela):
         self.tabela_ilosci = json.dumps(tabela) if tabela else None
 
+    def tabela_do_edycji(self):
+        """Tabela dla okna lidera „✎ Ilosci" — zawsze w wersji 2 (stara
+        z 15–22.10 przeliczona przez na_wersje_2(); zapis lidera = juz nowe zasady)."""
+        return na_wersje_2(self.get_tabela())
+
     def tryb_tabeli(self):
         """Paczka kilku osob → kazdy wpisuje swoje sztuki wprost (zespol)."""
         return TRYB_ZESPOL if self.udzialy else TRYB_WZOR
@@ -110,7 +115,7 @@ class ImportedCarton(db.Model):
     def udzialy_krotko(self):
         """Kto ile wpisal — do okna „✎ Ilosci" na /paczki."""
         return [{'id': u.id, 'kto': u.user.display_name if u.user else '?', 'suma': u.suma(),
-                 'sztuki': u.sztuki(), 'tabela': u.get_tabela(),
+                 'sztuki': u.sztuki(), 'tabela': na_wersje_2(u.get_tabela()),
                  'otwarty': u.end_at is None,
                  'bez_ilosci': bool(u.zamkniete_przez)} for u in self.udzialy]
 
@@ -240,8 +245,9 @@ class UdzialPaczki(db.Model):
         return liczba(sum(self.get_ilosci().values()))
 
     def sztuki(self):
-        """Sztuki do Norm: z tabeli (Pojedynczo + Podwojnie + Potrojnie +
-        Uszkodzone), a dla udzialu sprzed tabeli — suma wpisanych kategorii."""
+        """Sztuki do Norm: z tabeli (sztuki_tabeli — wersja 2: Ilosc + Uszkodzone
+        + Niesprocesowane + Podwojne + Potrojne), a dla udzialu sprzed tabeli —
+        suma wpisanych kategorii."""
         tabela = self.get_tabela()
         return sztuki_tabeli(tabela) if tabela else self.suma()
 

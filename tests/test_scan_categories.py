@@ -294,8 +294,16 @@ def test_ekran_skanowania_ma_tabele_ilosci(leader_client):
 
     assert 'id="end-qty-tabela"' in html and 'id="dok-qty-tabela"' in html
     assert 'tabela_ilosci.js' in html
-    assert 'end-qty-stueckzahl' in html          # ilosc sztuk pokazana pracownikowi
+    # Ilosc z pliku pokazuje pracownikowi sama tabela (duza, na gorze — 2026-10-23).
+    js = leader_client.get('/static/js/tabela_ilosci.js').get_data(as_text=True)
+    assert 'ti-w-paczce' in js and 'W paczce' in js
     assert 'Carton labeling' not in html
+    # Tablet (operacja 2026-10-23): Anuluj czerwony po lewej, zapis zielony po prawej.
+    stopka = html.split('class="qty-foot"')[1].split('</div>')[0]
+    assert stopka.index('przycisk-anuluj') < stopka.index('przycisk-zapisz')
+    zespol = html.split('class="modal-actions zespol-przyciski"')[1].split('</div>')[0]
+    assert zespol.index('id="zespol-wszyscy"') < zespol.index('id="zespol-moj"')
+    assert 'przycisk-zapisz" id="zespol-moj"' in zespol
 
 
 def test_paczki_maja_przycisk_korekty_ilosci(leader_client, acting_admin):

@@ -22,8 +22,9 @@ def prace_osob(date_from=None, date_to=None, user_ids=None):
     - paczka jednej osoby (bez `udzial_paczki`): kto zakonczyl, start–koniec,
       sztuk = Stückzahl — jak zawsze;
     - paczka wielu osob (przekazana / zespol): kazdy swoj udzial — jego czas
-      i jego WPISANE ilosci (decyzja operacji 2026-10-13; od 2026-10-15 z tabeli:
-      Pojedynczo + Podwojnie + Potrojnie + Uszkodzone — UdzialPaczki.sztuki()),
+      i jego WPISANE ilosci (decyzja operacji 2026-10-13; z tabeli —
+      UdzialPaczki.sztuki() → sztuki_tabeli(), od 2026-10-23 Ilosc + Uszkodzone
+      + Niesprocesowane + Podwojne + Potrojne),
       liczony po koncu
       udzialu, takze gdy paczke dokonczy ktos inny pozniej. Udzial zamkniety
       przez kogos innego (bez ilosci) pomijamy — nie ma czego liczyc.

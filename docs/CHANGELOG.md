@@ -10,6 +10,41 @@
 - **Filtr po osobie** pokazuje każdy jej dzień w zakresie od–do (do 92 dni) z sumami.
 - Przy osobie czynności, na które była wbita w Przydzielaniu (bez godzin).
 
+## 2026-10-23 — Tabela ilości, wersja 2
+
+### Zmienione
+- Ekran końca paczki („Czasy paczek” i „✎ Ilości” lidera): duża ilość z paczki na górze,
+  większe napisy i pola.
+- Pracownik wpisuje **wszystko sam**: per grupa Ilość (pojedyncze), Uszkodzone,
+  Niesprocesowane — ilość biżuterii nie jest już liczona przez system.
+- Nowy wiersz **🚩 Flagi – Card Change** (liczba kart → Card facture).
+- **Podwójne / Potrójne** na dole, dla całej paczki; ×1,5 / ×2 (Labelling twice / triple)
+  dla **wszystkich grup**, nie tylko biżuterii.
+- **Nadwyżkę i Brak liczy system** z różnicy między wpisanymi sztukami a ilością z pliku.
+- Sorting = Uszkodzone + Niesprocesowane.
+- Przyciski na dole panelu duże i pełne, na dwóch krańcach: czerwone „Anuluj” po lewej,
+  zielone „Zapisz koniec” po prawej (praca na tablecie).
+
+### Usunięte
+- Sortowanie inne (zastąpione kolumną Niesprocesowane), podmiana karty uszkodzonej,
+  podmiana karty ze względu na algorytm (teraz Flagi), etykietowanie worków.
+
+### Uwagi
+- Paczki zapisane 15–22.10 liczą się dalej po staremu (rozliczenie wstecz bez zmian);
+  poprawka lidera w „✎ Ilości” przelicza taką paczkę już po nowemu.
+- Karta stanowiska otwarta przed wdrożeniem trzeba odświeżyć (F5) — stary ekran dostaje
+  komunikat i nic nie zapisuje.
+
+## 2026-10-22 — Logo, sekcje menu, tryb ciemny
+
+### Dodane
+- Logo Logwin w menu, nad nazwą aplikacji.
+- **Tryb ciemny** — przycisk 🌙/☀️ obok nazwy użytkownika; zapamiętywany w przeglądarce.
+
+### Zmienione
+- Menu w barwach logo: przejście z niebieskiego w zielony; sekcje Pracownik / Lider /
+  Admin jako wyraźne paski.
+
 ## 2026-10-20 (4) — Jasny motyw C2
 
 ### Zmienione

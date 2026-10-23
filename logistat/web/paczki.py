@@ -17,7 +17,7 @@ from logistat.paczki import (
     zamknij_paczke_wielu_osob, zapisz_tabele_kartonu)
 from logistat.rozliczenie import klucz_linii, recompute_general_stat
 from logistat.tabela_ilosci import (
-    DODATKI_TABELI, GRUPY_ARTYKULOWE, TRYB_WZOR, TRYB_ZESPOL, normalizuj_tabele)
+    TRYB_WZOR, TRYB_ZESPOL, normalizuj_tabele)
 from logistat.web.wspolne import (
     json_body, leader_required, process_import_rows, wymagana_data_pliku)
 
@@ -228,9 +228,7 @@ def paczki_view():
                            bledy_map={c.id: bledy_paczki(c) for c in pagination.items},
                            users=users,
                            country_mappings=country_mappings,
-                           kategorie=list(etykiety_kategorii().items()),
-                           grupy=GRUPY_ARTYKULOWE,
-                           dodatki=DODATKI_TABELI)
+                           kategorie=list(etykiety_kategorii().items()))
 
 
 @bp.route('/api/packages', methods=['POST'])

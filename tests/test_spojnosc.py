@@ -32,7 +32,7 @@ def dane(leader_client):
         leader_client.post('/api/package-time/start', json={'employee_barcode': 'A', 'package_barcode': kod})
         leader_client.post('/api/package-time/end', json={
             'employee_barcode': 'A', 'package_barcode': kod, 'tryb': 'wzor',
-            'tabela': {'grupy': {'bizuteria': {'podwojnie': 3}}}})
+            'tabela': {'wersja': 2, 'grupy': {'bizuteria': {'ilosc': 7}}, 'podwojnie': 3}})
 
 
 def opisy(lista):
@@ -46,6 +46,27 @@ def test_spojne_dane_bez_bledow(leader_client, acting_admin):
 
     assert bledy == []
     assert not any('niezakończone' in o for o in opisy(uwagi))
+
+
+def test_stara_tabela_v1_dalej_spojna(leader_client, acting_admin):
+    """Paczki z tabela z 15–22.10 (wersja 1) licza sie dalej po staremu —
+    po wdrozeniu wersji 2 skrypt nie moze zglosic na nich rozjazdu."""
+    from logistat.models import ImportedCarton
+    from logistat.paczki import zapisz_tabele_kartonu
+    dane(leader_client)
+    c = ImportedCarton.query.filter_by(barcode='P2').one()
+    c.scan_start_at = c.scan_end_at = datetime.utcnow()
+    zapisz_tabele_kartonu(c, {
+        'tryb': 'wzor', 'dodatki': {'sortowanie_inne': 1, 'worki': 2},
+        'grupy': {'bizuteria': {'ilosc': 10, 'brak': 0, 'nadwyzka': 0, 'uszkodzone': 1,
+                                'podwojnie': 2, 'potrojnie': 0, 'pojedynczo': 7}}}, None)
+    db.session.commit()
+
+    bledy, _ = skrypt.sprawdz()
+
+    assert bledy == []
+    assert c.get_scan_categories() == {'labelling_on': 7, 'labelling_tvl': 3, 'sorting': 2,
+                                       'labelling_polybag': 2}
 
 
 def test_rozjechane_rozliczenie_to_blad(leader_client, acting_admin):
