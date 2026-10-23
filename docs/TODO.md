@@ -2,12 +2,14 @@
 
 ## 🔴 Do zrobienia (priorytetowe)
 
-- [ ] **Tabela ilości — dalsze kroki** (po wdrożeniu 2026-10-15)
-  - Algorytm „Sortowanie inne” (biżuteria KIDS dla Hiszpanii) i „Podmiana karty ze względu
-    na algorytm” (pierścionki, RFID) — czeka na regułę i źródło danych (Warengruppe ID w pliku?)
-  - Ilość per grupa z pliku klienta, gdy zacznie ją przysyłać (dziś cała ilość → Biżuteria)
-  - Bez odpowiedzi operacji: czy kategoria A/B z pliku ma związek z grupą; termin startu
-    (wdrożone dla wszystkich od razu); Normy paczki jednej osoby dalej po Stückzahl
+- [ ] **Tabela ilości — dalsze kroki** (wersja 2 wdrożona 2026-10-23)
+  - Flagi – Card Change wpisuje dziś pracownik (liczba kart); automat z algorytmu
+    (pierścionki, RFID — Warengruppe ID w pliku?) czeka na regułę i źródło danych
+  - Ilość per grupa z pliku klienta, gdy zacznie ją przysyłać — wtedy Nadwyżka/Brak
+    mogłyby być per grupa (dziś tylko na cały karton)
+  - Bez odpowiedzi operacji: czy kategoria A/B z pliku ma związek z grupą; Normy paczki
+    jednej osoby dalej po Stückzahl
+  - Labelling polybag nie ma już źródła w tabeli — potwierdzić, że nie jest potrzebny
   - Nowa grupa artykułowa = zmiana w kodzie (`GRUPY_ARTYKULOWE` + kolumna rozliczenia)
 
 - [x] **Total Amount w żółtym wierszu double rate** — rozstrzygnięte 2026-10-15: oba wiersze
@@ -23,7 +25,7 @@
     dashboard, per zmiana, sekwencje, `pg_dump` + odtworzenie
   - Szczegóły i procedura: `docs/DEPLOY.md`
 
-- [x] **PROD na `10.153.1.30`** — działa od 2026-10-22 (main `13bef4f`),
+- [x] **PROD na `10.153.1.30`** — działa od 2026-10-22 (2026-10-23: main `a0574c7`),
       `https://logistat-prod.logwin-logistics.com.pl/`; szczegóły w `docs/DEPLOY.md`
   - [x] Dostęp SSH (`optm_user`), własne hasła w override, schemat z ORM
   - [x] Kopia z `.31`: 142 użytkowników z hasłami, stawki, kraje, czynności, opcje
