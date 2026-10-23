@@ -1,6 +1,6 @@
 # Wdrożenie LogiStat
 
-Stan na 2026-10-23 (`.31` i `.30` na main `a0574c7`).
+Stan na 2026-10-23 — `.31` i `.30` chodzą na tym samym `main` (wdrażane razem: najpierw `.31`, potem `.30`).
 
 ## Środowiska
 
