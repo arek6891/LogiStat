@@ -1,5 +1,15 @@
 # LogiStat — Changelog
 
+## 2026-10-23 — Czasy pracowników: oś czasu i filtr po osobie
+
+### Dodane
+- Pod każdą osobą **oś czasu**: pasek od wejścia do końca pracy, na nim przerwy, Inne
+  i szkolenie. Kliknięcie znacznika poprawia jego godzinę, kliknięcie paska dodaje wpis
+  o tej godzinie.
+- **Korekta godziny wejścia** (skan na zmianie) — z zapisem pierwotnego skanu, kto i kiedy.
+- **Filtr po osobie** pokazuje każdy jej dzień w zakresie od–do (do 92 dni) z sumami.
+- Przy osobie czynności, na które była wbita w Przydzielaniu (bez godzin).
+
 ## 2026-10-23 — Tabela ilości, wersja 2
 
 ### Zmienione

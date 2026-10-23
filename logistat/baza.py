@@ -130,6 +130,10 @@ MIGRACJE_KOLUMN = [
     ("imported_carton", "roznica_potwierdzona_at", "TIMESTAMP"),
     ("imported_carton", "roznica_potwierdzona_przez", 'INTEGER REFERENCES "user"(id)'),
     ("udzial_paczki", "tabela", "TEXT"),
+    # Korekta godziny wejscia na osi czasu (2026-10-23).
+    ("shift_attendance", "pierwotny_skan", "TIMESTAMP"),
+    ("shift_attendance", "poprawione_przez", 'INTEGER REFERENCES "user"(id)'),
+    ("shift_attendance", "poprawione_at", "TIMESTAMP"),
 ]
 
 

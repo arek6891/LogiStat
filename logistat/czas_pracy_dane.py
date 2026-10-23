@@ -1,18 +1,93 @@
 """Czas pracy — dane z bazy: podsumowanie przerw / Inne / szkolen osoby na zmianie
-(`_compute_worker_times`) i otwarci szkoleni danego trenera."""
+(`_compute_worker_times`), wiersze ekranu Czasy pracowników (`wiersze_czasow`)
+i otwarci szkoleni danego trenera."""
 from datetime import timedelta
+
+from sqlalchemy.orm import joinedload
 
 from logistat.czas import iso_z, teraz_utc
 from logistat.extensions import db
-from logistat.models import User, WorkerTimeEvent
+from logistat.models import (
+    Activity, ActivityAssignment, Shift, ShiftAttendance, User, WorkerTimeEvent)
 from logistat.okresy import suma_zlaczonych_okresow
 
+# Filtr po osobie na /worker-times: najdluzszy zakres dni naraz.
+MAX_DNI_OSOBY = 92
 
-def _compute_worker_times(uid, shift, attendance_time):
-    """Return break/work summary for one worker-shift pair."""
-    events = WorkerTimeEvent.query.filter_by(
-        user_id=uid, shift_id=shift.id
-    ).order_by(WorkerTimeEvent.timestamp).all()
+
+def wiersze_czasow(date_from, date_to, user_id=None):
+    """Wiersze ekranu Czasy pracowników: jeden na (osoba, dzien), od
+    najwczesniejszej obecnosci tego dnia (obie zmiany), posortowane po dniu
+    i nazwisku. `czynnosci` = nazwy czynnosci z Przydzielania tej osoby w tym
+    dniu (bez godzin — przydzial nie ma godzin; operacja 2026-10-23)."""
+    q = (ShiftAttendance.query.join(Shift)
+         .filter(Shift.date >= date_from, Shift.date <= date_to)
+         .options(joinedload(ShiftAttendance.user), joinedload(ShiftAttendance.shift),
+                  joinedload(ShiftAttendance.poprawiajacy)))
+    if user_id is not None:
+        q = q.filter(ShiftAttendance.user_id == user_id)
+    pierwsza = {}
+    for att in q.all():
+        klucz = (att.shift.date, att.user_id)
+        if klucz not in pierwsza or att.scanned_at < pierwsza[klucz].scanned_at:
+            pierwsza[klucz] = att
+    if not pierwsza:
+        return []
+
+    czynnosci = {}
+    przydzialy = (db.session.query(Shift.date, ActivityAssignment.user_id, Activity.name)
+                  .join(ActivityAssignment, ActivityAssignment.shift_id == Shift.id)
+                  .join(Activity, Activity.id == ActivityAssignment.activity_id)
+                  .filter(Shift.date >= date_from, Shift.date <= date_to,
+                          ActivityAssignment.user_id.in_({u for _, u in pierwsza}))
+                  .order_by(Activity.sort_order, Activity.name))
+    for dzien, uid, nazwa in przydzialy:
+        lista = czynnosci.setdefault((dzien, uid), [])
+        if nazwa not in lista:
+            lista.append(nazwa)
+
+    # Zdarzenia wszystkich wierszy jednym zapytaniem (filtr osoby: do 92 dni).
+    zdarzenia = {}
+    for e in (WorkerTimeEvent.query
+              .filter(WorkerTimeEvent.shift_id.in_({a.shift_id for a in pierwsza.values()}),
+                      WorkerTimeEvent.user_id.in_({u for _, u in pierwsza}))
+              .options(joinedload(WorkerTimeEvent.user), joinedload(WorkerTimeEvent.recorder))
+              .order_by(WorkerTimeEvent.timestamp).all()):
+        zdarzenia.setdefault((e.user_id, e.shift_id), []).append(e)
+
+    wynik = []
+    for (dzien, uid), att in pierwsza.items():
+        wiersz = _compute_worker_times(uid, att.shift, att.scanned_at,
+                                       zdarzenia.get((uid, att.shift_id), []))
+        wiersz.update({
+            'date':          dzien.isoformat(),
+            'user_id':       uid,
+            'user_name':     att.user.display_name,
+            'shift_id':      att.shift_id,
+            'shift_number':  att.shift.shift_number,
+            'shift_in':      iso_z(att.scanned_at),
+            'attendance_id': att.id,
+            'wejscie_poprawione': ({
+                'pierwotny_skan': iso_z(att.pierwotny_skan),
+                'kto': att.poprawiajacy.display_name if att.poprawiajacy else None,
+                'kiedy': iso_z(att.poprawione_at),
+            } if att.poprawione_at else None),
+            'czynnosci':     czynnosci.get((dzien, uid), []),
+        })
+        wynik.append(wiersz)
+    wynik.sort(key=lambda w: (w['date'], w['user_name']))
+    return wynik
+
+
+def _compute_worker_times(uid, shift, attendance_time, events=None):
+    """Return break/work summary for one worker-shift pair.
+
+    `events` — zdarzenia tej osoby na tej zmianie posortowane po czasie, jesli
+    wolajacy pobral je hurtem (wiersze_czasow, bez N+1); inaczej zapytanie."""
+    if events is None:
+        events = WorkerTimeEvent.query.filter_by(
+            user_id=uid, shift_id=shift.id
+        ).order_by(WorkerTimeEvent.timestamp).all()
 
     break_secs = 0
     other_secs = 0
