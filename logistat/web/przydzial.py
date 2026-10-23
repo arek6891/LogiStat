@@ -11,7 +11,9 @@ from logistat.extensions import db
 from logistat.models import (
     Activity, ActivityAssignment, DailyStat, Shift, ShiftAttendance, User, get_or_create_shift,
     szkolenia_czynnosci)
-from logistat.przydzial import wersja_przydzialu, wydajnosc_czynnosci
+from logistat.przydzial import (
+    CZYNNOSC_SKANOW_PACZEK, do_zrobienia_dnia, grupy_wydajnosci, osob_pp_na_zmianie,
+    sugestie_przydzialu, wersja_przydzialu, wydajnosc_czynnosci)
 from logistat.web.wspolne import (
     json_body, leader_required, parse_date, parse_shift_number, require_int)
 
@@ -23,7 +25,8 @@ bp = Blueprint('przydzial', __name__)
 def assignment():
     activities = Activity.query.filter_by(is_active=True)\
         .order_by(Activity.sort_order).all()
-    return render_template('assignment.html', activities=activities)
+    return render_template('assignment.html', activities=activities,
+                           czynnosc_pp=CZYNNOSC_SKANOW_PACZEK)
 
 
 @bp.route('/data-entry')
@@ -49,15 +52,18 @@ def api_assignment_data():
     activities = Activity.query.filter_by(is_active=True)\
         .order_by(Activity.sort_order).all()
 
+    dzien = parse_date(shift_date)
+    plan = _plan_zmiany(dzien, shift_number)
     if not shift:
         return jsonify({
             'shift': None,
             'attendees': [],
             'assignments': [],
             'activities': [a.to_dict() for a in activities],
-            'wydajnosc': wydajnosc_czynnosci(parse_date(shift_date)),
+            'wydajnosc': wydajnosc_czynnosci(dzien),
             'szkolenia': {},
-            'wersja': wersja_przydzialu([])
+            'wersja': wersja_przydzialu([]),
+            **plan,
         }), 200
 
     # joinedload: to_dict() kazdego wiersza siega po user/activity — bez tego
@@ -83,8 +89,22 @@ def api_assignment_data():
         # czynnosc bez szkolenia (serwer i tak to sprawdza przy zapisie).
         'szkolenia': {str(u): sorted(a) for u, a in szkolenia_czynnosci(
             {a.user_id for a in attendances} | assigned_user_ids).items()},
-        'wersja': wersja_przydzialu(assignments)
+        'wersja': wersja_przydzialu(assignments),
+        **plan,
     }), 200
+
+
+def _plan_zmiany(dzien, shift_number):
+    """Grupy P1/P2/P3 i ilosc do zrobienia dla Post Processing (2026-10-23)."""
+    g = grupy_wydajnosci(dzien)
+    pp = Activity.query.filter_by(name=CZYNNOSC_SKANOW_PACZEK).first()
+    return {
+        'grupy': {str(uid): v for uid, v in g['grupy'].items()},
+        'okno_grup': g['okno'],
+        'do_zrobienia': do_zrobienia_dnia(dzien),
+        'pp_activity_id': pp.id if pp else None,
+        'osob_pp_druga_zmiana': osob_pp_na_zmianie(dzien, 2 if shift_number == 1 else 1),
+    }
 
 
 @bp.route('/api/assignment/suggestions', methods=['GET'])
@@ -108,78 +128,26 @@ def api_assignment_suggestions():
 
     activities = Activity.query.filter_by(is_active=True)\
         .order_by(Activity.sort_order).all()
+    dzien = parse_date(shift_date)
 
-    # Calculate average quantity per user per activity (last 30 days)
-    thirty_days_ago = parse_date(shift_date) - timedelta(days=30)
+    # Srednia z Wpisu ilosci per osoba x czynnosc (30 dni) — dla czynnosci
+    # innych niz Post Processing (te grupy P1–P3 nie opisuja).
     stats = db.session.query(
-        DailyStat.user_id,
-        DailyStat.activity_id,
-        func.avg(DailyStat.quantity).label('avg_qty'),
-        func.count(DailyStat.id).label('days_worked')
+        DailyStat.user_id, DailyStat.activity_id,
+        func.avg(DailyStat.quantity).label('avg_qty')
     ).join(Shift).filter(
         DailyStat.user_id.in_(attendee_ids),
-        Shift.date >= thirty_days_ago
+        Shift.date >= dzien - timedelta(days=30)
     ).group_by(DailyStat.user_id, DailyStat.activity_id).all()
 
-    # Sugestie tylko tam, gdzie osoba jest przeszkolona — zapis i tak by je odrzucil.
-    szkolenia = szkolenia_czynnosci(attendee_ids)
-
-    def przeszkolony(uid, aid):
-        return aid in szkolenia.get(uid, ())
-
-    # Build performance map: {(user_id, activity_id): avg_qty}
-    perf = {}
-    for s in stats:
-        perf[(s.user_id, s.activity_id)] = float(s.avg_qty)
-
-    # Greedy assignment: for each activity, pick the best unassigned user
-    suggestions = []
-    assigned = set()
-
-    # Sort activities by fewest qualified workers first
-    activity_scores = []
-    for act in activities:
-        qualified = sum(1 for uid in attendee_ids
-                       if perf.get((uid, act.id), 0) > 0)
-        activity_scores.append((qualified, act))
-    activity_scores.sort(key=lambda x: x[0])
-
-    for _, act in activity_scores:
-        # Rank available users by performance for this activity
-        candidates = []
-        for uid in attendee_ids:
-            if uid not in assigned and przeszkolony(uid, act.id):
-                avg = perf.get((uid, act.id), 0)
-                candidates.append((avg, uid))
-        candidates.sort(reverse=True)
-
-        if candidates:
-            best_avg, best_uid = candidates[0]
-            suggestions.append({
-                'user_id': best_uid,
-                'activity_id': act.id,
-                'avg_quantity': best_avg
-            })
-            assigned.add(best_uid)
-
-    # Assign remaining unassigned users to activities with fewest people
-    activity_counts = {act.id: 0 for act in activities}
-    for s in suggestions:
-        activity_counts[s['activity_id']] = activity_counts.get(s['activity_id'], 0) + 1
-
-    for uid in attendee_ids:
-        mozliwe = [a for a in activity_counts if przeszkolony(uid, a)]
-        if uid not in assigned and mozliwe:
-            # Find activity with fewest assigned people (z tych, w ktorych przeszkolony)
-            min_act_id = min(mozliwe, key=activity_counts.get)
-            suggestions.append({
-                'user_id': uid,
-                'activity_id': min_act_id,
-                'avg_quantity': 0
-            })
-            activity_counts[min_act_id] += 1
-            assigned.add(uid)
-
+    suggestions = sugestie_przydzialu(
+        obecni=attendee_ids, czynnosci=activities,
+        szkolenia=szkolenia_czynnosci(attendee_ids),
+        grupy=grupy_wydajnosci(dzien)['grupy'],
+        srednie={(s.user_id, s.activity_id): float(s.avg_qty) for s in stats},
+        wydajnosc=wydajnosc_czynnosci(dzien),
+        do_zrobienia=do_zrobienia_dnia(dzien),
+        osob_pp_druga=osob_pp_na_zmianie(dzien, 2 if shift_number == 1 else 1))
     return jsonify({'suggestions': suggestions}), 200
 
 

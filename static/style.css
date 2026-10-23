@@ -862,6 +862,24 @@ tr:last-child td {
     margin-top: 2px;
 }
 .assignment-column-header .estymacja.pusta { opacity: .6; font-style: italic; }
+/* Post Processing: do zrobienia (Actual / Forecast) vs estymacja obu zmian */
+.assignment-column-header .do-zrobienia { margin-top: 4px; font-size: .78rem; font-weight: 600; color: var(--text-secondary); }
+.assignment-column-header .do-zrobienia span { font-weight: 400; color: var(--text-muted); }
+.assignment-column-header .do-zrobienia.ok { color: var(--success); }
+.assignment-column-header .do-zrobienia.brak { color: var(--danger); }
+.assignment-column-header .do-zrobienia.pusta { opacity: .6; font-style: italic; font-weight: 400; }
+/* Grupa P1/P2/P3 na karcie (Normy, 20 dni pracy) — kolory jak w Normach */
+.legenda-grup { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: .8rem; color: var(--text-muted); margin-top: 6px; }
+.legenda-grup .grupa-p { margin-left: 8px; }
+.legenda-grup .grupa-p:first-child { margin-left: 0; }
+.assignment-user-card .grupa-p { margin-left: auto; }
+.grupa-p {
+    font-style: normal; font-size: .72rem; font-weight: 800;
+    padding: 1px 7px; border-radius: 8px; background: var(--bg-hover); color: var(--text-muted);
+}
+.grupa-p[data-grupa="P1"] { background: var(--danger-bg); color: var(--danger); }
+.grupa-p[data-grupa="P2"] { background: rgb(var(--text-secondary-rgb) / .14); color: var(--text-secondary); }
+.grupa-p[data-grupa="P3"] { background: var(--success-bg); color: var(--success); }
 
 .assignment-drop-zone {
     flex: 1;

@@ -75,14 +75,21 @@ pracowników z ostatnich 30 dni do daty zmiany: `{szt_zmiana_os, szt_h_os, zrodl
 danych nie ma klucza. Ekran mnoży przez liczbę przydzielonych. Zwracane też, gdy zmiany
 jeszcze nie ma.
 
-### GET `/api/assignment/suggestions?date=YYYY-MM-DD&shift_number=N`
-Sugestie AI na podstawie średnich ilości z ostatnich 30 dni.
+Od 2026-10-23 także: `grupy` — `{user_id: {grupa: "P1"|"P2"|"P3", proc_sredniej}}` (ocena z Norm
+za ostatnie 20 dni pracy magazynu; osoby z za małą liczbą danych nie ma); `okno_grup` —
+`{od, do, dni, progi}` albo `null`; `do_zrobienia` — `{sztuk, zrodlo: "actual"|"forecast"}`
+albo `null` (Loading date = dzień zmiany); `pp_activity_id`; `osob_pp_druga_zmiana` — ile
+osób ma Post Processing w zapisanym przydziale drugiej zmiany tego dnia.
 
-**Algorytm:**
-1. Dla każdej czynności oblicz średnią/dzień każdego pracownika
-2. Zacznij od czynności z najmniejszą liczbą kwalifikowanych operatorów
-3. Przydziel najlepszego dostępnego pracownika
-4. Resztę rozdziel równomiernie
+### GET `/api/assignment/suggestions?date=YYYY-MM-DD&shift_number=N`
+Sugestie AI po grupach P1/P2/P3 (od 2026-10-23). Element: `{user_id, activity_id, grupa, powod}`.
+
+**Algorytm** (`sugestie_przydzialu()`):
+1. **Post Processing:** osoby w kolejności P3 → P2 → bez grupy → P1 (w grupie wyższy % średniej
+   pierwszy), tylko przeszkolone, aż estymacja obu zmian pokryje `do_zrobienia` (druga zmiana
+   z jej zapisanego przydziału). Bez forecastu / estymacji PP: do PP idą P3 i P2.
+2. Każda pozostała czynność dostaje najlepszą osobę wg średniej z Wpisu ilości (30 dni).
+3. Reszta — do najmniej obsadzonej czynności, w której jest przeszkolona (tylko PP → PP).
 
 Odpowiedź zawiera też `wersja` — odcisk aktualnego przydziału zmiany (do wykrywania konfliktów, patrz niżej).
 
