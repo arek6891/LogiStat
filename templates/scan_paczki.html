@@ -201,7 +201,9 @@
     .zespol-okno { max-width: 620px; font-size: 1.25rem; }
     .zespol-okno h3 { font-size: 1.6rem; }
     .zespol-okno .liczby { font-size: 1.4rem; margin: 14px 0; }
-    .zespol-okno .btn { font-size: 1.15rem; padding: 14px 22px; }
+    .zespol-okno { max-width: 760px; }
+    .zespol-okno .zespol-przyciski { display: flex; justify-content: space-between; gap: 48px; margin-top: 24px; }
+    .zespol-okno .przycisk-stanowiska { flex: 0 1 300px; white-space: normal; }
 </style>
 {% endblock %}
 
@@ -337,9 +339,12 @@
         <h3 style="color:var(--accent);">👥 Przy paczce pracują jeszcze</h3>
         <div class="liczby" id="zespol-pozostali"></div>
         <div>Zamknąć paczkę dla wszystkich? Pozostali skończą teraz, <strong>bez swoich ilości</strong>.</div>
-        <div class="modal-actions">
-            <button class="btn btn-ghost" id="zespol-moj">👤 Zakończ tylko mój udział</button>
-            <button class="btn btn-primary" id="zespol-wszyscy">👥 Zamknij paczkę dla wszystkich</button>
+        {# Jak w panelu ilosci (tablet, 2026-10-23): duze, pelne, na dwoch krancach.
+           Czerwony po lewej = skutki dla innych osob; zielony po prawej = bezpieczny
+           wybor (on ma fokus — Enter skanera niczego innego nie zatwierdzi). #}
+        <div class="modal-actions zespol-przyciski">
+            <button type="button" class="btn przycisk-stanowiska przycisk-anuluj" id="zespol-wszyscy">👥 Zamknij paczkę dla wszystkich</button>
+            <button type="button" class="btn przycisk-stanowiska przycisk-zapisz" id="zespol-moj">👤 Zakończ tylko mój udział</button>
         </div>
     </div>
 </div>

@@ -301,6 +301,9 @@ def test_ekran_skanowania_ma_tabele_ilosci(leader_client):
     # Tablet (operacja 2026-10-23): Anuluj czerwony po lewej, zapis zielony po prawej.
     stopka = html.split('class="qty-foot"')[1].split('</div>')[0]
     assert stopka.index('przycisk-anuluj') < stopka.index('przycisk-zapisz')
+    zespol = html.split('class="modal-actions zespol-przyciski"')[1].split('</div>')[0]
+    assert zespol.index('id="zespol-wszyscy"') < zespol.index('id="zespol-moj"')
+    assert 'przycisk-zapisz" id="zespol-moj"' in zespol
 
 
 def test_paczki_maja_przycisk_korekty_ilosci(leader_client, acting_admin):
