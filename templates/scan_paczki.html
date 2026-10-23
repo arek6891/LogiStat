@@ -172,10 +172,28 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        flex-wrap: wrap;
-        gap: 12px;
-        margin-top: 18px;
+        gap: 48px;
+        margin-top: 24px;
     }
+    /* Wyjatek od „przyciski tylko z ramka” (motyw C2): na stanowisku przy
+       tablecie przyciski sa duze i PELNE, zeby nie pomylic Zapisz z Anuluj. */
+    .przycisk-stanowiska {
+        min-height: 68px;
+        min-width: 210px;
+        padding: 14px 28px;
+        font-size: 1.35rem;
+        font-weight: 800;
+        border-radius: var(--radius);
+        border: 2px solid transparent;
+        justify-content: center;
+        color: var(--on-accent);
+        touch-action: manipulation;
+    }
+    .przycisk-anuluj { background: var(--danger); border-color: var(--danger); }
+    .przycisk-zapisz { background: var(--success); border-color: var(--success); }
+    .przycisk-anuluj:hover, .przycisk-zapisz:hover { filter: brightness(1.08); color: var(--on-accent); }
+    .przycisk-anuluj:hover { background: var(--danger); }
+    .przycisk-zapisz:hover { background: var(--success); }
     .recent-item .time { color: var(--text-muted); font-size: .78rem; }
 
     /* Okno zespolu jest POZA .stanowisko-skanu (zoom na przodku psuje
@@ -223,12 +241,13 @@
             {# Tabela buduje sie w JS (static/js/tabela_ilosci.js) — tryb zalezy od paczki #}
             <div id="{{ prefix }}-qty-tabela"></div>
 
+            {# Duze, pelne przyciski na przeciwnych krancach — tablet, palec (operacja
+               2026-10-23): Anuluj czerwony po lewej, zapis zielony po prawej. #}
             <div class="qty-foot">
-                <div></div>
-                <div style="display:flex;gap:8px;">
-                    <button class="btn btn-ghost" onclick="anulujKoniec('{{ prefix }}')">Anuluj</button>
-                    <button class="btn btn-primary" onclick="zapiszIlosci('{{ prefix }}')">{{ przycisk }}</button>
-                </div>
+                <button type="button" class="btn przycisk-stanowiska przycisk-anuluj"
+                        onclick="anulujKoniec('{{ prefix }}')">✖ Anuluj</button>
+                <button type="button" class="btn przycisk-stanowiska przycisk-zapisz"
+                        onclick="zapiszIlosci('{{ prefix }}')">{{ przycisk }}</button>
             </div>
         </div>
 {% endmacro %}

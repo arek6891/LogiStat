@@ -12,6 +12,8 @@
   dla **wszystkich grup**, nie tylko biżuterii.
 - **Nadwyżkę i Brak liczy system** z różnicy między wpisanymi sztukami a ilością z pliku.
 - Sorting = Uszkodzone + Niesprocesowane.
+- Przyciski na dole panelu duże i pełne, na dwóch krańcach: czerwone „Anuluj” po lewej,
+  zielone „Zapisz koniec” po prawej (praca na tablecie).
 
 ### Usunięte
 - Sortowanie inne (zastąpione kolumną Niesprocesowane), podmiana karty uszkodzonej,

@@ -298,6 +298,9 @@ def test_ekran_skanowania_ma_tabele_ilosci(leader_client):
     js = leader_client.get('/static/js/tabela_ilosci.js').get_data(as_text=True)
     assert 'ti-w-paczce' in js and 'W paczce' in js
     assert 'Carton labeling' not in html
+    # Tablet (operacja 2026-10-23): Anuluj czerwony po lewej, zapis zielony po prawej.
+    stopka = html.split('class="qty-foot"')[1].split('</div>')[0]
+    assert stopka.index('przycisk-anuluj') < stopka.index('przycisk-zapisz')
 
 
 def test_paczki_maja_przycisk_korekty_ilosci(leader_client, acting_admin):
