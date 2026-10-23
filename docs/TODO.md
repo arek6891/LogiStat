@@ -25,7 +25,7 @@
     dashboard, per zmiana, sekwencje, `pg_dump` + odtworzenie
   - Szczegóły i procedura: `docs/DEPLOY.md`
 
-- [x] **PROD na `10.153.1.30`** — działa od 2026-10-22 (2026-10-23: main `a0574c7`),
+- [x] **PROD na `10.153.1.30`** — działa od 2026-10-22, aktualizowany razem z `.31`,
       `https://logistat-prod.logwin-logistics.com.pl/`; szczegóły w `docs/DEPLOY.md`
   - [x] Dostęp SSH (`optm_user`), własne hasła w override, schemat z ORM
   - [x] Kopia z `.31`: 142 użytkowników z hasłami, stawki, kraje, czynności, opcje
