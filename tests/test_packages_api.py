@@ -95,7 +95,7 @@ def test_double_rate_przy_recznym_dodaniu(leader_client):
 def test_operator_nie_moze_dodac_paczki(client):
     r = client.post('/api/packages', json=payload())
 
-    assert r.status_code in (302, 401)
+    assert r.status_code == 401
     assert ImportedCarton.query.count() == 0
 
 

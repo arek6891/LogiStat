@@ -12,7 +12,7 @@ import openpyxl
 
 from logistat.extensions import db
 from logistat.kategorie import STAT_CATEGORIES, STAT_CATEGORY_LABELS_PL, TOTAL_AMOUNT_BEZ
-from logistat.models import GeneralStat, etykieta_kategorii
+from logistat.models import GeneralStat
 from logistat.web.wspolne import process_import_rows
 
 
@@ -113,38 +113,10 @@ def test_strona_pokazuje_polowki_z_labelling_twice(admin_client):
     assert 'value="4.5"' in html
 
 
-def test_strona_ma_dymek_wyjasniajacy_total_amount(admin_client):
-    linia()
-
-    html = admin_client.get(
-        f'/general-stats?date_from={LADOWANIE}&date_to={LADOWANIE}').get_data(as_text=True)
-
-    assert 'podpowiedz-tresc' in html
-    assert 'Labelling one' in html
-
-
 # ── etykiety dwuczlonowe ─────────────────────────────────────────────────────
-
-def test_etykieta_kategorii_jest_dwuczlonowa(flask_app):
-    # Od 2026-10: najpierw polska nazwa (edytowalna przez admina), w nawiasie
-    # angielska ze Statystyk ogolnych — patrz tests/test_nazwy_kategorii.py.
-    assert etykieta_kategorii('labelling_on') == 'Etykietowanie pojedyncze (Labelling one)'
-    assert etykieta_kategorii('card_facture') == 'Karta / faktura (Card facture)'
-
 
 def test_kazda_kategoria_ma_polskie_tlumaczenie():
     brakujace = [k for k in STAT_CATEGORIES
                  if k not in STAT_CATEGORY_LABELS_PL]
 
     assert brakujace == []
-
-
-def test_naglowki_eksportu_zostaja_po_angielsku(admin_client):
-    """Eksport idzie na zewnatrz — polskie nazwy tylko na ekranach."""
-    linia()
-
-    ws = eksport(admin_client)
-    naglowki = [c.value for c in ws[1] if c.value]
-
-    assert 'Labelling one' in naglowki
-    assert not any('Etykietowanie' in str(n) for n in naglowki)

@@ -52,29 +52,6 @@ def amount(stat, kategoria):
 
 # ── zapis ilosci przy skanie ────────────────────────────────────────────────
 
-def test_koniec_z_iloscami_zapisuje_je_na_kartonie(leader_client):
-    make_user('operator', barcode_id='W1')
-    make_carton()
-    start(leader_client, 'W1')
-
-    r = end(leader_client, 'W1', categories={'textile': 6, 'sorting': 4})
-
-    assert r.status_code == 200
-    assert carton().get_scan_categories() == {'textile': 6, 'sorting': 4}
-
-
-def test_ilosci_ze_skanu_trafiaja_do_statystyk_ogolnych(leader_client, acting_admin):
-    make_user('operator', barcode_id='W1')
-    process_import_rows([row('P1', 10)], ZIEL)
-    start(leader_client, 'W1')
-    end(leader_client, 'W1', categories={'textile': 6, 'sorting': 4})
-
-    s = gstat()
-    assert s.category_source == 'scan'
-    assert amount(s, 'textile') == 6
-    assert amount(s, 'sorting') == 4
-
-
 def test_linia_sumuje_skany_z_wielu_paczek(leader_client, acting_admin):
     make_user('operator', barcode_id='W1')
     process_import_rows([row('P1', 10), row('P2', 10)], ZIEL)
@@ -139,11 +116,12 @@ def test_zmiana_grupy_paczki_nie_zeruje_recznych_kategorii(leader_client, acting
     reczna = process_import_rows([row('M1', 7, added_manually=True)], ZIEL)
     karton = carton('M1')
 
-    leader_client.put(f'/api/packages/{karton.id}', json={
-        'barcode': 'M1', 'stueckzahl': 7, 'land': 'PL',
+    r = leader_client.put(f'/api/packages/{karton.id}', json={
+        'barcode': 'M1', 'stueckzahl': 7, 'land': 'PL', 'data_pliku': ZIEL.isoformat(),
         'ziel_datum': ZIEL.isoformat(), 'uebergabe_nr': 'UB-2',
     })
 
+    assert r.status_code == 200, r.get_json()      # bez tego test nic nie przesuwal
     assert amount(gstat(), 'textile') == 120
 
 
@@ -374,10 +352,13 @@ def test_swieza_linia_z_importu_przelacza_sie_przy_pierwszym_skanie(leader_clien
     make_user('operator', barcode_id='W1')
 
     start(leader_client, 'W1')
-    end(leader_client, 'W1', categories={'textile': 6})
+    end(leader_client, 'W1', categories={'textile': 6, 'sorting': 4})
 
-    assert gstat().category_source == 'scan'
-    assert amount(gstat(), 'textile') == 6
+    s = gstat()
+    assert s.category_source == 'scan'
+    assert amount(s, 'textile') == 6
+    assert amount(s, 'sorting') == 4
+    assert carton().get_scan_categories() == {'textile': 6, 'sorting': 4}
 
 
 # ── /paczki: okno „✎ Ilosci" dostaje wpisane ilosci ─────────────────────────

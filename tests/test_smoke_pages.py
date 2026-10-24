@@ -108,4 +108,4 @@ def test_eksport_forecastu_zwraca_plik(leader_client):
 def test_dashboard_api_odpowiada(leader_client):
     d = leader_client.get('/api/dashboard').get_json()
 
-    assert set(d) >= {'total_cartons', 'done_today', 'per_worker', 'as_of'}
+    assert set(d) >= {'plik_dzis', 'done_today', 'pieces_today', 'do_potwierdzenia', 'as_of'}

@@ -110,7 +110,7 @@ def test_per_loading_date_zle_zakresy(leader_client):
 
 def test_nowe_api_tylko_dla_zalogowanych(client):
     for url in ('/api/dashboard/zalegle', '/api/dashboard/loading-dates'):
-        assert client.get(url).status_code in (302, 401)
+        assert client.get(url).status_code == 401
 
 
 def test_dashboard_ma_zakladke_i_filtr(leader_client):

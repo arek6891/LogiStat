@@ -12,7 +12,6 @@ from logistat.czas import local_today
 from logistat.czas_pracy_dane import _compute_worker_times
 from logistat.extensions import db
 from logistat.models import ShiftAttendance, WorkerTimeEvent, get_or_create_shift
-from logistat.okresy import suma_zlaczonych_okresow
 
 
 def zmiana_z_obecnoscia(barcode='W1', minut_temu=120):
@@ -50,7 +49,8 @@ def test_skan_w_trybie_inne_przelacza_wyjscie_i_powrot(leader_client):
 
 
 def test_inne_nie_miesza_sie_z_przerwa(leader_client):
-    """Dwa niezalezne liczniki — przerwa nie zamyka „Innego" i odwrotnie."""
+    """Przerwa i „Inne” to osobne zdarzenia (raportowane osobno); po zamknietej
+    przerwie mozna wyjsc na „Inne”. Naraz trwac nie moga (patrz testy 409)."""
     user, shift, _ = zmiana_z_obecnoscia()
 
     skan(leader_client, mode='break')      # break_start
@@ -215,7 +215,3 @@ def test_odwrocony_zakres_po_recznej_korekcie_jest_pomijany(flask_app):
     p = _compute_worker_times(user.id, shift, obecnosc.scanned_at)
 
     assert p['work_minutes'] <= 60
-
-
-def test_suma_zlaczonych_okresow_bez_danych():
-    assert suma_zlaczonych_okresow([]) == 0

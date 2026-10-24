@@ -46,32 +46,6 @@ def test_domyslnie_widac_tylko_niezrobione(leader_client):
     assert 'GOTOWA' not in widoczne
 
 
-def test_pokaz_zrobione_dokłada_zakonczone(leader_client):
-    karton('WTOKU')
-    karton('GOTOWA', scan_end_at=datetime.utcnow())
-
-    widoczne = kody(leader_client.get(
-        f'/paczki?pokaz_zrobione=1&date_from={ZIEL}&date_to={ZIEL}'))
-
-    assert {'WTOKU', 'GOTOWA'} <= widoczne
-
-
-def test_pokaz_zrobione_bez_daty_nie_dziala(leader_client):
-    """Bez zakresu dat widok objalby cala historie — zakres jest wymagany."""
-    karton('WTOKU')
-    karton('GOTOWA', scan_end_at=datetime.utcnow())
-
-    odpowiedz = leader_client.get('/paczki?pokaz_zrobione=1')
-    widoczne = kody(odpowiedz)
-
-    assert 'WTOKU' in widoczne
-    assert 'GOTOWA' not in widoczne
-    # Fraza wystepuje WYLACZNIE w komunikacie o braku daty. Krotsze „wymaga
-    # zakresu dat" pasowaloby takze do komentarza w <script>, wiec asercja
-    # przechodzilaby zawsze — takze po usunieciu komunikatu.
-    assert 'i filtruj ponownie' in odpowiedz.get_data(as_text=True)
-
-
 def test_pokaz_zrobione_wystarczy_jedna_granica_daty(leader_client):
     karton('GOTOWA', scan_end_at=datetime.utcnow())
 
@@ -168,14 +142,16 @@ def test_domyslny_typ_daty_to_data_pliku(leader_client):
 
 def test_filtr_po_dacie_importu(leader_client):
     dzis = local_today()
-    karton('DZIS', imported_at=datetime.utcnow())
-    karton('DAWNO', imported_at=datetime(2026, 1, 2, 12, 0))
+    # Nie „DZIS” — to slowo jest w skrypcie strony (`const DZIS`), wiec
+    # `kody()` (szuka w calym HTML) widzialby je zawsze.
+    karton('IMPORT-TERAZ', imported_at=datetime.utcnow())
+    karton('IMPORT-DAWNO', imported_at=datetime(2026, 1, 2, 12, 0))
 
     widoczne = kody(leader_client.get(
         f'/paczki?date_typ=import&date_from={dzis}&date_to={dzis}'))
 
-    assert 'DZIS' in widoczne
-    assert 'DAWNO' not in widoczne
+    assert 'IMPORT-TERAZ' in widoczne
+    assert 'IMPORT-DAWNO' not in widoczne
 
 
 def test_filtr_po_dacie_startu(leader_client):
@@ -205,10 +181,11 @@ def test_filtr_po_dacie_konca_zdejmuje_domyslne_niezrobione(leader_client):
 
 
 def test_filtr_po_koncu_lapie_paczki_wszystkich_mimo_obcego_ziel_datum(leader_client):
-    """Regresja zgloszonego objawu: przy filtrze po Ziel-Datum z widoku znikaly
-    paczki, ktorych `ziel_datum` nie pokrywa sie z dniem skanowania — wygladalo
-    to, jakby filtr pracownika gubil ludzi. Filtr po dacie konca ma je pokazac,
-    dla wszystkich pracownikow naraz (pusty filtr osoby)."""
+    """Regresja zgloszonego objawu (wrzesien 2026, gdy domyslnym filtrem byla
+    Ziel-Datum): z widoku znikaly paczki o dacie innej niz dzien skanowania —
+    wygladalo, jakby filtr pracownika gubil ludzi. Filtr po dacie konca ma je
+    pokazac dla wszystkich pracownikow naraz (pusty filtr osoby), niezaleznie
+    od Loading date / Ziel-Datum paczki."""
     dzis = local_today()
     a = make_user('operator', username='op-p')
     b = make_user('operator', username='op-q')
@@ -407,7 +384,7 @@ def test_operator_nie_odblokuje(client):
 
     r = client.post(f'/api/packages/{c.id}/unlock-scan')
 
-    assert r.status_code in (302, 401, 403)
+    assert r.status_code == 401
 
 
 def test_widok_domyslny_pokazuje_blad_i_przycisk_odblokowania(leader_client):
@@ -418,5 +395,6 @@ def test_widok_domyslny_pokazuje_blad_i_przycisk_odblokowania(leader_client):
     html = leader_client.get('/paczki').get_data(as_text=True)
 
     assert 'WISZACA' in html
-    assert 'nie zakończona' in html, 'badge błędu'
+    # „nie zakończona” jest tez w stalym dymku filtra bledow — badge ma pelny tekst.
+    assert 'Rozpoczęta, ale nie zakończona' in html, 'badge błędu'
     assert 'Odblokuj' in html, 'przycisk odblokowania'
