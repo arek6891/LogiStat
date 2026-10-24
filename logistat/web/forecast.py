@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta
 
 import openpyxl
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, abort, jsonify, render_template, request
 from flask_login import current_user
 from openpyxl.chart import BarChart, Reference
 from openpyxl.styles import PatternFill
@@ -15,6 +15,8 @@ from logistat.web.excel import odpowiedz_xlsx, styl_naglowka
 from logistat.web.wspolne import leader_required, require_int
 
 bp = Blueprint('forecast', __name__)
+# Najdluzszy zakres wykresu / eksportu (jak Dashboard) — petla po dniach.
+MAX_DNI_FORECASTU = 366
 
 
 @bp.route('/forecast')
@@ -41,6 +43,8 @@ def api_forecast_chart_data():
         date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date()
     except (ValueError, TypeError):
         date_to = local_today() + timedelta(days=14)
+    if (date_to - date_from).days >= MAX_DNI_FORECASTU:
+        abort(400, f'Zakres może mieć najwyżej {MAX_DNI_FORECASTU} dni.')
 
     actual_rows = db.session.query(
         ImportedCarton.data_pliku,
@@ -95,7 +99,7 @@ def api_forecast_save():
         except (ValueError, TypeError):
             continue
 
-        qty = require_int(entry.get('quantity') or 0, 'quantity')
+        qty = require_int(entry.get('quantity') or 0, 'quantity', minimum=0)
         notes = (entry.get('notes') or '').strip()
 
         existing = Forecast.query.filter_by(date=d).first()
@@ -133,6 +137,8 @@ def api_forecast_export():
         date_to = datetime.strptime(date_to_str, '%Y-%m-%d').date()
     except (ValueError, TypeError):
         date_to = local_today() + timedelta(days=14)
+    if (date_to - date_from).days >= MAX_DNI_FORECASTU:
+        abort(400, f'Zakres może mieć najwyżej {MAX_DNI_FORECASTU} dni.')
 
     actual_rows = db.session.query(
         ImportedCarton.data_pliku,

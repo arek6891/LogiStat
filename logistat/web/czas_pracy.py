@@ -1,5 +1,5 @@
 """Czas pracy: skan przerw / Inne / konca pracy, szkolenia (trener + szkoleni), przeglad i korekta czasow."""
-from datetime import date, datetime
+from datetime import date
 
 from flask import Blueprint, abort, jsonify, render_template, request
 from flask_login import current_user
@@ -11,7 +11,8 @@ from logistat.extensions import db
 from logistat.models import (
     EVENT_TYPES, KOMUNIKATY_TRWANIA, Shift, ShiftAttendance, TRYBY_CZASU, TRYBY_SKANU, User,
     WorkerTimeEvent, get_setting_int)
-from logistat.web.wspolne import json_body, leader_required, magazyn_required, require_int
+from logistat.web.wspolne import (
+    json_body, leader_required, magazyn_required, parse_czas_utc, require_int)
 
 bp = Blueprint('czas_pracy', __name__)
 
@@ -368,10 +369,7 @@ def api_wejscie_update(attendance_id):
     inaczej przerwa / koniec pracy wypadlyby przed poczatkiem pracy."""
     att = db.get_or_404(ShiftAttendance, attendance_id)
     data = json_body()
-    try:
-        ts = datetime.fromisoformat(str(data.get('timestamp', '')))
-    except ValueError:
-        abort(400, 'Nieprawidłowy format czasu.')
+    ts = parse_czas_utc(data.get('timestamp'))
     od, do = local_day_bounds(att.shift.date)
     if not (od <= ts < do):
         abort(400, f'Wejście musi być w dniu zmiany ({att.shift.date.strftime("%d.%m.%Y")}).')
@@ -404,10 +402,7 @@ def api_time_event_create():
         return jsonify({'error': 'Brakuje wymaganych pól.'}), 400
     if event_type not in EVENT_TYPES:
         return jsonify({'error': 'Nieprawidłowy typ zdarzenia.'}), 400
-    try:
-        ts = datetime.fromisoformat(str(ts_str))
-    except (TypeError, ValueError):
-        return jsonify({'error': 'Nieprawidłowy format czasu.'}), 400
+    ts = parse_czas_utc(ts_str)
 
     # Bez tego bledne id konczylo sie naruszeniem klucza obcego i 500-ka
     # (na Postgresie transakcja padala w commicie).
@@ -443,10 +438,7 @@ def api_time_event_update(event_id):
             return jsonify({'error': 'Ta osoba nie jest osobą szkolącą.'}), 400
         event.event_type = data['event_type']
     if 'timestamp' in data:
-        try:
-            event.timestamp = datetime.fromisoformat(data['timestamp'])
-        except ValueError:
-            return jsonify({'error': 'Nieprawidłowy format czasu.'}), 400
+        event.timestamp = parse_czas_utc(data['timestamp'])
     if 'note' in data:
         event.note = data['note']
     event.recorded_by = current_user.id

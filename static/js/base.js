@@ -26,6 +26,13 @@ function dzisLokalnie() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// Komunikat bledu odpowiedzi API (`data.error`), a bez JSON-a — kod HTTP.
+// Dotad czesc przyciskow przy 400/403 nie mowila nic (przeglad 2026-10-24).
+async function pokazBladOdpowiedzi(res, domyslny = 'Nie udało się') {
+    const dane = await res.json().catch(() => ({}));
+    showToast(dane.error || `${domyslny} (błąd ${res.status}).`, 'error');
+}
+
 function showToast(message, type = 'success') {
     const container = document.getElementById('toastContainer');
     const toast = document.createElement('div');

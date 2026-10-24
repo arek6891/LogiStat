@@ -8,8 +8,8 @@ from logistat.czas import teraz_utc
 from logistat.extensions import db
 from logistat.kategorie import STAT_CATEGORIES, STAT_CATEGORY_LABELS, STAT_CATEGORY_LABELS_PL
 from logistat.models import (
-    Activity, AppSetting, CostMapping, CountryMapping, KLUCZ_NAZWY_PL, NAZWA_PL_MAX,
-    ROLE_Z_LOGOWANIEM, ROLES, SzkolenieCzynnosci, USER_OPTION_KINDS, User, UserOption,
+    Activity, ActivityAssignment, AppSetting, CostMapping, CountryMapping, DailyStat,
+    KLUCZ_NAZWY_PL, NAZWA_PL_MAX, ROLE_Z_LOGOWANIEM, ROLES, SzkolenieCzynnosci, USER_OPTION_KINDS, User, UserOption,
     active_admin_count, etykiety_kategorii, get_setting_int, nazwy_kategorii_pl, set_setting,
     szkolenia_czynnosci, user_options_by_kind)
 from logistat.web.wspolne import (
@@ -143,6 +143,10 @@ def api_settings_update():
         if val < 1:
             return jsonify({'error': f'{nazwa} musi być większa od zera.'}), 400
         set_setting(klucz, val)
+    # Pilnowal tego tylko JS (przeglad 2026-10-24): slaby >= dobry psuje werdykty Norm.
+    if get_setting_int('norm_weak_pct', 90) >= get_setting_int('norm_good_pct', 110):
+        db.session.rollback()
+        return jsonify({'error': 'Próg słabego wyniku musi być niższy niż próg dobrego.'}), 400
     db.session.commit()
     return jsonify({
         'message': 'Zapisano ustawienia.',
@@ -225,11 +229,14 @@ def api_activity_update(activity_id):
     data = json_body()
 
     if 'name' in data:
-        activity.name = str(data['name'] or '').strip()
+        nazwa = str(data['name'] or '').strip()
+        if not nazwa:
+            abort(400, 'Nazwa czynności nie może być pusta.')
+        activity.name = nazwa
     if 'sort_order' in data:
-        activity.sort_order = data['sort_order']
+        activity.sort_order = require_int(data['sort_order'], 'sort_order')
     if 'is_active' in data:
-        activity.is_active = data['is_active']
+        activity.is_active = bool(data['is_active'])
 
     db.session.commit()
     return jsonify(activity.to_dict()), 200
@@ -239,6 +246,13 @@ def api_activity_update(activity_id):
 @admin_required
 def api_activity_delete(activity_id):
     activity = db.get_or_404(Activity, activity_id)
+    # Z historia (przydzialy, Wpis ilosci) — tylko dezaktywacja; usuniecie
+    # konczylo sie naruszeniem klucza obcego i 500-ka.
+    if (ActivityAssignment.query.filter_by(activity_id=activity.id).first()
+            or DailyStat.query.filter_by(activity_id=activity.id).first()):
+        return jsonify({'error': 'Czynność ma historię (przydziały / wpisy ilości) — '
+                                 'można ją tylko dezaktywować.'}), 409
+    SzkolenieCzynnosci.query.filter_by(activity_id=activity.id).delete()
     db.session.delete(activity)
     db.session.commit()
     return jsonify({'message': 'Usunięto.'}), 200
@@ -287,6 +301,10 @@ def api_user_create():
             'error': 'Tylko administrator może zakładać konta z logowaniem '
                      '(stanowisko, lider, administrator).'
         }), 403
+
+    if role in ROLE_Z_LOGOWANIEM and not password:
+        return jsonify({'error': 'Konto z logowaniem (stanowisko, lider, administrator) '
+                                 'wymaga hasła.'}), 400
 
     if User.query.filter_by(username=username).first():
         return jsonify({'error': 'Taki login już istnieje.'}), 400

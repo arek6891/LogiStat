@@ -304,7 +304,7 @@ def api_daily_stats_save():
             return jsonify({'error': 'Każdy wpis musi być obiektem.'}), 400
         user_id = require_int(entry.get('user_id'), 'user_id')
         activity_id = require_int(entry.get('activity_id'), 'activity_id')
-        quantity = require_int(entry.get('quantity', 0) or 0, 'quantity')
+        quantity = require_int(entry.get('quantity', 0) or 0, 'quantity', minimum=0)
 
         existing = DailyStat.query.filter_by(
             shift_id=shift.id,
@@ -338,7 +338,8 @@ def api_daily_stat_update(stat_id):
     stat = db.get_or_404(DailyStat, stat_id)
     data = json_body()
 
-    stat.quantity = data.get('quantity', stat.quantity)
+    if 'quantity' in data:
+        stat.quantity = require_int(data['quantity'], 'quantity', minimum=0)
     stat.note = data.get('note', stat.note)
     stat.modified_by = current_user.id
     stat.modified_at = teraz_utc()
