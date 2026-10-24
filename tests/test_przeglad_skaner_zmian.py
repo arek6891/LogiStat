@@ -37,7 +37,7 @@ def test_podwojny_skan_naraz_to_juz_zarejestrowany(leader_client, monkeypatch):
     class BezIstniejacej:
         def filter_by(self, **kw):
             class Pusto:
-                def first(self_inner):
+                def first(self):
                     return None
             return Pusto()
     monkeypatch.setattr(st.ShiftAttendance, 'query', BezIstniejacej())
