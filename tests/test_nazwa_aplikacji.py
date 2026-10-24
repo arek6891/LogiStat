@@ -25,5 +25,7 @@ def test_kafelki_maja_autorow_a_menu_nazwe(client):
 
 
 def test_zadnego_logistat_na_ekranach():
-    for plik in pathlib.Path('templates').glob('*.html'):
+    szablony = list(pathlib.Path(__file__).resolve().parent.parent.joinpath('templates').glob('*.html'))
+    assert len(szablony) > 10
+    for plik in szablony:
         assert 'LogiStat' not in plik.read_text(encoding='utf-8'), plik.name

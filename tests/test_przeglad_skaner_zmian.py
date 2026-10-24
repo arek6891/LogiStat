@@ -109,7 +109,10 @@ def test_js_nie_bierze_dnia_utc():
     for plik in glob.glob('static/js/*.js'):
         assert 'valueAsDate = new Date()' not in open(plik, encoding='utf-8').read(), plik
     skaner = open('static/js/scanner.js', encoding='utf-8').read()
-    assert 'date: TODAY' not in skaner and 'nowyDzien()' in skaner
+    assert 'date: TODAY' not in skaner and 'nowyDzien' in skaner
+    # Zegar tabletu vs serwer: porownanie z TODAY = petla przeladowan przy zlej strefie.
+    assert '=== TODAY' not in skaner and 'TODAY ===' not in skaner
+    assert 'if (nowyDzien()) return' not in skaner, 'skan ma isc, przeladowanie potem'
 
 
 def test_udzial_pokazuje_sztuki_nie_jednostki_rozliczenia():

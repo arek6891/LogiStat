@@ -149,7 +149,9 @@ Quantities entered at package end are the **source of truth for `category_data`*
 - *Przydzielanie:* zapis podmienia tylko to, co widac na tablicy (osoby z zapisu + obecni przy aktywnych czynnosciach). Alternatywa „pokaz wylaczone czynnosci na tablicy” odrzucona — wylaczona czynnosc ma zniknac z wyboru.
 - *Import:* `amounts` linii z sumy pod blokada wiersza — `+=` przenosil rozjazdy i gubil sie przy dwoch importach naraz.
 - *Szkolenia:* otwarte szkolenie osoby nalezy do szkolacego z jej ostatniego `trainee_start`.
-- *Czas pracy:* zdarzenia ida na najwczesniejsza obecnosc dnia (jak wiersz `/worker-times`), nie najpozniejsza.
+- *Czas pracy:* nowe zdarzenia ida na najwczesniejsza obecnosc dnia (jak wiersz `/worker-times`), nie najpozniejsza; odczyt (stan i wiersz) bierze zdarzenia ze wszystkich obecnosci dnia — na `.31` byly 2 dni ze zdarzeniami na drugiej obecnosci (sprawdzone licznikiem, bez danych osobowych), po samej zmianie zapisu by zniknely.
+- *Skaner po polnocy:* przeladowanie porownuje dzien wg zegara przegladarki z dniem zaladowania strony, nie z `TODAY` serwera — tablet ze zla strefa przeladowywalby sie w kolko.
+- *Ostatni admin:* `active_admin_count()` blokuje wiersze wszystkich aktywnych adminow — dwaj admini degradujacy sie nawzajem naraz nie zostawia systemu bez admina.
 - *Uchwyt ⠿ w Czynnosciach:* usuniety (obiecywal zmiane kolejnosci, ktorej nie ma) — przeciaganie nie bylo zamawiane.
 
 ## Kafelki po zalogowaniu i konta stanowisk (2026-10-24)

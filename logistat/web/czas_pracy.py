@@ -53,16 +53,19 @@ def stan_czasu_dzis(user):
     # Najwczesniejsza obecnosc dnia — ta sama, od ktorej wiersz Czasow pracownikow
     # (wiersze_czasow). Byla najpozniejsza: przy skanie na obie zmiany przerwy
     # szly na druga, a ekran pokazywal pierwsza bez zdarzen (przeglad 2026-10-24).
-    attendance = ShiftAttendance.query.join(Shift).filter(
+    obecnosci = ShiftAttendance.query.join(Shift).filter(
         ShiftAttendance.user_id == user.id,
         Shift.date == local_today()
-    ).order_by(ShiftAttendance.scanned_at.asc()).first()
-    if not attendance:
+    ).order_by(ShiftAttendance.scanned_at.asc()).all()
+    if not obecnosci:
         abort(400, f'{user.display_name} nie jest zeskanowany/a na zmianę dziś.')
 
-    shift = attendance.shift
-    events = WorkerTimeEvent.query.filter_by(
-        user_id=user.id, shift_id=shift.id
+    # Nowe zdarzenia na pierwsza obecnosc; stan ze zdarzen WSZYSTKICH obecnosci
+    # dnia (do 2026-10-24 szly na najpozniejsza — tamte tez maja sie liczyc).
+    shift = obecnosci[0].shift
+    events = WorkerTimeEvent.query.filter(
+        WorkerTimeEvent.user_id == user.id,
+        WorkerTimeEvent.shift_id.in_({a.shift_id for a in obecnosci})
     ).order_by(WorkerTimeEvent.timestamp, WorkerTimeEvent.id).all()
 
     def otwarte(prefix):

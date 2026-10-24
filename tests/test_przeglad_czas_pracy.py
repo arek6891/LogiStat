@@ -76,3 +76,26 @@ def test_lista_szkolen_przezywa_szkolacego_bez_obecnosci(leader_client):
     r = leader_client.get('/api/time/training/aktywne')
 
     assert r.status_code == 200 and r.get_json()['szkolenia'] == []
+
+
+def test_stare_zdarzenia_na_drugiej_obecnosci_dalej_widac(leader_client):
+    """Do 2026-10-24 zdarzenia szly na najpozniejsza obecnosc dnia (.31: 2 takie
+    przypadki). Wiersz Czasow pracownikow i stan czasu biora zdarzenia ze
+    wszystkich obecnosci dnia — inaczej otwarta przerwa po wdrozeniu by znikla."""
+    u = make_user('operator', barcode_id='E2')
+    obecny(u, minut_temu=300)
+    z2 = get_or_create_shift(local_today(), 2)
+    db.session.add(ShiftAttendance(shift_id=z2.id, user_id=u.id,
+                                   scanned_at=datetime.utcnow() - timedelta(minutes=60)))
+    db.session.add(WorkerTimeEvent(user_id=u.id, shift_id=z2.id, event_type='break_start',
+                                   timestamp=datetime.utcnow() - timedelta(minutes=30)))
+    db.session.commit()
+
+    wiersze = leader_client.get(f'/api/worker-times?date={local_today().isoformat()}').get_json()['workers']
+    wiersz = next(w for w in wiersze if w['user_id'] == u.id)
+    assert wiersz['on_break'] is True and len(wiersz['events']) == 1
+
+    r = skan(leader_client, 'break', 'E2')     # drugi skan przerwy = koniec przerwy
+    assert r.status_code == 200
+    typy = sorted(e.event_type for e in WorkerTimeEvent.query.filter_by(user_id=u.id))
+    assert typy == ['break_end', 'break_start']

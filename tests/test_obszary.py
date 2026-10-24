@@ -293,3 +293,11 @@ def test_komunikat_odmowy_widac_na_ekranie_stanowiska(client):
 
     assert 'KOMUNIKATY_FLASH = [["error", "Brak uprawnie' in html
     assert 'KOMUNIKATY_FLASH = []' in client.get('/scan-paczki').get_data(as_text=True)
+
+
+def test_profil_nie_dubluje_komunikatu_toastem(client):
+    """profile.html pokazuje flash sam (wlasne_komunikaty) — base.html go nie powtarza."""
+    zaloguj(client, 'leader')
+    html = client.post('/profile', data={'current_password': 'zle', 'new_password': 'nowe12345',
+                                         'confirm_password': 'nowe12345'}).get_data(as_text=True)
+    assert 'Aktualne hasło jest nieprawidłowe.' in html and 'KOMUNIKATY_FLASH' not in html

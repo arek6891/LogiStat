@@ -28,15 +28,17 @@ barcodeInput.addEventListener('blur', () => {
 
 // Karta stanowiska bywa otwarta przez noc (sesja 30 dni): po zmianie dnia
 // przeladuj — lista i naglowek sa z wczoraj (obecnosc serwer i tak zapisze na dzis).
+// Porownanie z dniem ZALADOWANIA wg zegara przegladarki, nie z TODAY serwera:
+// tablet ze zla strefa / data nigdy by sie z TODAY nie zgodzil i przeladowywal w kolko.
+const DZIEN_ZALADOWANIA = dzisLokalnie();
 function nowyDzien() {
-    if (dzisLokalnie() === TODAY) return false;
+    if (dzisLokalnie() === DZIEN_ZALADOWANIA) return false;
     location.reload();
     return true;
 }
 setInterval(nowyDzien, 60000);
 
 async function processScan(barcode) {
-    if (nowyDzien()) return;
     try {
         const res = await fetch('/api/scan', {
             method: 'POST',
