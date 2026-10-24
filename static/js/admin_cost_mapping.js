@@ -44,7 +44,14 @@ async function loadRates() {
 
     try {
         const res = await fetch(`/api/cost-mapping/${year}/${month}`);
-        const rates = res.ok ? await res.json() : {};
+        // Bez stawek nie ma formularza: zera po bledzie (np. proxy) dalo sie
+        // zapisac i nadpisac caly miesiac (przeglad 2026-10-24).
+        const rates = res.ok ? await res.json().catch(() => null) : null;
+        if (!rates || typeof rates !== 'object') {
+            container.innerHTML = '<p style="text-align:center; color:var(--danger);">'
+                + `Nie udało się wczytać stawek (błąd ${res.status}). Odśwież stronę i spróbuj ponownie.</p>`;
+            return;
+        }
 
         renderRatesForm(rates);
         loadedYear = parseInt(year);
@@ -132,7 +139,8 @@ async function saveRates() {
             });
             odswiezZnacznikStawek();
         } else {
-            showToast('Błąd zapisu stawek.', 'error');
+            const dane = await res.json().catch(() => ({}));
+            showToast(dane.error || 'Błąd zapisu stawek.', 'error');
         }
     } catch (err) {
         showToast('Błąd połączenia. Nie zapisano stawek.', 'error');

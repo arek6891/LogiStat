@@ -508,6 +508,16 @@ def api_cost_mapping_get(year, month):
 def api_cost_mapping_save(year, month):
     data = json_body()
     rates = data.get('rates', {})
+    # Rozliczenie — nic nie zapisujemy na slowo (przeglad 2026-10-24).
+    if not 1 <= month <= 12 or not 2000 <= year <= 2100:
+        abort(400, 'Nieprawidłowy miesiąc.')
+    if not isinstance(rates, dict):
+        abort(400, 'Pole "rates" musi być obiektem {kategoria: stawka}.')
+    for kat, stawka in rates.items():
+        if kat not in STAT_CATEGORIES:
+            abort(400, f'Nieznana kategoria: {kat}.')
+        if isinstance(stawka, bool) or not isinstance(stawka, (int, float)) or stawka < 0:
+            abort(400, f'Stawka dla {kat} musi być liczbą ≥ 0.')
 
     mapping = CostMapping.query.filter_by(year=year, month=month).first()
     if mapping:
