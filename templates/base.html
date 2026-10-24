@@ -101,6 +101,14 @@
                     </a></li>
                 {% endif %}
 
+                {% if 'zwroty' in menu_obszary %}
+                <li class="nav-section">↩️ Zwroty</li>
+                <li><a href="{{ url_for('zwroty.zwroty') }}"
+                        class="{% if request.endpoint == 'zwroty.zwroty' %}active{% endif %}">
+                        <span class="icon">↩️</span> Zwroty
+                    </a></li>
+                {% endif %}
+
                 {% if 'ustawienia' in menu_obszary %}
                 <li class="nav-section">🛡️ Ustawienia</li>
                 <li><a href="{{ url_for('admin.admin_activities') }}"
