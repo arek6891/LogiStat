@@ -390,6 +390,10 @@ html, body {
 
 .main-content {
     flex: 1;
+    /* Element flex bez min-width: 0 rosl do szerokosci najszerszej tabeli i cala
+       strona (z naglowkiem) przewijala sie w bok — Statystyki ogolne 2978 px przy
+       oknie 1400 (przeglad 2026-10-24). Teraz przewija sie tylko tabela. */
+    min-width: 0;
     margin-left: 260px;
     padding: 32px 40px;
     min-height: 100vh;

@@ -100,7 +100,7 @@ _ENDPOINTY = {
         # Uzytkownicy (w menu Lidera) + listy, ktore ich okno czyta
         'admin.admin_users', 'admin.api_users', 'admin.api_user_create',
         'admin.api_user_update', 'admin.api_user_delete',
-        'admin.api_user_options', 'admin.api_activities', 'admin.api_country_mappings',
+        'admin.api_user_options', 'admin.api_activities',
     },
     DISPLAYS: {
         'displays.displays',
