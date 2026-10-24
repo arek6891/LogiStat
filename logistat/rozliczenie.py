@@ -167,8 +167,9 @@ def _suma_kategorii(*slowniki):
     for dane in slowniki:
         for kat, wartosc in (dane or {}).items():
             if kat in suma and isinstance(wartosc, dict):
-                suma[kat] += int(wartosc.get('amount', 0) or 0)
-    return {kat: {'amount': n, 'cost': 0.0} for kat, n in suma.items()}
+                # liczba(), nie int(): polowki (Podwojne ×1,5) sa prawdziwe.
+                suma[kat] += liczba(wartosc.get('amount', 0))
+    return {kat: {'amount': liczba(n), 'cost': 0.0} for kat, n in suma.items()}
 
 
 def przenies_linie(zrodla, klucz, actor_id=None, from_scan=False):

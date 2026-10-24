@@ -164,3 +164,41 @@ def test_edycja_z_bledna_walidacja_nic_nie_zmienia(leader_client):
 
 def test_edycja_nieistniejacej_paczki_daje_404(leader_client):
     assert leader_client.put('/api/packages/9999', json=payload()).status_code == 404
+
+
+# ── przeglad 2026-10-24 ──────────────────────────────────────────────────────
+
+def test_przeniesienie_zeskanowanej_paczki_na_nowa_linie_niesie_skany(leader_client):
+    """Nowa linia pod nowym kluczem powstawala jako 'manual' z pustymi
+    kategoriami — skany paczki wypadaly z rozliczenia do kolejnego skanu."""
+    from datetime import datetime
+    leader_client.post('/api/packages', json=payload(barcode='M1', stueckzahl=10))
+    c = carton('M1')
+    c.set_scan_categories({'textile': 10})
+    c.scan_end_at = datetime(2026, 9, 1, 10, 0)
+    db.session.commit()
+
+    r = leader_client.put(f'/api/packages/{c.id}',
+                          json=payload(barcode='M1', stueckzahl=10, uebergabe_nr='UB-9'))
+
+    assert r.status_code == 200
+    nowa = gstat(list_id='UB-9')
+    assert nowa.category_source == 'scan'
+    assert nowa.get_category_data()['textile']['amount'] == 10
+
+
+def test_zmiana_stueckzahl_odswieza_roznice(leader_client):
+    """❗ (Nadwyzka/Brak) liczy sie wzgledem Stückzahl — po zmianie musi sie odswiezyc."""
+    from datetime import datetime
+    leader_client.post('/api/packages', json=payload(barcode='M1', stueckzahl=10))
+    c = carton('M1')
+    c.set_tabela({'wersja': 2, 'tryb': 'wzor', 'karty': 0, 'podwojnie': 0, 'potrojnie': 0,
+                  'grupy': {'bizuteria': {'ilosc': 10, 'uszkodzone': 0, 'niesprocesowane': 0}}})
+    c.scan_end_at = datetime(2026, 9, 1, 10, 0)
+    db.session.commit()
+    assert not c.roznica
+
+    leader_client.put(f'/api/packages/{c.id}', json=payload(barcode='M1', stueckzahl=12))
+
+    db.session.refresh(c)
+    assert c.roznica is True
