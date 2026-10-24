@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}LogiStat — Listy użytkowników{% endblock %}
+{% block title %}{{ NAZWA_APLIKACJI }} — Listy użytkowników{% endblock %}
 
 {% block content %}
 <div class="page-header">
@@ -27,8 +27,8 @@
         {% endfor %}
         <div style="display:flex;gap:8px;margin-top:16px;">
             <input type="text" id="new_{{ kind }}" class="form-control" maxlength="100"
-                placeholder="Nowa pozycja..." onkeydown="if (event.key === 'Enter') addOption('{{ kind }}')">
-            <button class="btn btn-primary btn-sm" onclick="addOption('{{ kind }}')">+ Dodaj</button>
+                placeholder="Nowa pozycja..." onkeydown='if (event.key === "Enter") addOption({{ kind|tojson }})'>
+            <button class="btn btn-primary btn-sm" onclick='addOption({{ kind|tojson }})'>+ Dodaj</button>
         </div>
     </div>
     {% endfor %}

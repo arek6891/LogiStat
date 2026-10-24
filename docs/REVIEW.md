@@ -14,7 +14,7 @@ Szczegóły i uzasadnienia każdej reguły: `CLAUDE.md` i `docs/ARCHITEKTURA.md`
       lockiem, ze znacznikiem w `AppSetting`.
 
 ## 2. Rozliczenie (pieniądze)
-- [ ] Linia przeliczana **z sumy**, nigdy przyrostowo; klucz zawsze przez `klucz_linii()`.
+- [ ] Linia przeliczana **z sumy**, nigdy przyrostowo (także import); klucz zawsze przez `klucz_linii()`.
 - [ ] Linie `'manual'` nietknięte przez przeliczenie; linie `'scan'` odrzucają ręczny zapis.
 - [ ] Ilości rozliczenia przez `liczba()`, nigdy `int()` (×1,5 daje połówki).
 - [ ] Zmiana mapowania tabeli → `kategorie_z_tabeli()` **i** `ZRODLO_KATEGORII` (dymki).
@@ -49,6 +49,10 @@ Szczegóły i uzasadnienia każdej reguły: `CLAUDE.md` i `docs/ARCHITEKTURA.md`
 ## 6. Frontend
 - [ ] Dane z bazy do `innerHTML` przez `escapeHtml()`.
 - [ ] JSON w atrybucie HTML: `data-x='{{ v | tojson }}'` (apostrofy).
+- [ ] Tekst z Jinja w inline handlerze tylko jako `onclick='f({{ x|tojson }})'` — nigdy
+      `onclick="f('{{ x }}')"` (przeglądarka odkodowuje `&#39;` przed JS; `test_xss.py`).
+- [ ] Odpowiedź API z błędem zawsze pokazana (`pokazBladOdpowiedzi()`), nie tylko `if (res.ok)`.
+- [ ] Dzisiejsza data w JS: `dzisLokalnie()`, nigdy `valueAsDate` z `new Date()` (dzień UTC).
 - [ ] Kolory tylko tokenami (`var(--x)`, `rgb(var(--x-rgb) / a)`); wykresy przez `motyw()`;
       tekst na zielonym tle `var(--on-accent)`.
 - [ ] Ekrany zbiorcze: autozapis wg zasad (`autoZapis.poWpisaniu`, `przedOpuszczeniem()`).

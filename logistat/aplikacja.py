@@ -8,7 +8,9 @@ from flask import Flask, jsonify, redirect, request, session, url_for
 from flask_login import current_user
 from werkzeug.exceptions import HTTPException
 
-from logistat.config import DEFAULT_MAX_UPLOAD_MB, resolve_database_url, resolve_secret_key
+from logistat.config import (
+    AUTORZY_APLIKACJI, DEFAULT_MAX_UPLOAD_MB, NAZWA_APLIKACJI, resolve_database_url,
+    resolve_secret_key)
 from logistat.czas import utc_to_local
 from logistat.extensions import db, login_manager
 from logistat.obszary import OBSZARY, obszary_roli
@@ -90,6 +92,9 @@ def _obsluga_bledow(app):
 
 
 def _szablony(app):
+    app.jinja_env.globals.update(NAZWA_APLIKACJI=NAZWA_APLIKACJI,
+                                 AUTORZY_APLIKACJI=AUTORZY_APLIKACJI)
+
     @app.context_processor
     def _kafelki():
         """Menu w base.html: kafelki roli i wybrany kafelek (sekcje menu)."""

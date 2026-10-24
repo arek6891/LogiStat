@@ -1,10 +1,10 @@
 {% extends 'base.html' %}
-{% block title %}LogiStat — Zarządzanie czynnościami{% endblock %}
+{% block title %}{{ NAZWA_APLIKACJI }} — Zarządzanie czynnościami{% endblock %}
 
 {% block content %}
 <div class="page-header">
     <h2>⚙️ Zarządzanie czynnościami</h2>
-    <p class="subtitle">Dodawaj, edytuj i zmieniaj kolejność czynności</p>
+    <p class="subtitle">Dodawaj, edytuj i wyłączaj czynności</p>
 </div>
 
 <div class="card">
@@ -17,14 +17,13 @@
         {% for activity in activities %}
         <div class="admin-list-item" data-id="{{ activity.id }}">
             <div style="display:flex;align-items:center;gap:12px;">
-                <span style="cursor:grab;color:var(--text-muted);">⠿</span>
                 <span class="activity-name">{{ activity.name }}</span>
                 {% if not activity.is_active %}
                 <span class="badge badge-inactive">nieaktywna</span>
                 {% endif %}
             </div>
             <div class="admin-actions">
-                <button class="btn btn-ghost btn-sm" onclick="editActivity({{ activity.id }}, '{{ activity.name }}')">✏️
+                <button class="btn btn-ghost btn-sm" onclick='editActivity({{ activity.id }}, {{ activity.name|tojson }})'>✏️
                     Edytuj</button>
                 <button class="btn btn-ghost btn-sm"
                     onclick="toggleActivity({{ activity.id }}, {{ 'true' if activity.is_active else 'false' }})">

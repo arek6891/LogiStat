@@ -473,6 +473,7 @@ async function deleteEvent(id) {
     try {
         const res = await fetch(`/api/worker-times/event/${id}`, { method: 'DELETE' });
         if (res.ok) { showToast('Usunięto.', 'info'); loadData(); }
+        else await pokazBladOdpowiedzi(res, 'Nie usunięto');
     } catch { showToast('Błąd.', 'error'); }
 }
 

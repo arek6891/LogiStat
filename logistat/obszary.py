@@ -25,12 +25,12 @@ OBSZARY = {
         'opis': 'Stanowiska: skaner zmian, czas pracy, czasy paczek, inspektor paczek',
     },
     POST_PROCESS: {
-        'nazwa': 'Post-Process', 'ikona': '🧑‍💼', 'start': 'dashboard.dashboard',
+        'nazwa': 'Post-Process', 'ikona': '📦', 'start': 'dashboard.dashboard',
         'opis': 'Lider: dashboard, przydzielanie, normy, paczki, import, statystyki, użytkownicy',
     },
     # Nowe moduly (2026-10-24) — na razie puste ekrany startowe.
     DISPLAYS: {
-        'nazwa': 'Akcje - Displays', 'ikona': '📺', 'start': 'displays.displays',
+        'nazwa': 'Akcje - Displays', 'ikona': '💍', 'start': 'displays.displays',
         'opis': 'Nowy moduł — w przygotowaniu',
     },
     ZWROTY: {
@@ -100,7 +100,7 @@ _ENDPOINTY = {
         # Uzytkownicy (w menu Lidera) + listy, ktore ich okno czyta
         'admin.admin_users', 'admin.api_users', 'admin.api_user_create',
         'admin.api_user_update', 'admin.api_user_delete',
-        'admin.api_user_options', 'admin.api_activities', 'admin.api_country_mappings',
+        'admin.api_user_options', 'admin.api_activities',
     },
     DISPLAYS: {
         'displays.displays',

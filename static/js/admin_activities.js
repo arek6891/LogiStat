@@ -65,6 +65,8 @@ async function toggleActivity(id, isActive) {
         if (res.ok) {
             showToast(isActive ? 'Dezaktywowano.' : 'Aktywowano.', 'success');
             location.reload();
+        } else {
+            await pokazBladOdpowiedzi(res);
         }
     } catch (err) {
         showToast('Błąd.', 'error');

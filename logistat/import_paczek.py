@@ -6,7 +6,7 @@ from datetime import date, datetime
 from logistat.czas import teraz_utc
 from logistat.extensions import db
 from logistat.models import CountryMapping, GeneralStat, ImportedCarton, empty_category_data
-from logistat.rozliczenie import klucz_linii
+from logistat.rozliczenie import klucz_linii, recompute_general_stat
 
 # Wiersze importu przetwarzamy partiami: dedup barcode'ow idzie jednym
 # zapytaniem `IN (...)` na partie, a nie jednym na wiersz. Rozmiar ograniczony,
@@ -212,17 +212,20 @@ def importuj_wiersze(rows, data_pliku, actor_id):
     # Create/update GeneralStat entries
     stats_created = 0
     stats_updated = 0
+    db.session.flush()
     for (list_id, land_val, _data), agg in aggregation.items():
+        # Blokada wiersza linii: drugi import tej samej linii czeka, a jego SUM
+        # (nowe zapytanie po blokadzie) widzi juz kartony pierwszego.
         existing = GeneralStat.query.filter_by(
             list_id=list_id,
             country_ledger=land_val,
             loading_date=agg['date']
-        ).first()
+        ).with_for_update().first()
 
         if existing:
-            existing.amounts += agg['stueckzahl']
-            existing.updated_at = teraz_utc()
-            existing.updated_by = actor_id
+            # Z sumy, nie przyrostowo (przeglad 2026-10-24): `+=` przenosilo
+            # kazdy wczesniejszy rozjazd i gubilo sie przy dwoch importach naraz.
+            recompute_general_stat(list_id, land_val, agg['date'], actor_id=actor_id)
             stats_updated += 1
         else:
             stat = GeneralStat(

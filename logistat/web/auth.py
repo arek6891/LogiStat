@@ -170,6 +170,12 @@ def logout():
 @bp.route('/profile', methods=['GET', 'POST'])
 @login_required
 def profile():
+    # Konto stanowiska jest wspolne — haslo ustawia admin (Uzytkownicy). Sam ukryty
+    # link nie wystarczal: POST przechodzil (przeglad 2026-10-24). Wyjatek: wymuszona
+    # zmiana domyslnego hasla, inaczej petla przekierowan /profile ↔ /start.
+    if current_user.role == 'stanowisko' and not session.get('wymus_zmiane_hasla'):
+        flash('Hasło konta stanowiska zmienia administrator.', 'error')
+        return redirect(url_for('auth.kafelki'))
     if request.method == 'POST':
         current = request.form.get('current_password', '')
         new = request.form.get('new_password', '')
