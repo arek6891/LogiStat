@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════════════════════
-   LogiStat — Design System
+   SaRa (kod: logistat) — Design System
    ══════════════════════════════════════════════════════════════════════════ */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Montserrat:wght@600;700;800&display=swap');
@@ -1193,6 +1193,8 @@ a.js-osoba {
 
 .login-page {
     display: flex;
+    flex-direction: column;
+    gap: 24px;
     align-items: center;
     justify-content: center;
     min-height: 100vh;
@@ -1627,4 +1629,5 @@ h1, h2, h3, .page-title, .sidebar-logo h1, .login-card h1 {
     background: var(--menu-sekcja); color: var(--menu-sekcja-tekst); text-decoration: none; font-size: .85rem;
 }
 .kafelki-powrot:hover { background: var(--menu-hover); color: var(--menu-tekst); }
+.autorzy { margin: 0; text-align: center; font-size: .8rem; color: var(--text-muted); }
 .badge-stanowisko { background: var(--success-bg); color: var(--success); }
