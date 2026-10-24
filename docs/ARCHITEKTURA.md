@@ -135,6 +135,23 @@ Quantities entered at package end are the **source of truth for `category_data`*
 - *`JSON.parse('{{ x|tojson|safe }}')`:* `tojson` w apostrofach JS — `"`/`\` w nazwie kategorii (edytuje admin) zmienialy literal i strona przestawala dzialac. Teraz `const x = {{ x|tojson }};` (tojson jest bezpieczny w `<script>`).
 - *`migrate_columns()`:* przy `IF NOT EXISTS` blad to zawsze prawdziwy blad, a except go polykal — aplikacja wstawala bez kolumny i padala na pierwszym zapytaniu. Teraz start przerywa `RuntimeError` z nazwa kolumny; lista w `MIGRACJE_KOLUMN` (stala modulu, test podmienia ja na zla kolumne).
 
+## Przeglad modulow menu i nazwa SaRa (2026-10-24)
+
+**Zgloszenie.** Operacja: przejrzec wszystkie moduly z menu („czy wszystko sie zgadza i nie ma bledow”), poprawic znalezione; nazwa na ekranach „SaRa”; na logowaniu i kafelkach stopka z autorami.
+
+**Jak.** Trzy przeglady kodu (Magazyn, Post-Process, Ustawienia + kafelki) i przeklikanie kazdego ekranu z menu w przegladarce jako admin / lider / stanowisko (tryb jasny i ciemny, kopia lokalna na danych syntetycznych — realnych danych z .31 nie kopiujemy). Ekrany: zero bledow JS i nieudanych API. Kod: lista bledow, kazdy poprawiony z testem, ktory najpierw padal.
+
+**Decyzje.**
+- *Nazwa:* tylko ekrany (`NAZWA_APLIKACJI`); pakiet, kontenery, bazy, domeny i klucz `localStorage` zostaja `logistat` — zmiana klucza motywu skasowalaby kazdemu wybor trybu ciemnego.
+- *XSS:* inline handler z tekstem z Jinja w apostrofach JS (kod paczki z importu na `/paczki`, kraj, czynnosc) — autoescape nie chroni, bo przegladarka odkodowuje `&#39;` przed JS. Regula: `onclick='f({{ x|tojson }})'`, pilnuje `test_xss.py`.
+- *Skaner zmian:* data obecnosci tylko z serwera — konto stanowiska ma sesje 30 dni i karta otwarta od wczoraj zapisywala obecnosc na wczoraj (rano wszyscy „nie sa zeskanowani dzis”).
+- *Usuwanie obecnosci przez stanowisko* (pytanie do operacji otwarte): na razie zachowawczo — tylko dzisiejsza, a obecnosc ze zdarzeniami czasu pracy nie usuwa sie nikomu (409).
+- *Przydzielanie:* zapis podmienia tylko to, co widac na tablicy (osoby z zapisu + obecni przy aktywnych czynnosciach). Alternatywa „pokaz wylaczone czynnosci na tablicy” odrzucona — wylaczona czynnosc ma zniknac z wyboru.
+- *Import:* `amounts` linii z sumy pod blokada wiersza — `+=` przenosil rozjazdy i gubil sie przy dwoch importach naraz.
+- *Szkolenia:* otwarte szkolenie osoby nalezy do szkolacego z jej ostatniego `trainee_start`.
+- *Czas pracy:* zdarzenia ida na najwczesniejsza obecnosc dnia (jak wiersz `/worker-times`), nie najpozniejsza.
+- *Uchwyt ⠿ w Czynnosciach:* usuniety (obiecywal zmiane kolejnosci, ktorej nie ma) — przeciaganie nie bylo zamawiane.
+
 ## Kafelki po zalogowaniu i konta stanowisk (2026-10-24)
 
 **Zgloszenie.** Operacja: rozdzielic wejscia do menu kafelkami zaraz po logowaniu; dla magazynu logowanie kontami stanowisko1, stanowisko2… widzacymi tylko moduly Pracownika (kafelek Magazyn); Lider → Post-Process; Admin → Ustawienia (tylko admin). Admin widzi 3 kafelki, lider 2, stanowisko 1.
