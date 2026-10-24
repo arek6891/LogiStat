@@ -1,5 +1,18 @@
 # LogiStat — Changelog
 
+## 2026-10-24 — Kafelki po zalogowaniu, konta stanowisk
+
+### Dodane
+- Po zalogowaniu **kafelki**: **Magazyn** (stanowiska), **Post-Process** (lider),
+  **Ustawienia** (tylko admin). Menu pokazuje tylko moduły wybranego kafelka, a ekrany
+  innych kafelków otwierają się dopiero po powrocie do kafelków („⬅ Kafelki”).
+- Rola **Stanowisko** — wspólne konto komputera/tabletu w magazynie (zakłada admin
+  w Użytkownikach): widzi tylko Magazyn, wchodzi do niego od razu po zalogowaniu
+  i zostaje zalogowane do wylogowania.
+
+### Zmienione
+- Sekcje menu nazywają się jak kafelki: Magazyn, Post-Process, Ustawienia.
+
 ## 2026-10-23 (2) — Grupy P1/P2/P3 i plan Post Processingu w Przydzielaniu
 
 ### Dodane

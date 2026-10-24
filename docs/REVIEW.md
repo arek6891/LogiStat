@@ -40,6 +40,8 @@ Szczegóły i uzasadnienia każdej reguły: `CLAUDE.md` i `docs/ARCHITEKTURA.md`
 ## 5b. Trasy
 - [ ] Adresy i metody bez zmian (`tests/test_trasy.py` + `tests/mapa_adresow.txt`); nowa trasa
       = aktualizacja pliku w tym samym PR.
+- [ ] Nowa trasa = wpis w `logistat/obszary.py` (kafelek albo `WSPOLNE`; `tests/test_obszary.py`),
+      a API wołane przez stronę — w tym samym kafelku co strona; ekran stanowiska = `@magazyn_required`.
 - [ ] Zmiana nazwy endpointu (blueprint) → wszystkie `url_for`, `login_view`,
       `BEZ_WYMOGU_ZMIANY_HASLA` w tym samym PR.
 - [ ] Moduly `logistat/` nie importuja `app.py` (test w podprocesie).

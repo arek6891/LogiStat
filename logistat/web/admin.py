@@ -9,7 +9,7 @@ from logistat.extensions import db
 from logistat.kategorie import STAT_CATEGORIES, STAT_CATEGORY_LABELS, STAT_CATEGORY_LABELS_PL
 from logistat.models import (
     Activity, AppSetting, CostMapping, CountryMapping, KLUCZ_NAZWY_PL, NAZWA_PL_MAX,
-    PRIVILEGED_ROLES, ROLES, SzkolenieCzynnosci, USER_OPTION_KINDS, User, UserOption,
+    ROLE_Z_LOGOWANIEM, ROLES, SzkolenieCzynnosci, USER_OPTION_KINDS, User, UserOption,
     active_admin_count, etykiety_kategorii, get_setting_int, nazwy_kategorii_pl, set_setting,
     szkolenia_czynnosci, user_options_by_kind)
 from logistat.web.wspolne import (
@@ -282,9 +282,10 @@ def api_user_create():
 
     # Lider zaklada operatorow na zmianie; kont z logowaniem nie moze zalozyc,
     # bo inaczej dorobilby sobie admina.
-    if role in PRIVILEGED_ROLES and not acting_as_admin():
+    if role in ROLE_Z_LOGOWANIEM and not acting_as_admin():
         return jsonify({
-            'error': 'Tylko administrator może zakładać konta lidera i administratora.'
+            'error': 'Tylko administrator może zakładać konta z logowaniem '
+                     '(stanowisko, lider, administrator).'
         }), 403
 
     if User.query.filter_by(username=username).first():
@@ -302,7 +303,7 @@ def api_user_create():
     for kind, kolumna in USER_OPTION_KINDS.items():
         setattr(user, kolumna, resolve_user_option(data.get(kolumna), kind))
     user.is_trainer = bool(data.get('is_trainer'))
-    if role in ('leader', 'admin') and password:
+    if role in ROLE_Z_LOGOWANIEM and password:
         user.set_password(password)
 
     db.session.add(user)
@@ -323,9 +324,10 @@ def api_user_update(user_id):
     # moglby podniesc sobie role albo przestawic haslo adminowi i wejsc na jego
     # konto.
     if not acting_as_admin():
-        if user.role in PRIVILEGED_ROLES:
+        if user.role in ROLE_Z_LOGOWANIEM:
             return jsonify({
-                'error': 'Konta lidera i administratora może zmieniać tylko administrator.'
+                'error': 'Konta z logowaniem (stanowisko, lider, administrator) może zmieniać '
+                         'tylko administrator.'
             }), 403
         if 'role' in data and data['role'] != user.role:
             return jsonify({'error': 'Tylko administrator może zmieniać rolę.'}), 403
@@ -380,9 +382,10 @@ def api_user_update(user_id):
 def api_user_delete(user_id):
     user = db.get_or_404(User, user_id)
 
-    if user.role in PRIVILEGED_ROLES and not acting_as_admin():
+    if user.role in ROLE_Z_LOGOWANIEM and not acting_as_admin():
         return jsonify({
-            'error': 'Konta lidera i administratora może dezaktywować tylko administrator.'
+            'error': 'Konta z logowaniem (stanowisko, lider, administrator) może '
+                     'dezaktywować tylko administrator.'
         }), 403
 
     if user.role == 'admin' and active_admin_count(exclude_id=user.id) == 0:

@@ -135,6 +135,14 @@ Quantities entered at package end are the **source of truth for `category_data`*
 - *`JSON.parse('{{ x|tojson|safe }}')`:* `tojson` w apostrofach JS — `"`/`\` w nazwie kategorii (edytuje admin) zmienialy literal i strona przestawala dzialac. Teraz `const x = {{ x|tojson }};` (tojson jest bezpieczny w `<script>`).
 - *`migrate_columns()`:* przy `IF NOT EXISTS` blad to zawsze prawdziwy blad, a except go polykal — aplikacja wstawala bez kolumny i padala na pierwszym zapytaniu. Teraz start przerywa `RuntimeError` z nazwa kolumny; lista w `MIGRACJE_KOLUMN` (stala modulu, test podmienia ja na zla kolumne).
 
+## Kafelki po zalogowaniu i konta stanowisk (2026-10-24)
+
+**Zgloszenie.** Operacja: rozdzielic wejscia do menu kafelkami zaraz po logowaniu; dla magazynu logowanie kontami stanowisko1, stanowisko2… widzacymi tylko moduly Pracownika (kafelek Magazyn); Lider → Post-Process; Admin → Ustawienia (tylko admin). Admin widzi 3 kafelki, lider 2, stanowisko 1.
+
+**Decyzje (pytania 2026-10-24).** Konta stanowisk zaklada admin w Uzytkownikach (nowa rola `stanowisko`, nic nie zakladamy na serwerach). Sesja stanowiska stala (30 dni) — tablet nie wylogowuje sie w trakcie zmiany; reszta bez zmian. Kafelek = **twarda blokada takze dla lidera** (wybor operacji) — wiec jedna przegladarka = jeden kafelek naraz (dwie karty na roznych kafelkach: starsza dostaje 403); swiadomie przyjete. Jeden kafelek → od razu do niego.
+
+**Konstrukcja.** Dwie niezalezne warstwy: (1) **prawa roli** — dekoratory (`@magazyn_required` dla ekranow stanowisk = kazda rola z logowaniem; reszta bez zmian `@leader_required` / `@admin_required`), dzialaja zawsze; (2) **kafelek** — `pilnuj_obszaru()` (before_app_request) na podstawie mapy endpoint → kafelki w czystym module `logistat/obszary.py`. Mapa obejmuje kazda trase (test: nowa trasa bez wpisu = czerwony test), API wspoldzielone przez kilka kafelkow (np. `GET /api/activities` — Uzytkownicy i Czynnosci) maja kilka. Testy ogolne jada z `OBSZARY_WYMUSZANE=False` (jeden klient chodzi po ekranach wielu kafelkow), `tests/test_obszary.py` wlacza blokade; uprawnienia rol testowane w obu trybach. Bez wybranego kafelka adres nalezacy do dokladnie jednego kafelka roli wybiera go sam (zakladki, linki z maili). „Zmien haslo” ukryte dla stanowiska — konto wspolne, haslo zmienia admin.
+
 ## Grupy P1/P2/P3 i plan Post Processingu w Przydzielaniu (2026-10-23)
 
 **Zgloszenie.** Operacja: pracownik przypisany do grupy wg statystyk z ostatnich 20 dni roboczych — P1 najgorszy, P2 w normie, P3 ponad norme (to samo co czerwony / szary / zielony w Normach), widoczny z grupa w Przydzielaniu; sugestie AI maja przydzielac od najlepszych (P3); przy Post Processingu ilosc do zrobienia wg forecastu (Actual, bez niego Forecast).

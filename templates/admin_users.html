@@ -88,13 +88,15 @@
             <select id="userRole" class="form-control">
                 <option value="operator">Operator</option>
                 {% if current_user.role == 'admin' %}
+                {# Wspolne konto komputera/tabletu w magazynie — tylko kafelek Magazyn #}
+                <option value="stanowisko">Stanowisko (magazyn)</option>
                 <option value="leader">Lider</option>
                 <option value="admin">Administrator</option>
                 {% endif %}
             </select>
             {% if current_user.role != 'admin' %}
             <small style="color:var(--text-muted);">
-                Konta lidera i administratora zakłada administrator.
+                Konta stanowisk, liderów i administratorów zakłada administrator.
             </small>
             {% endif %}
         </div>

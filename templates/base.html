@@ -12,7 +12,7 @@
 </head>
 
 <body>
-    {% if current_user.is_authenticated %}
+    {% if current_user.is_authenticated and not bez_menu %}
     <div class="app-container">
         <nav class="sidebar">
             <div class="sidebar-logo">
@@ -21,8 +21,16 @@
                 <h1>LogiStat</h1>
                 <div class="subtitle">Workforce Management</div>
             </div>
+            {# Kafelki (2026-10-24): menu pokazuje tylko sekcje wybranego kafelka;
+               bez wybranego — wszystkie sekcje roli. Powrot do kafelkow, gdy rola ma ich kilka. #}
+            {% if obszary_roli|length > 1 %}
+            <a href="{{ url_for('auth.kafelki') }}" class="kafelki-powrot">
+                ⬅ Kafelki{% if menu_obszary|length == 1 %} · <strong>{{ OBSZARY[menu_obszary[0]].nazwa }}</strong>{% endif %}
+            </a>
+            {% endif %}
             <ul class="sidebar-nav">
-                <li class="nav-section">👷 Pracownik</li>
+                {% if 'magazyn' in menu_obszary %}
+                <li class="nav-section">👷 Magazyn</li>
                 <li><a href="{{ url_for('stanowisko.scanner', shift_number=1) }}"
                         class="{% if request.endpoint == 'stanowisko.scanner' %}active{% endif %}">
                         <span class="icon">📷</span> Skaner zmian
@@ -39,8 +47,10 @@
                         class="{% if request.endpoint == 'stanowisko.scan_package' %}active{% endif %}">
                         <span class="icon">🔎</span> Paczki inspektor
                     </a></li>
+                {% endif %}
 
-                <li class="nav-section">🧑‍💼 Lider</li>
+                {% if 'post_process' in menu_obszary %}
+                <li class="nav-section">🧑‍💼 Post-Process</li>
                 <li><a href="{{ url_for('dashboard.dashboard') }}"
                         class="{% if request.endpoint == 'dashboard.dashboard' %}active{% endif %}">
                         <span class="icon">🏠</span> Dashboard
@@ -81,9 +91,10 @@
                         class="{% if request.endpoint == 'admin.admin_users' %}active{% endif %}">
                         <span class="icon">👤</span> Użytkownicy
                     </a></li>
+                {% endif %}
 
-                {% if current_user.role == 'admin' %}
-                <li class="nav-section">🛡️ Admin</li>
+                {% if 'ustawienia' in menu_obszary %}
+                <li class="nav-section">🛡️ Ustawienia</li>
                 <li><a href="{{ url_for('admin.admin_activities') }}"
                         class="{% if request.endpoint == 'admin.admin_activities' %}active{% endif %}">
                         <span class="icon">⚙️</span> Czynności
@@ -105,8 +116,11 @@
                     <button type="button" id="przelacznikMotywu" class="btn btn-ghost btn-sm przelacznik-motywu"
                         onclick="przelaczMotyw()" title="Tryb ciemny" aria-label="Tryb ciemny">🌙</button>
                 </div>
+                {% if current_user.role != 'stanowisko' %}
+                {# Konto stanowiska jest wspolne — haslo zmienia admin w Uzytkownikach. #}
                 <a href="{{ url_for('auth.profile') }}" class="btn btn-ghost btn-sm"
                     style="margin-top:12px;width:100%;justify-content:center;">🔑 Zmień hasło</a>
+                {% endif %}
                 {# POST, nie link: zwykly link (GET) moglaby wywolac obca strona i wylogowac. #}
                 <form method="post" action="{{ url_for('auth.logout') }}" style="margin-top:8px;">
                     <button type="submit" class="btn btn-ghost btn-sm"

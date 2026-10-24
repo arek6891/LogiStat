@@ -23,10 +23,10 @@ from logistat.web import auth
 
 @pytest.mark.parametrize('nastepna,oczekiwane', [
     ('/paczki', '/paczki'),
-    ('https://zla-strona.example/', '/'),
-    ('//zla-strona.example/', '/'),
-    ('/\\zla-strona.example', '/'),
-    ('javascript:alert(1)', '/'),
+    ('https://zla-strona.example/', '/start'),
+    ('//zla-strona.example/', '/start'),
+    ('/\\zla-strona.example', '/start'),
+    ('javascript:alert(1)', '/start'),
 ])
 def test_next_po_zalogowaniu_tylko_lokalny(client, nastepna, oczekiwane):
     lider = make_user('leader')

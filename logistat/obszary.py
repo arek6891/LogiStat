@@ -1,0 +1,119 @@
+"""Kafelki po zalogowaniu (operacja 2026-10-24): Magazyn / Post-Process / Ustawienia.
+
+Kazdy endpoint nalezy do jednego lub kilku obszarow (kafelkow), albo do
+`WSPOLNE` (logowanie, profil, ekran kafelkow). Rola decyduje, ktore kafelki
+widac; wybrany kafelek (`session['obszar']`) — ktore ekrany i API mozna
+otworzyc (twarda blokada, takze dla lidera: Post-Process z kafelka Magazyn
+odsyla do kafelkow). `tests/test_obszary.py` pilnuje, ze kazda trasa jest
+przypisana — nowa trasa bez wpisu tutaj = czerwony test.
+
+Czysta logika — bez Flaska i bazy (import z `aplikacja.py` i `web/`).
+"""
+
+MAGAZYN = 'magazyn'
+POST_PROCESS = 'post_process'
+USTAWIENIA = 'ustawienia'
+
+# Kolejnosc = kolejnosc kafelkow. `start` = pierwszy ekran po wyborze kafelka.
+OBSZARY = {
+    MAGAZYN: {
+        'nazwa': 'Magazyn', 'ikona': '👷', 'start': 'stanowisko.scan_paczki',
+        'opis': 'Stanowiska: skaner zmian, czas pracy, czasy paczek, inspektor paczek',
+    },
+    POST_PROCESS: {
+        'nazwa': 'Post-Process', 'ikona': '🧑‍💼', 'start': 'dashboard.dashboard',
+        'opis': 'Lider: dashboard, przydzielanie, normy, paczki, import, statystyki, użytkownicy',
+    },
+    USTAWIENIA: {
+        'nazwa': 'Ustawienia', 'ikona': '🛡️', 'start': 'admin.admin_panel',
+        'opis': 'Admin: czynności, stawki, kraje, nazwy kategorii, progi',
+    },
+}
+
+# Rola → kafelki. Operator (skanowany na zmianie) nie loguje sie wcale.
+ROLE_OBSZARY = {
+    'stanowisko': (MAGAZYN,),
+    'leader': (MAGAZYN, POST_PROCESS),
+    'admin': (MAGAZYN, POST_PROCESS, USTAWIENIA),
+}
+
+# Dostepne zawsze po zalogowaniu (i przed wyborem kafelka).
+WSPOLNE = frozenset({
+    'static', 'auth.favicon', 'auth.index', 'auth.login', 'auth.logout', 'auth.profile',
+    'auth.kafelki', 'auth.wybierz_obszar',
+})
+
+_ENDPOINTY = {
+    MAGAZYN: {
+        # Skaner zmian
+        'stanowisko.scanner', 'stanowisko.api_scan', 'stanowisko.api_unscan',
+        'stanowisko.api_shift_attendances',
+        # Czas pracy (przerwy, Inne, koniec pracy, szkolenia)
+        'czas_pracy.time_tracking', 'czas_pracy.api_time_scan',
+        'czas_pracy.api_training_aktywne', 'czas_pracy.api_training_trener',
+        'czas_pracy.api_training_szkolony', 'czas_pracy.api_training_koniec',
+        # Czasy paczek
+        'stanowisko.scan_paczki', 'stanowisko.api_employee_lookup',
+        'stanowisko.api_package_time_start', 'stanowisko.api_package_time_end',
+        'stanowisko.api_package_time_przekaz', 'stanowisko.api_package_time_dolacz',
+        # Paczki inspektor
+        'stanowisko.scan_package', 'stanowisko.api_package_lookup',
+    },
+    POST_PROCESS: {
+        'dashboard.dashboard', 'dashboard.api_dashboard', 'dashboard.api_dashboard_plik',
+        'dashboard.api_dashboard_zalegle', 'dashboard.api_dashboard_loading_dates',
+        'dashboard.api_dashboard_shifts',
+        'forecast.forecast_page', 'forecast.api_forecast_chart_data',
+        'forecast.api_forecast_save', 'forecast.api_forecast_export',
+        'przydzial.assignment', 'przydzial.api_assignment_data', 'przydzial.api_assignment_save',
+        'przydzial.api_assignment_suggestions', 'przydzial.data_entry',
+        'przydzial.api_daily_stats_get', 'przydzial.api_daily_stats_save',
+        'przydzial.api_daily_stat_update',
+        'normy.stats', 'normy.api_stats_overview', 'normy.api_stats_user',
+        'normy.api_stats_target_update',
+        'paczki.paczki_view', 'paczki.api_package_create', 'paczki.api_package_update',
+        'paczki.api_package_double_rate', 'paczki.api_package_reassign',
+        'paczki.api_package_categories_update', 'paczki.api_package_tabela_update',
+        'paczki.api_package_potwierdz_roznice', 'paczki.api_package_unlock_scan',
+        'paczki.api_package_zamknij_zespol',
+        'czas_pracy.worker_times', 'czas_pracy.api_worker_times',
+        'czas_pracy.api_time_event_create', 'czas_pracy.api_time_event_update',
+        'czas_pracy.api_time_event_delete', 'czas_pracy.api_wejscie_update',
+        'imports.import_csv_page', 'imports.api_import_csv', 'imports.api_import_excel',
+        'imports.api_imports', 'imports.api_imports_zmien_date',
+        'rozliczenie.general_stats_page', 'rozliczenie.general_stats_export',
+        'rozliczenie.api_general_stats', 'rozliczenie.api_general_stat_update',
+        'rozliczenie.api_general_stat_use_scan',
+        # Uzytkownicy (w menu Lidera) + listy, ktore ich okno czyta
+        'admin.admin_users', 'admin.api_users', 'admin.api_user_create',
+        'admin.api_user_update', 'admin.api_user_delete',
+        'admin.api_user_options', 'admin.api_activities', 'admin.api_country_mappings',
+    },
+    USTAWIENIA: {
+        'admin.admin_panel', 'admin.admin_activities', 'admin.admin_country_mapping',
+        'admin.admin_user_options', 'admin.admin_category_labels', 'admin.admin_settings',
+        'admin.admin_cost_mapping',
+        'admin.api_activities', 'admin.api_activity_create', 'admin.api_activity_update',
+        'admin.api_activity_delete', 'admin.api_activities_reorder',
+        'admin.api_country_mappings', 'admin.api_country_mapping_create',
+        'admin.api_country_mapping_update', 'admin.api_country_mapping_delete',
+        'admin.api_user_options', 'admin.api_user_option_create',
+        'admin.api_user_option_update', 'admin.api_user_option_delete',
+        'admin.api_category_labels_update', 'admin.api_settings_update',
+        'admin.api_cost_mapping_get', 'admin.api_cost_mapping_save',
+    },
+}
+
+
+def obszary_endpointu(endpoint):
+    """Kafelki, w ktorych endpoint jest dostepny (pusty zbior = nieprzypisany)."""
+    return {o for o, eps in _ENDPOINTY.items() if endpoint in eps}
+
+
+def obszary_roli(rola):
+    """Kafelki roli w kolejnosci wyswietlania; brak roli z logowaniem → ()."""
+    return ROLE_OBSZARY.get(rola, ())
+
+
+def wszystkie_przypisane():
+    return set().union(*_ENDPOINTY.values()) | WSPOLNE

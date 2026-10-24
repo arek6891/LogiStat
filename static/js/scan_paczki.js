@@ -382,8 +382,14 @@ async function zapiszIlosci(prefix) {
     } else {
         showResult(prefix, '❌ ' + data.error, 'error');
         // Blad w tabeli (np. liczba jak kod, pusta tabela) — zostaw panel z wpisanymi
-        // liczbami do poprawy. Inny blad (paczka zamknieta, zmiana skladu) — od nowa.
-        if (res.status === 400) { przywrocFokus(prefix); return; }
+        // liczbami do poprawy. To samo przy 403 kafelka (`obszar`: przegladarka
+        // przeszla w innej karcie na inny kafelek) — po powrocie do Magazynu
+        // ilosci da sie zapisac bez wpisywania od nowa. Inny blad (paczka
+        // zamknieta, zmiana skladu) — od nowa.
+        if (res.status === 400 || (res.status === 403 && data.obszar)) {
+            przywrocFokus(prefix);
+            return;
+        }
     }
     wyczyscKroki(prefix);
 }

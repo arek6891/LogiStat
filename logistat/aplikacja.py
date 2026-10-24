@@ -2,13 +2,16 @@
 `create_app()` NIE dotyka bazy — schemat, migracje i seed: `logistat.baza.init_db()`."""
 import logging
 import os
+from datetime import timedelta
 
-from flask import Flask, jsonify, redirect, request, url_for
+from flask import Flask, jsonify, redirect, request, session, url_for
+from flask_login import current_user
 from werkzeug.exceptions import HTTPException
 
 from logistat.config import DEFAULT_MAX_UPLOAD_MB, resolve_database_url, resolve_secret_key
 from logistat.czas import utc_to_local
 from logistat.extensions import db, login_manager
+from logistat.obszary import OBSZARY, obszary_roli
 
 # Katalog projektu (templates/, static/) — pakiet lezy w nim, nie odwrotnie.
 KATALOG_PROJEKTU = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -60,6 +63,10 @@ def _konfiguruj(app):
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE') == '1'
+    # Konto stanowiska (tablet w magazynie) ma sesje stala — tyle trwa (2026-10-24).
+    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
+    # Blokada ekranow spoza wybranego kafelka (web/auth.py: pilnuj_obszaru).
+    app.config['OBSZARY_WYMUSZANE'] = True
 
 
 def _obsluga_bledow(app):
@@ -85,6 +92,15 @@ def _obsluga_bledow(app):
 
 
 def _szablony(app):
+    @app.context_processor
+    def _kafelki():
+        """Menu w base.html: kafelki roli i wybrany kafelek (sekcje menu)."""
+        role_obszary = obszary_roli(current_user.role) if current_user.is_authenticated else ()
+        wybrany = session.get('obszar')
+        return {'OBSZARY': OBSZARY, 'obszary_roli': role_obszary,
+                # Bez wybranego kafelka (np. tuz po logowaniu) — wszystkie sekcje roli.
+                'menu_obszary': (wybrany,) if wybrany in role_obszary else role_obszary}
+
     @app.context_processor
     def _static_version():
         """`static_v('style.css')` dokleja mtime pliku jako ?v=.
