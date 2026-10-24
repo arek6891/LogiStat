@@ -90,6 +90,16 @@ def test_lider_nie_dezaktywuje_flaga_is_active_user(client, leader, admin):
     assert user(admin.username).is_active_user is True
 
 
+def test_lider_nie_ustawia_hasla_operatorowi(leader_client):
+    """Operator nie loguje sie — haslo daloby mu konto z logowaniem z pominieciem admina."""
+    op = make_user('operator', username='op-haslo')
+
+    r = leader_client.put(f'/api/users/{op.id}', json={'password': 'tajne123'})
+
+    assert r.status_code == 403
+    assert user('op-haslo').password_hash is None
+
+
 def test_lider_edytuje_operatora(leader_client):
     op = make_user('operator', username='op-y', barcode_id='OPY')
 

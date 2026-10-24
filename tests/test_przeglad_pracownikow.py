@@ -430,7 +430,7 @@ def test_lider_moze_ustawic_cel(leader_client):
 def test_operator_nie_ustawi_celu(client):
     r = ustaw_cel(client, 250)
 
-    assert r.status_code in (302, 401, 403)
+    assert r.status_code == 401
 
 
 def test_cel_odrzuca_smieci(leader_client):
@@ -484,7 +484,7 @@ def test_szablon_buduje_link_do_paczek(leader_client):
 def test_operator_nie_zobaczy_przegladu(client):
     r = client.get('/api/stats/overview')
 
-    assert r.status_code in (302, 401, 403)
+    assert r.status_code == 401
 
 
 def test_ekran_statystyk_ma_zakladke_przegladu(leader_client):

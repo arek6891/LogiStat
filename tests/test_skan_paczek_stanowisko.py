@@ -87,12 +87,12 @@ def test_pusty_kod_pracownika_daje_400(leader_client):
     assert employee(leader_client, '').status_code == 400
 
 
-def test_sprawdzenie_pracownika_wymaga_lidera(client):
+def test_sprawdzenie_pracownika_wymaga_logowania(client):
     make_user('operator', barcode_id='W1')
 
     r = client.get('/api/employee-lookup', query_string={'barcode': 'W1'})
 
-    assert r.status_code in (302, 401, 403)
+    assert r.status_code == 401
 
 
 # ── Identyfikator zeskanowany w pole paczki ──────────────────────────────────
@@ -195,6 +195,48 @@ def test_dwa_rownolegle_konce_przechodzi_tylko_jeden(flask_app, leader, monkeypa
             k = flask_app.test_client()
             login(k, nazwa_lidera)
             wyniki.append(end(k, 'W1', categories={'labelling_on': 5}).status_code)
+            db.session.remove()
+
+    watki = [threading.Thread(target=zadanie) for _ in range(2)]
+    for w in watki:
+        w.start()
+    for w in watki:
+        w.join(timeout=10)
+
+    assert wywolania, 'wolna podmiana nie zostala wywolana — trasa uzywa innego modulu'
+    assert sorted(wyniki) == [200, 409]
+    assert carton().get_scan_categories() == {'labelling_on': 5}
+
+
+def test_dwa_rownolegle_konce_z_tabela_przechodzi_tylko_jeden(flask_app, leader, monkeypatch):
+    """To samo co wyzej dla obecnej sciezki — tabela ilosci (wersja 2)."""
+    make_user('operator', barcode_id='W1')
+    make_carton()
+    nazwa_lidera = leader.username
+    klient = flask_app.test_client()
+    login(klient, nazwa_lidera)
+    assert start(klient, 'W1').status_code == 200
+    db.session.commit()
+
+    oryginal = stanowisko.normalizuj_tabele
+    wywolania = []
+
+    def wolno(*args):
+        wywolania.append(1)
+        time.sleep(0.5)
+        return oryginal(*args)
+
+    monkeypatch.setattr(stanowisko, 'normalizuj_tabele', wolno)
+    tabela = {'wersja': 2, 'grupy': {'bizuteria': {'ilosc': 5}}}
+    wyniki = []
+
+    def zadanie():
+        with flask_app.app_context():
+            k = flask_app.test_client()
+            login(k, nazwa_lidera)
+            wyniki.append(k.post('/api/package-time/end', json={
+                'employee_barcode': 'W1', 'package_barcode': 'P1',
+                'tabela': tabela, 'tryb': 'wzor'}).status_code)
             db.session.remove()
 
     watki = [threading.Thread(target=zadanie) for _ in range(2)]

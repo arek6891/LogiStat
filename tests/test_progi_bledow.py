@@ -41,7 +41,7 @@ def test_prog_musi_byc_liczba(admin_client):
 def test_lider_nie_zmieni_progow(leader_client):
     r = leader_client.put('/api/settings', json={'max_work_minutes': 100})
 
-    assert r.status_code in (302, 401, 403)
+    assert r.status_code == 403
 
 
 def test_progi_trafiaja_na_ekran_czasow(admin_client):

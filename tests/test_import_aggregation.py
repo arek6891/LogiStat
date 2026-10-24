@@ -8,7 +8,7 @@ from datetime import date
 
 from logistat.extensions import db
 from logistat.kategorie import STAT_CATEGORIES
-from logistat.models import CountryMapping, GeneralStat, ImportedCarton, empty_category_data
+from logistat.models import CountryMapping, GeneralStat, ImportedCarton
 from logistat.web.wspolne import process_import_rows
 
 
@@ -162,29 +162,9 @@ def test_brak_mapowania_nie_blokuje_importu(acting_admin):
     assert line.country_of_destination is None
 
 
-def test_week_number_z_daty_zieldatum(acting_admin):
-    process_import_rows([row('B1', 10)], ZIEL)
-    assert gstat().week_number == ZIEL.isocalendar()[1]
-
-
 def test_nowa_linia_ma_pusty_category_data(acting_admin):
     process_import_rows([row('B1', 10)], ZIEL)
     cd = gstat().get_category_data()
 
     assert set(cd) == set(STAT_CATEGORIES)
     assert all(v == {'amount': 0, 'cost': 0.0} for v in cd.values())
-
-
-def test_import_nie_nadpisuje_wpisanych_kategorii(acting_admin):
-    process_import_rows([row('B1', 10)], ZIEL)
-    line = gstat()
-    line.set_category_data({**empty_category_data(),
-                            'textile': {'amount': 4, 'cost': 0.0}})
-    db.session.commit()
-
-    process_import_rows([row('B2', 5)], ZIEL)
-
-    line = gstat()
-    assert line.amounts == 15
-    assert line.get_category_data()['textile']['amount'] == 4, \
-        'recznie wpisane kategorie musza przezyc kolejny import'

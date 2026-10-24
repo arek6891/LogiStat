@@ -33,19 +33,19 @@ def test_pozostalo_i_zrobione_dzis_w_sztukach(leader_client):
     d = leader_client.get('/api/dashboard').get_json()
 
     assert d['done_today'] == 2
-    assert d['pieces_today'] == 42
-    assert d['remaining_cartons'] == 2
-    assert d['remaining_pieces'] == 47
-
-
-def test_pusta_baza_daje_zera(leader_client):
-    d = leader_client.get('/api/dashboard').get_json()
-
-    assert d['remaining_pieces'] == 0
-    assert d['pieces_today'] == 0
+    assert d['pieces_today'] == 42, 'wczorajsza i otwarte paczki sie nie licza'
 
 
 def test_kafel_pozostalo_w_sztukach_na_ekranie(leader_client):
     html = leader_client.get('/dashboard').get_data(as_text=True)
 
     assert 'id="remainingPiecesVal"' in html
+
+
+def test_dashboard_bez_starych_pol(leader_client):
+    """Pola sprzed planu dnia (remaining_*, total_cartons, progress_pct) usuniete
+    2026-10-24 — ekran ich nie czytal, a kazde liczylo wszystkie paczki od nowa."""
+    d = leader_client.get('/api/dashboard').get_json()
+
+    assert not {'total_cartons', 'done_cartons', 'remaining_cartons', 'remaining_pieces',
+                'progress_pct'} & set(d)

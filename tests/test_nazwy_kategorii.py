@@ -19,6 +19,7 @@ def ustaw(client, **nazwy):
 def test_domyslnie_polska_nazwa_a_w_nawiasie_angielska(flask_app):
     assert etykieta_kategorii('sorting') == 'Sortowanie (Sorting)'
     assert etykieta_kategorii('labelling_on') == 'Etykietowanie pojedyncze (Labelling one)'
+    assert etykieta_kategorii('card_facture') == 'Karta / faktura (Card facture)'
 
 
 def test_admin_zmienia_nazwe_kategorii(admin_client):
@@ -31,12 +32,6 @@ def test_admin_zmienia_nazwe_kategorii(admin_client):
     html = admin_client.get('/paczki').get_data(as_text=True)
     assert 'Niesprocesowane (Sorting)' in html
     assert 'Sortowanie (Sorting)' not in html
-
-
-def test_nazwa_trafia_tez_do_okna_ilosci_na_liscie_paczek(admin_client):
-    ustaw(admin_client, sorting='Niesprocesowane')
-
-    assert 'Niesprocesowane (Sorting)' in admin_client.get('/paczki').get_data(as_text=True)
 
 
 def test_pusta_nazwa_wraca_do_domyslnej_i_nie_zostawia_wpisu(admin_client):
