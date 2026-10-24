@@ -108,7 +108,7 @@ def make_user(role='operator', username=None, barcode_id=None, display_name=None
         role=role,
         barcode_id=barcode_id,
     )
-    if role in ('leader', 'admin'):
+    if role in ('stanowisko', 'leader', 'admin'):
         user.set_password(PASSWORD)
     baza_danych.session.add(user)
     baza_danych.session.commit()

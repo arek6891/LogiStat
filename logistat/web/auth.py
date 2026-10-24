@@ -1,13 +1,16 @@
-"""Logowanie, wylogowanie, profil (zmiana hasla), wymuszona zmiana domyslnego hasla."""
+"""Logowanie, wylogowanie, profil (zmiana hasla), wymuszona zmiana domyslnego hasla,
+kafelki po zalogowaniu (Magazyn / Post-Process / Ustawienia) i blokada obszaru."""
 from datetime import timedelta
 
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import (Blueprint, abort, flash, jsonify, redirect, render_template, request, session,
+                   url_for)
 from flask_login import current_user, login_required, login_user, logout_user
 
 from logistat.config import DEFAULT_ADMIN_PASSWORD
 from logistat.czas import teraz_utc
 from logistat.extensions import db
-from logistat.models import PRIVILEGED_ROLES, ProbaLogowania, User
+from logistat.models import ProbaLogowania, ROLE_Z_LOGOWANIEM, User
+from logistat.obszary import OBSZARY, WSPOLNE, obszary_endpointu, obszary_roli
 from logistat.web.wspolne import bezpieczny_next
 
 bp = Blueprint('auth', __name__)
@@ -41,8 +44,62 @@ def favicon():
 @bp.route('/')
 def index():
     if current_user.is_authenticated:
-        return redirect(url_for('stanowisko.scanner', shift_number=1))
+        return redirect(url_for('auth.kafelki'))
     return redirect(url_for('auth.login'))
+
+
+# ── Kafelki (operacja 2026-10-24) ─────────────────────────────────────────────
+# Po zalogowaniu wybiera sie kafelek; menu pokazuje tylko jego moduly. Rola
+# decyduje, ktore kafelki widac (`ROLE_OBSZARY`) i do czego jest dostep; kafelek
+# niczego nie blokuje. Jeden kafelek (stanowisko) — od razu do niego.
+
+def _wejdz_do_obszaru(obszar):
+    session['obszar'] = obszar
+    return redirect(url_for(OBSZARY[obszar]['start']))
+
+
+@bp.route('/start')
+@login_required
+def kafelki():
+    dozwolone = obszary_roli(current_user.role)
+    if len(dozwolone) == 1:
+        return _wejdz_do_obszaru(dozwolone[0])
+    return render_template('kafelki.html', bez_menu=True,
+                           kafelki=[(o, OBSZARY[o]) for o in dozwolone],
+                           wybrany=session.get('obszar'))
+
+
+@bp.route('/start/<obszar>', methods=['POST'])
+@login_required
+def wybierz_obszar(obszar):
+    if obszar not in obszary_roli(current_user.role):
+        abort(403)
+    return _wejdz_do_obszaru(obszar)
+
+
+@bp.before_app_request
+def pilnuj_obszaru():
+    """Kafelek wybiera tylko MENU (decyzja operacji 2026-10-24, wersja lagodna):
+    ekran z innego kafelka roli otwiera sie normalnie, a menu przelacza sie na
+    jego kafelek. Blokada jest tylko na ekrany spoza kafelkow ROLI (konto
+    stanowiska → tylko Magazyn) — to samo pilnuja dekoratory; tu na wypadek
+    trasy z za szerokim dekoratorem. API nie zmienia wybranego kafelka, wiec
+    dwie karty na roznych kafelkach dzialaja obie."""
+    if not current_user.is_authenticated or session.get('wymus_zmiane_hasla'):
+        return None
+    ep = request.endpoint
+    if ep is None or ep in WSPOLNE:
+        return None
+    dozwolone = obszary_roli(current_user.role)
+    obszary = [o for o in dozwolone if o in obszary_endpointu(ep)]
+    if not obszary:
+        if request.path.startswith('/api/'):
+            return jsonify({'error': 'Brak uprawnień do tej operacji.'}), 403
+        flash('Brak uprawnień do tego ekranu.', 'error')
+        return redirect(url_for('auth.kafelki'))
+    if not request.path.startswith('/api/') and session.get('obszar') not in obszary:
+        session['obszar'] = obszary[0]
+    return None
 
 
 # Limit nieudanych logowan na login (2026-10-19, przeglad architektury): bez niego
@@ -78,16 +135,20 @@ def login():
             flash(f'Zbyt wiele nieudanych prób logowania. Spróbuj ponownie za {minuty} min.', 'error')
             return render_template('login.html'), 429
         user = User.query.filter_by(username=username).first()
-        if (user and user.is_active_user and user.role in PRIVILEGED_ROLES
+        if (user and user.is_active_user and user.role in ROLE_Z_LOGOWANIEM
                 and user.check_password(password)):
             ProbaLogowania.query.filter_by(login=klucz).delete()
             db.session.commit()
             login_user(user)
             session.pop('wymus_zmiane_hasla', None)
+            session.pop('obszar', None)
+            # Stanowisko (tablet w magazynie) zostaje zalogowane do wylogowania
+            # (PERMANENT_SESSION_LIFETIME) — reszta jak dotad, do zamkniecia przegladarki.
+            session.permanent = user.role == 'stanowisko'
             if password == DEFAULT_ADMIN_PASSWORD:
                 session['wymus_zmiane_hasla'] = True
                 return redirect(url_for('auth.profile'))
-            return redirect(bezpieczny_next(request.args.get('next')) or url_for('auth.index'))
+            return redirect(bezpieczny_next(request.args.get('next')) or url_for('auth.kafelki'))
         db.session.add(ProbaLogowania(login=klucz, kiedy=teraz,
                                       adres_ip=(request.remote_addr or '')[:64]))
         # Sprzatanie: proby starsze niz doba nie sa juz potrzebne.
@@ -101,6 +162,7 @@ def login():
 @login_required
 def logout():
     session.pop('wymus_zmiane_hasla', None)
+    session.pop('obszar', None)
     logout_user()
     return redirect(url_for('auth.login'))
 

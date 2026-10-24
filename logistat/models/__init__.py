@@ -19,6 +19,7 @@ from logistat.models.uzytkownicy import (  # noqa: F401
     user_options_by_kind,
     ROLES,
     PRIVILEGED_ROLES,
+    ROLE_Z_LOGOWANIEM,
     active_admin_count,
     ProbaLogowania,
 )

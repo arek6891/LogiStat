@@ -135,6 +135,14 @@ Quantities entered at package end are the **source of truth for `category_data`*
 - *`JSON.parse('{{ x|tojson|safe }}')`:* `tojson` w apostrofach JS — `"`/`\` w nazwie kategorii (edytuje admin) zmienialy literal i strona przestawala dzialac. Teraz `const x = {{ x|tojson }};` (tojson jest bezpieczny w `<script>`).
 - *`migrate_columns()`:* przy `IF NOT EXISTS` blad to zawsze prawdziwy blad, a except go polykal — aplikacja wstawala bez kolumny i padala na pierwszym zapytaniu. Teraz start przerywa `RuntimeError` z nazwa kolumny; lista w `MIGRACJE_KOLUMN` (stala modulu, test podmienia ja na zla kolumne).
 
+## Kafelki po zalogowaniu i konta stanowisk (2026-10-24)
+
+**Zgloszenie.** Operacja: rozdzielic wejscia do menu kafelkami zaraz po logowaniu; dla magazynu logowanie kontami stanowisko1, stanowisko2… widzacymi tylko moduly Pracownika (kafelek Magazyn); Lider → Post-Process; Admin → Ustawienia (tylko admin). Admin widzi 3 kafelki, lider 2, stanowisko 1.
+
+**Decyzje (pytania 2026-10-24).** Konta stanowisk zaklada admin w Uzytkownikach (nowa rola `stanowisko`, nic nie zakladamy na serwerach). Sesja stanowiska stala (30 dni) — tablet nie wylogowuje sie w trakcie zmiany; reszta bez zmian. Kafelek **wybiera tylko menu** — pierwsza wersja blokowala ekrany innych kafelkow takze liderowi (pytanie zle zrozumiane: operacji chodzilo tylko o to, zeby w Post-Process nie bylo menu Magazynu); przerobione przed wdrozeniem na wersje lagodna: ekran innego kafelka roli otwiera sie i przelacza menu, API kafelka nie zmienia (dwie karty na roznych kafelkach dzialaja). Jeden kafelek → od razu do niego.
+
+**Konstrukcja.** Prawa roli = dekoratory (`@magazyn_required` dla ekranow stanowisk = kazda rola z logowaniem; reszta bez zmian `@leader_required` / `@admin_required`) plus `pilnuj_obszaru()` (before_app_request), ktory na mapie endpoint → kafelki z czystego modulu `logistat/obszary.py` odmawia tylko ekranow spoza kafelkow roli, a dla stron ustawia kafelek menu. Mapa obejmuje kazda trase (test: nowa trasa bez wpisu = czerwony test), API wspoldzielone przez kilka kafelkow (np. `GET /api/activities` — Uzytkownicy i Czynnosci) maja kilka; drugi test sprawdza, ze kazde `/api/…` ze strony kafelka jest w tym kafelku (inaczej konto stanowiska dostaloby 403 na swoim ekranie). „Zmien haslo” ukryte dla stanowiska — konto wspolne, haslo zmienia admin.
+
 ## Grupy P1/P2/P3 i plan Post Processingu w Przydzielaniu (2026-10-23)
 
 **Zgloszenie.** Operacja: pracownik przypisany do grupy wg statystyk z ostatnich 20 dni roboczych — P1 najgorszy, P2 w normie, P3 ponad norme (to samo co czerwony / szary / zielony w Normach), widoczny z grupa w Przydzielaniu; sugestie AI maja przydzielac od najlepszych (P3); przy Post Processingu ilosc do zrobienia wg forecastu (Actual, bez niego Forecast).

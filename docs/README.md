@@ -172,10 +172,15 @@ LogiStat/
 | Rola | Uprawnienia |
 |------|-------------|
 | **operator** | Skanuje się na zmianę. **Nie loguje się.** |
+| **stanowisko** | Wspólne konto komputera / tabletu w magazynie (stanowisko1, stanowisko2…). Loguje się hasłem i widzi **tylko kafelek Magazyn** (skaner zmian, czas pracy, czasy paczek, inspektor paczek). Zostaje zalogowane do wylogowania (30 dni). |
 | **leader** | Loguje się hasłem. Skaner zmian, przydzielanie, wpis ilości, czasy paczek, czasy pracowników, **import CSV/Excel**, zakładanie operatorów, **podgląd Statystyk ogólnych bez kosztów**. |
 | **admin** | Wszystko + koszty i edycja w Statystykach ogólnych, czynności, Panel Admina (mapowanie krajów, stawki kosztów, ustawienia), zakładanie i edycja kont lidera/admina. |
 
-> Konto lidera lub admina może założyć, edytować, zdezaktywować albo zmienić mu rolę
+> **Kafelki po zalogowaniu:** Magazyn (stanowisko, lider, admin), Post-Process (lider, admin),
+> Ustawienia (tylko admin). Kafelek wybiera, które moduły pokazuje menu („⬅ Kafelki” wraca
+> do wyboru); dostęp do ekranów wynika z roli. Konto stanowiska wchodzi od razu do Magazynu.
+
+> Konto stanowiska, lidera lub admina może założyć, edytować, zdezaktywować albo zmienić mu rolę
 > **wyłącznie admin** — lider dostanie `403`. Zdegradowanie lub dezaktywacja
 > **ostatniego aktywnego admina** jest odrzucane (`400`).
 

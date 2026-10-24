@@ -10,7 +10,7 @@ from logistat.extensions import db
 from logistat.models import (
     EVENT_TYPES, KOMUNIKATY_TRWANIA, Shift, ShiftAttendance, TRYBY_CZASU, TRYBY_SKANU, User,
     WorkerTimeEvent, get_setting_int)
-from logistat.web.wspolne import json_body, leader_required, require_int
+from logistat.web.wspolne import json_body, leader_required, magazyn_required, require_int
 
 bp = Blueprint('czas_pracy', __name__)
 
@@ -109,7 +109,7 @@ def zakoncz_szkolenie(trener, shift, now, notatka=None):
 
 
 @bp.route('/time-tracking')
-@leader_required
+@magazyn_required
 def time_tracking():
     return render_template('time_tracking.html')
 
@@ -128,7 +128,7 @@ def worker_times():
 
 
 @bp.route('/api/time/scan', methods=['POST'])
-@leader_required
+@magazyn_required
 def api_time_scan():
     data = json_body()
     barcode = (data.get('barcode') or '').strip()
@@ -205,7 +205,7 @@ def api_time_scan():
 
 
 @bp.route('/api/time/training/aktywne', methods=['GET'])
-@leader_required
+@magazyn_required
 def api_training_aktywne():
     """Trwajace dzis szkolenia — druga stacja moze przejac dowolne z nich."""
     starty = WorkerTimeEvent.query.join(Shift).filter(
@@ -225,7 +225,7 @@ def api_training_aktywne():
 
 
 @bp.route('/api/time/training/trener', methods=['POST'])
-@leader_required
+@magazyn_required
 def api_training_trener():
     """Krok 1: skan szkolacego. Niczego nie zapisuje."""
     trener = _trener_z_zadania(json_body())
@@ -239,7 +239,7 @@ def api_training_trener():
 
 
 @bp.route('/api/time/training/szkolony', methods=['POST'])
-@leader_required
+@magazyn_required
 def api_training_szkolony():
     """Krok 2: skan osoby szkolonej. Pierwsza zaczyna szkolenie."""
     data = json_body()
@@ -293,7 +293,7 @@ def api_training_szkolony():
 
 
 @bp.route('/api/time/training/koniec', methods=['POST'])
-@leader_required
+@magazyn_required
 def api_training_koniec():
     """Krok 3: koniec szkolenia — szkolacy i wszyscy szkoleni naraz.
 

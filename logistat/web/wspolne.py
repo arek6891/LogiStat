@@ -10,7 +10,7 @@ from werkzeug.exceptions import BadRequest
 
 from logistat.czas import local_today
 from logistat.import_paczek import importuj_wiersze
-from logistat.models import PRIVILEGED_ROLES, User
+from logistat.models import PRIVILEGED_ROLES, ROLE_Z_LOGOWANIEM, User
 
 
 def acting_as_admin():
@@ -33,6 +33,18 @@ def leader_required(f):
     @login_required
     def decorated(*args, **kwargs):
         if current_user.role not in PRIVILEGED_ROLES:
+            return _odmowa_dostepu()
+        return f(*args, **kwargs)
+    return decorated
+
+
+def magazyn_required(f):
+    """Ekrany kafelka Magazyn (stanowiska): konto stanowiska, lider, admin
+    (2026-10-24). Kafelek i tak pilnuje `pilnuj_obszaru()` w web/auth.py."""
+    @wraps(f)
+    @login_required
+    def decorated(*args, **kwargs):
+        if current_user.role not in ROLE_Z_LOGOWANIEM:
             return _odmowa_dostepu()
         return f(*args, **kwargs)
     return decorated
