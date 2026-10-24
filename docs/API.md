@@ -9,8 +9,8 @@ Wszystkie endpointy API wymagają zalogowania jako leader lub admin (chyba że z
 | Method | URL | Opis |
 |--------|-----|------|
 | POST | `/login` | Logowanie (form: `username`, `password`) — role `stanowisko`, `leader`, `admin`; po sukcesie → `/start` |
-| GET | `/start` | Kafelki roli (Magazyn / Post-Process / Ustawienia); jeden kafelek → od razu do niego. `?next=` przechodzi do formularza |
-| POST | `/start/<obszar>` | Wybór kafelka (`magazyn` \| `post_process` \| `ustawienia`) → `session['obszar']`, przekierowanie na `next` (gdy jest w tym kafelku) albo ekran startowy kafelka; kafelek spoza roli → 403. **API spoza wybranego kafelka → 403 JSON** `{error, obszar}` |
+| GET | `/start` | Kafelki roli (Magazyn / Post-Process / Ustawienia); jeden kafelek → od razu do niego |
+| POST | `/start/<obszar>` | Wybór kafelka (`magazyn` \| `post_process` \| `ustawienia`) → `session['obszar']` (tylko menu), przekierowanie na ekran startowy kafelka; kafelek spoza roli → 403. Ekran / API spoza kafelków roli → przekierowanie na `/start` / 403 JSON |
 | GET | `/logout` | Wylogowanie |
 | GET/POST | `/profile` | Zmiana hasła zalogowanego użytkownika (form: `current_password`, `new_password`, `confirm_password`; min. 6 znaków, nowe ≠ stare) |
 

@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 {% block title %}LogiStat — wybierz obszar{% endblock %}
 
-{# Kafelki po zalogowaniu (2026-10-24). Kafelek wybiera obszar: menu pokazuje
-   tylko jego moduly, a ekrany innych kafelkow sa zablokowane do powrotu tutaj.
-   Lista kafelkow z roli (logistat/obszary.py: ROLE_OBSZARY). #}
+{# Kafelki po zalogowaniu (2026-10-24). Kafelek wybiera, ktore moduly pokazuje
+   menu; dostep do ekranow wynika z roli. Lista kafelkow z roli
+   (logistat/obszary.py: ROLE_OBSZARY). #}
 {% block content_noauth %}
 <div class="kafelki-strona">
     <div class="kafelki-naglowek">
@@ -21,7 +21,6 @@
     <div class="kafelki">
         {% for klucz, k in kafelki %}
         <form method="post" action="{{ url_for('auth.wybierz_obszar', obszar=klucz) }}">
-            {% if nastepny %}<input type="hidden" name="next" value="{{ nastepny }}">{% endif %}
             <button type="submit" class="kafelek {% if klucz == wybrany %}aktywny{% endif %}" data-obszar="{{ klucz }}">
                 <span class="kafelek-ikona">{{ k.ikona }}</span>
                 <span class="kafelek-nazwa">{{ k.nazwa }}</span>

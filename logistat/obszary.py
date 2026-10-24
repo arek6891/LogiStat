@@ -2,10 +2,11 @@
 
 Kazdy endpoint nalezy do jednego lub kilku obszarow (kafelkow), albo do
 `WSPOLNE` (logowanie, profil, ekran kafelkow). Rola decyduje, ktore kafelki
-widac; wybrany kafelek (`session['obszar']`) — ktore ekrany i API mozna
-otworzyc (twarda blokada, takze dla lidera: Post-Process z kafelka Magazyn
-odsyla do kafelkow). `tests/test_obszary.py` pilnuje, ze kazda trasa jest
-przypisana — nowa trasa bez wpisu tutaj = czerwony test.
+widac i do czego jest dostep (ekran spoza kafelkow roli → brak dostepu);
+wybrany kafelek (`session['obszar']`) wybiera tylko MENU — ekran innego
+kafelka roli otwiera sie i przelacza menu (wersja lagodna, 2026-10-24).
+`tests/test_obszary.py` pilnuje, ze kazda trasa jest przypisana — nowa trasa
+bez wpisu tutaj = czerwony test.
 
 Czysta logika — bez Flaska i bazy (import z `aplikacja.py` i `web/`).
 """

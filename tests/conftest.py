@@ -69,11 +69,7 @@ class IsolatedClient(FlaskClient):
 @pytest.fixture
 def flask_app():
     """Czysta baza na kazdy test."""
-    # OBSZARY_WYMUSZANE=False: blokada kafelkow (web/auth.py: pilnuj_obszaru) nie
-    # przeszkadza testom, ktore jednym klientem chodza po ekranach roznych kafelkow.
-    # Same kafelki testuje tests/test_obszary.py (wlacza ja z powrotem); uprawnienia
-    # rol (dekoratory) dzialaja zawsze.
-    aplikacja.config.update(TESTING=True, WTF_CSRF_ENABLED=False, OBSZARY_WYMUSZANE=False)
+    aplikacja.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
     aplikacja.test_client_class = IsolatedClient
     with aplikacja.app_context():
         baza_danych.drop_all()

@@ -4,8 +4,8 @@
 
 ### Dodane
 - Po zalogowaniu **kafelki**: **Magazyn** (stanowiska), **Post-Process** (lider),
-  **Ustawienia** (tylko admin). Menu pokazuje tylko moduły wybranego kafelka, a ekrany
-  innych kafelków otwierają się dopiero po powrocie do kafelków („⬅ Kafelki”).
+  **Ustawienia** (tylko admin). Menu pokazuje tylko moduły wybranego kafelka
+  („⬅ Kafelki” wraca do wyboru).
 - Rola **Stanowisko** — wspólne konto komputera/tabletu w magazynie (zakłada admin
   w Użytkownikach): widzi tylko Magazyn, wchodzi do niego od razu po zalogowaniu
   i zostaje zalogowane do wylogowania.

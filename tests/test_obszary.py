@@ -2,8 +2,8 @@
 
 - rola → kafelki: stanowisko = Magazyn, lider = Magazyn + Post-Process,
   admin = wszystkie trzy; konto stanowiska po zalogowaniu od razu w Magazynie,
-- kafelek = twarda blokada: ekran spoza wybranego kafelka odsyla do kafelkow,
-  API dostaje 403 JSON — takze dla lidera i admina,
+- kafelek wybiera tylko MENU (wersja lagodna, operacja 2026-10-24): ekran z innego
+  kafelka roli otwiera sie i przelacza menu; API kafelka nie zmienia,
 - konto stanowiska nie wejdzie na zaden ekran ani API Post-Process / Ustawien,
 - kazda trasa aplikacji jest przypisana do kafelka albo do wspolnych.
 """
@@ -12,13 +12,6 @@ from conftest import login, make_user
 
 from logistat.obszary import MAGAZYN, POST_PROCESS, USTAWIENIA, obszary_endpointu, \
     wszystkie_przypisane
-
-
-@pytest.fixture
-def z_kafelkami(flask_app):
-    flask_app.config['OBSZARY_WYMUSZANE'] = True
-    yield flask_app
-    flask_app.config['OBSZARY_WYMUSZANE'] = False
 
 
 def zaloguj(client, rola):
@@ -49,7 +42,7 @@ def test_ekrany_stanowisk_sa_w_magazynie():
 
 # ── stanowisko ───────────────────────────────────────────────────────────────
 
-def test_stanowisko_loguje_sie_i_trafia_od_razu_do_magazynu(client, z_kafelkami):
+def test_stanowisko_loguje_sie_i_trafia_od_razu_do_magazynu(client):
     _, r = zaloguj(client, 'stanowisko')
     assert r.status_code == 302 and r.headers['Location'].endswith('/start')
 
@@ -62,7 +55,7 @@ def test_stanowisko_loguje_sie_i_trafia_od_razu_do_magazynu(client, z_kafelkami)
     assert client.get('/time-tracking').status_code == 200
 
 
-def test_stanowisko_nie_wejdzie_do_post_process_ani_ustawien(client, z_kafelkami):
+def test_stanowisko_nie_wejdzie_do_post_process_ani_ustawien(client):
     zaloguj(client, 'stanowisko')
     client.get('/start')
 
@@ -74,16 +67,15 @@ def test_stanowisko_nie_wejdzie_do_post_process_ani_ustawien(client, z_kafelkami
     assert client.post('/start/post_process').status_code == 403
 
 
-def test_stanowisko_zablokowane_dekoratorem_takze_bez_kafelkow(client):
-    """Uprawnienia roli nie zaleza od blokady kafelkow (testy maja ja wylaczona)."""
+def test_stanowisko_nie_dostanie_api_lidera_ani_admina(client):
     zaloguj(client, 'stanowisko')
 
-    assert client.get('/api/dashboard').status_code == 403
     assert client.put('/api/settings', json={}).status_code == 403
+    assert client.post('/api/users', json={}).status_code == 403
     assert client.get('/api/employee-lookup?barcode=x').status_code in (400, 404)
 
 
-def test_stanowisko_menu_bez_lidera_i_hasla(client, z_kafelkami):
+def test_stanowisko_menu_bez_lidera_i_hasla(client):
     zaloguj(client, 'stanowisko')
     client.get('/start')
 
@@ -107,7 +99,7 @@ def test_operator_dalej_sie_nie_loguje(client):
 
 # ── lider / admin ────────────────────────────────────────────────────────────
 
-def test_lider_widzi_dwa_kafelki_admin_trzy(client, z_kafelkami):
+def test_lider_widzi_dwa_kafelki_admin_trzy(client):
     zaloguj(client, 'leader')
     html = client.get('/start').get_data(as_text=True)
     assert 'data-obszar="magazyn"' in html and 'data-obszar="post_process"' in html
@@ -120,22 +112,26 @@ def test_lider_widzi_dwa_kafelki_admin_trzy(client, z_kafelkami):
     assert html.count('data-obszar=') == 3
 
 
-def test_kafelek_to_twarda_blokada_dla_lidera(client, z_kafelkami):
+def test_kafelek_wybiera_tylko_menu(client):
+    """Lider w Magazynie otwiera Dashboard — ekran sie otwiera, menu przelacza
+    sie na Post-Process. API innego kafelka dziala i NIE przestawia menu, wiec
+    dwie karty na roznych kafelkach pracuja obie."""
     zaloguj(client, 'leader')
     r = wybierz(client, MAGAZYN)
     assert r.headers['Location'].endswith('/scan-paczki')
 
-    r = client.get('/dashboard')
-    assert r.status_code == 302 and '/start' in r.headers['Location']
-    r = client.get('/api/dashboard')
-    assert r.status_code == 403 and 'Post-Process' in r.get_json()['error']
+    assert client.get('/api/dashboard').status_code == 200
+    with client.session_transaction() as s:
+        assert s['obszar'] == MAGAZYN, 'API nie zmienia kafelka'
 
-    wybierz(client, POST_PROCESS)
-    assert client.get('/dashboard').status_code == 200
-    assert client.get('/api/employee-lookup?barcode=x').status_code == 403
+    html = client.get('/dashboard').get_data(as_text=True)
+    assert 'Przydzielanie' in html and 'Czasy paczek' not in html
+    with client.session_transaction() as s:
+        assert s['obszar'] == POST_PROCESS
+    assert client.get('/api/employee-lookup?barcode=x').status_code in (400, 404)
 
 
-def test_menu_pokazuje_tylko_wybrany_kafelek(client, z_kafelkami):
+def test_menu_pokazuje_tylko_wybrany_kafelek(client):
     zaloguj(client, 'admin')
     wybierz(client, POST_PROCESS)
 
@@ -145,8 +141,8 @@ def test_menu_pokazuje_tylko_wybrany_kafelek(client, z_kafelkami):
     assert 'Czasy paczek' not in html and 'Panel Admina' not in html
 
 
-def test_link_do_ekranu_bez_wybranego_kafelka_wybiera_go_sam(client, z_kafelkami):
-    """Zakladka /paczki po zalogowaniu lidera — jeden pasujacy kafelek, bez przystanku."""
+def test_link_do_ekranu_bez_wybranego_kafelka_wybiera_go_sam(client):
+    """Zakladka /paczki po zalogowaniu lidera — otwiera sie od razu, menu Post-Process."""
     zaloguj(client, 'leader')
 
     assert client.get('/paczki').status_code == 200
@@ -154,18 +150,14 @@ def test_link_do_ekranu_bez_wybranego_kafelka_wybiera_go_sam(client, z_kafelkami
         assert s['obszar'] == POST_PROCESS
 
 
-def test_next_po_wyborze_kafelka(client, z_kafelkami):
-    zaloguj(client, 'leader')
-    wybierz(client, MAGAZYN)
-    r = client.get('/stats')
-    assert '/start?next=' in r.headers['Location']
+def test_wybor_kafelka_otwiera_jego_start(client):
+    zaloguj(client, 'admin')
 
-    r = client.post('/start/post_process', data={'next': '/stats'})
-
-    assert r.headers['Location'].endswith('/stats')
+    assert client.post('/start/post_process').headers['Location'].endswith('/dashboard')
+    assert client.post('/start/ustawienia').headers['Location'].endswith('/admin/panel')
 
 
-def test_logowanie_zeruje_wybrany_kafelek(client, z_kafelkami):
+def test_logowanie_zeruje_wybrany_kafelek(client):
     u, _ = zaloguj(client, 'leader')
     wybierz(client, MAGAZYN)
     client.post('/logout')
@@ -178,7 +170,7 @@ def test_logowanie_zeruje_wybrany_kafelek(client, z_kafelkami):
 
 # ── zakladanie kont stanowisk ────────────────────────────────────────────────
 
-def test_konto_stanowiska_zaklada_tylko_admin(client, z_kafelkami):
+def test_konto_stanowiska_zaklada_tylko_admin(client):
     zaloguj(client, 'leader')
     wybierz(client, POST_PROCESS)
     r = client.post('/api/users', json={'username': 'stanowisko1', 'display_name': 'Stanowisko 1',
@@ -210,10 +202,10 @@ STRONY = {
 
 
 @pytest.mark.parametrize('obszar', [MAGAZYN, POST_PROCESS, USTAWIENIA])
-def test_strony_kafelka_wolaja_api_swojego_kafelka(client, z_kafelkami, obszar):
-    """Mapa w logistat/obszary.py jest reczna — tu z wlaczona blokada: kazda
-    strona kafelka otwiera sie, a kazdy adres /api/… z jej HTML-a i skryptow
-    pasuje do trasy dostepnej w tym kafelku (inaczej ekran dostalby 403)."""
+def test_strony_kafelka_wolaja_api_swojego_kafelka(client, obszar):
+    """Mapa w logistat/obszary.py jest reczna: kazdy adres /api/… z HTML-a
+    i skryptow strony kafelka pasuje do trasy przypisanej temu kafelkowi —
+    inaczej konto stanowiska (tylko Magazyn) dostaloby 403 na swoim ekranie."""
     import re
     from conftest import strona_z_js
     zaloguj(client, 'admin')
@@ -230,19 +222,3 @@ def test_strony_kafelka_wolaja_api_swojego_kafelka(client, z_kafelkami, obszar):
             if not pasujace or not any(obszar in obszary_endpointu(ep) for ep in pasujace):
                 zle.append((adres, api))
     assert zle == []
-
-
-def test_wspolne_api_dziala_bez_wybranego_kafelka(client, z_kafelkami):
-    """Karta otwarta przed wdrozeniem kafelkow (sesja bez `obszar`): API
-    wspolne dwom kafelkom nie moze dostac 403 — nie da sie go wybrac samemu."""
-    zaloguj(client, 'admin')
-
-    assert client.get('/api/activities').status_code == 200
-    with client.session_transaction() as s:
-        assert 'obszar' not in s
-
-
-def test_stanowisko_zostawia_panel_ilosci_przy_403_kafelka(client):
-    js = client.get('/static/js/scan_paczki.js').get_data(as_text=True)
-
-    assert 'res.status === 403 && data.obszar' in js

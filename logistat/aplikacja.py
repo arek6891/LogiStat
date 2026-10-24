@@ -65,8 +65,6 @@ def _konfiguruj(app):
     app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE') == '1'
     # Konto stanowiska (tablet w magazynie) ma sesje stala — tyle trwa (2026-10-24).
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
-    # Blokada ekranow spoza wybranego kafelka (web/auth.py: pilnuj_obszaru).
-    app.config['OBSZARY_WYMUSZANE'] = True
 
 
 def _obsluga_bledow(app):

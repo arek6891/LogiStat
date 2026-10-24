@@ -177,8 +177,8 @@ LogiStat/
 | **admin** | Wszystko + koszty i edycja w Statystykach ogólnych, czynności, Panel Admina (mapowanie krajów, stawki kosztów, ustawienia), zakładanie i edycja kont lidera/admina. |
 
 > **Kafelki po zalogowaniu:** Magazyn (stanowisko, lider, admin), Post-Process (lider, admin),
-> Ustawienia (tylko admin). Menu pokazuje moduły wybranego kafelka; ekran z innego kafelka
-> odsyła do kafelków („⬅ Kafelki” w menu). Konto stanowiska wchodzi od razu do Magazynu.
+> Ustawienia (tylko admin). Kafelek wybiera, które moduły pokazuje menu („⬅ Kafelki” wraca
+> do wyboru); dostęp do ekranów wynika z roli. Konto stanowiska wchodzi od razu do Magazynu.
 
 > Konto stanowiska, lidera lub admina może założyć, edytować, zdezaktywować albo zmienić mu rolę
 > **wyłącznie admin** — lider dostanie `403`. Zdegradowanie lub dezaktywacja
