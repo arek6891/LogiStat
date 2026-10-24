@@ -63,6 +63,7 @@ def api_assignment_data():
             'wydajnosc': wydajnosc_czynnosci(dzien),
             'szkolenia': {},
             'wersja': wersja_przydzialu([]),
+            'w_wylaczonych': [],
             **plan,
         }), 200
 
@@ -76,6 +77,7 @@ def api_assignment_data():
 
     # Build set of already-assigned user IDs
     assigned_user_ids = {a.user_id for a in assignments}
+    obecni = {a.user_id for a in attendances}
 
     return jsonify({
         'wydajnosc': wydajnosc_czynnosci(shift.date),
@@ -90,6 +92,12 @@ def api_assignment_data():
         'szkolenia': {str(u): sorted(a) for u, a in szkolenia_czynnosci(
             {a.user_id for a in attendances} | assigned_user_ids).items()},
         'wersja': wersja_przydzialu(assignments),
+        # Obecni przydzieleni do czynnosci wylaczonej w trakcie zmiany — tablica
+        # pokazuje ich w Nieprzydzielonych; zapis ich nie rusza, dopoki lider
+        # ich nie przeciagnie (przeglad 2026-10-24).
+        'w_wylaczonych': [{'user_id': a.user_id, 'czynnosc': a.activity.name}
+                          for a in assignments
+                          if not a.activity.is_active and a.user_id in obecni],
         **plan,
     }), 200
 
@@ -137,7 +145,8 @@ def api_assignment_suggestions():
         func.avg(DailyStat.quantity).label('avg_qty')
     ).join(Shift).filter(
         DailyStat.user_id.in_(attendee_ids),
-        Shift.date >= dzien - timedelta(days=30)
+        # Gorna granica: sugestie dla dnia z przeszlosci nie biora pozniejszych wpisow.
+        Shift.date >= dzien - timedelta(days=30), Shift.date <= dzien
     ).group_by(DailyStat.user_id, DailyStat.activity_id).all()
 
     suggestions = sugestie_przydzialu(
@@ -221,8 +230,17 @@ def api_assignment_save():
                 'brak_szkolenia': lista,
             }), 400
 
-    # Clear existing assignments for this shift
-    ActivityAssignment.query.filter_by(shift_id=shift.id).delete()
+    # Podmiana przydzialu — ale tylko tego, co tablica widzi (przeglad 2026-10-24):
+    # osoby z ciala zapisu oraz obecni przy AKTYWNYCH czynnosciach. Przydzial
+    # nieobecnego albo do czynnosci wylaczonej w trakcie zmiany nie ma karty,
+    # wiec pierwsze przeciagniecie kogokolwiek kasowalo go po cichu.
+    wyslani = {u for u, _, _ in nowe}
+    obecni = {a.user_id for a in ShiftAttendance.query.filter_by(shift_id=shift.id)}
+    aktywne = {a.id for a in Activity.query.filter_by(is_active=True).with_entities(Activity.id)}
+    for p in ActivityAssignment.query.filter_by(shift_id=shift.id).all():
+        if p.user_id in wyslani or (p.user_id in obecni and p.activity_id in aktywne):
+            db.session.delete(p)
+    db.session.flush()
 
     for user_id, activity_id, is_suggestion in nowe:
         db.session.add(ActivityAssignment(
