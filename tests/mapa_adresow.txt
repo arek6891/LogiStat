@@ -40,6 +40,7 @@ GET /api/worker-times
 GET /assignment
 GET /dashboard
 GET /data-entry
+GET /displays
 GET /favicon.ico
 GET /forecast
 GET /general-stats

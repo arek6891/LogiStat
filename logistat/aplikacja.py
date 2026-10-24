@@ -128,10 +128,10 @@ def _blueprinty(app):
     # Import w funkcji: blueprinty ciagna uslugi i modele — pakiet `logistat`
     # importowany sam (np. logistat.czas w testach) nie laduje calej aplikacji.
     from logistat.web import (
-        admin, auth, czas_pracy, dashboard, forecast, imports, normy, paczki, przydzial,
-        rozliczenie, stanowisko)
+        admin, auth, czas_pracy, dashboard, displays, forecast, imports, normy, paczki,
+        przydzial, rozliczenie, stanowisko)
     for modul in (auth, admin, imports, forecast, normy, dashboard, przydzial, rozliczenie,
-                  paczki, czas_pracy, stanowisko):
+                  paczki, czas_pracy, stanowisko, displays):
         app.register_blueprint(modul.bp)
 
 
