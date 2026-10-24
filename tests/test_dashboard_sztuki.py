@@ -40,3 +40,12 @@ def test_kafel_pozostalo_w_sztukach_na_ekranie(leader_client):
     html = leader_client.get('/dashboard').get_data(as_text=True)
 
     assert 'id="remainingPiecesVal"' in html
+
+
+def test_dashboard_bez_starych_pol(leader_client):
+    """Pola sprzed planu dnia (remaining_*, total_cartons, progress_pct) usuniete
+    2026-10-24 — ekran ich nie czytal, a kazde liczylo wszystkie paczki od nowa."""
+    d = leader_client.get('/api/dashboard').get_json()
+
+    assert not {'total_cartons', 'done_cartons', 'remaining_cartons', 'remaining_pieces',
+                'progress_pct'} & set(d)
