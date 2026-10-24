@@ -50,6 +50,54 @@ def test_inline_handler_tylko_z_id(sciezka):
         'worker_times.html).')
 
 
+# Jinja w inline handlerze w apostrofach JS: `onclick="f('{{ x }}')"`. Autoescape
+# zamienia ' na &#39;, ale przegladarka odkodowuje encje ZANIM uruchomi JS — apostrof
+# w kodzie paczki / nazwie kraju (Côte d'Ivoire) psul przycisk albo wykonywal kod
+# (przeglad 2026-10-24). Wolno: onclick='f({{ x|tojson }})' (atrybut w apostrofach).
+JINJA_W_HANDLERZE = re.compile(r"""\bon\w+\s*=\s*"[^"]*['"]\{\{""")
+TOJSON_W_CUDZYSLOWIE = re.compile(r'\bon\w+\s*=\s*"[^"]*\|\s*tojson')
+
+
+@pytest.mark.parametrize('sciezka', [p for p in SZABLONY if p.endswith('.html')],
+                         ids=lambda p: os.path.basename(p))
+def test_jinja_w_handlerze_tylko_przez_tojson(sciezka):
+    tresc = open(sciezka, encoding='utf-8').read()
+
+    zle = JINJA_W_HANDLERZE.findall(tresc) + TOJSON_W_CUDZYSLOWIE.findall(tresc)
+
+    assert not zle, (f'{os.path.basename(sciezka)}: tekst z Jinja w inline handlerze — '
+                     "uzyj onclick='f({{ x|tojson }})' albo data-*")
+
+
+# Wolny tekst z bazy, ktory JS wstawia przez innerHTML (notatka z Wpisu ilosci,
+# kto wpisal / poprawil, nazwa kategorii edytowana przez admina) — zawsze escapeHtml.
+# Uzycie wprost: `${d.note || '-'}` albo po operatorze `${x ? d.modified_by + …}`;
+# sam warunek (`${e.note ? … escapeHtml(e.note) …}`) jest w porzadku.
+_POLE = r'[\w.]*\.(?:note|entered_by|modified_by)\b(?!\s*\?)'
+TEKST_Z_BAZY = re.compile(r'(?:\$\{|[?:+]\s)\s*' + _POLE)
+
+
+@pytest.mark.parametrize('sciezka', [p for p in SZABLONY if p.endswith('.js')],
+                         ids=lambda p: os.path.basename(p))
+def test_wolny_tekst_z_bazy_escapowany(sciezka):
+    tresc = open(sciezka, encoding='utf-8').read()
+
+    zle = [m.group(0) for m in TEKST_Z_BAZY.finditer(tresc)]
+    if sciezka.endswith('admin_cost_mapping.js'):
+        zle += re.findall(r'\$\{label\}', tresc)
+
+    assert not zle, f'{os.path.basename(sciezka)}: bez escapeHtml: {zle}'
+
+
+def test_lista_paczek_barcode_z_apostrofem_nie_psuje_przycisku(leader_client):
+    db.session.add(ImportedCarton(barcode="12'3", stueckzahl=1, land='DE'))
+    db.session.commit()
+
+    html = strona_z_js(leader_client, '/paczki')
+
+    assert "'12&#39;3'" not in html and '"12\\u00273"' in html
+
+
 @pytest.mark.parametrize('sciezka', SZABLONY, ids=lambda p: os.path.basename(p))
 def test_title_z_danych_jest_escapowany(sciezka):
     tresc = open(sciezka, encoding='utf-8').read()

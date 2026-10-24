@@ -377,7 +377,7 @@ function renderDaily(daily) {
         <td>${escapeHtml(d.activity)}</td>
         <td style="text-align:center;"><strong>${d.quantity}</strong></td>
         <td style="color:var(--text-secondary);font-size:0.85rem;">-</td>
-        <td style="font-size:0.8rem;color:var(--text-muted);">${d.entered_by || '-'}</td>
+        <td style="font-size:0.8rem;color:var(--text-muted);">${escapeHtml(d.entered_by || '-')}</td>
         <td style="font-size:0.8rem;color:var(--text-muted);">-</td>
         <td style="color:var(--text-muted);">🔒</td>
     </tr>`;
@@ -391,9 +391,9 @@ function renderDaily(daily) {
             <input type="number" class="edit-qty" data-stat-id="${d.stat_id}" value="${d.quantity}"
                 style="width:80px;padding:4px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-family:var(--font);text-align:center;">
         </td>
-        <td style="color:var(--text-secondary);font-size:0.85rem;">${d.note || '-'}</td>
-        <td style="font-size:0.8rem;color:var(--text-muted);">${d.entered_by || '-'}</td>
-        <td style="font-size:0.8rem;color:var(--text-muted);">${d.modified_by ? d.modified_by + '<br>' + d.modified_at : '-'}</td>
+        <td style="color:var(--text-secondary);font-size:0.85rem;">${escapeHtml(d.note || '-')}</td>
+        <td style="font-size:0.8rem;color:var(--text-muted);">${escapeHtml(d.entered_by || '-')}</td>
+        <td style="font-size:0.8rem;color:var(--text-muted);">${d.modified_by ? escapeHtml(d.modified_by) + '<br>' + escapeHtml(d.modified_at || '') : '-'}</td>
         <td><button class="btn btn-sm btn-ghost" onclick="updateStat(${d.stat_id}, this)">💾</button></td>
     </tr>`;
     }).join('');

@@ -9,7 +9,7 @@
 - kazda trasa aplikacji jest przypisana do kafelka albo do wspolnych.
 """
 import pytest
-from conftest import login, make_user
+from conftest import PASSWORD, login, make_user
 
 from logistat.obszary import DISPLAYS, MAGAZYN, POST_PROCESS, USTAWIENIA, ZWROTY, obszary_endpointu, \
     wszystkie_przypisane
@@ -266,3 +266,30 @@ def test_strony_kafelka_wolaja_api_swojego_kafelka(client, obszar):
             if not pasujace or not any(obszar in obszary_endpointu(ep) for ep in pasujace):
                 zle.append((adres, api))
     assert zle == []
+
+
+# ── przeglad 2026-10-24: haslo stanowiska, komunikaty ─────────────────────────
+
+def test_stanowisko_nie_zmieni_wspolnego_hasla(client):
+    """Haslo konta stanowiska ustawia admin — link byl tylko ukryty, a POST
+    /profile przechodzil: ktos przy tablecie mogl zablokowac pozostale stanowiska."""
+    u, _ = zaloguj(client, 'stanowisko')
+    r = client.post('/profile', data={'current_password': PASSWORD, 'new_password': 'nowe12345',
+                                      'confirm_password': 'nowe12345'})
+    assert r.status_code == 302 and '/start' in r.headers['Location']
+    from logistat.extensions import db
+    db.session.refresh(u)
+    assert u.check_password(PASSWORD)
+    assert client.get('/profile').status_code == 302
+
+
+def test_komunikat_odmowy_widac_na_ekranie_stanowiska(client):
+    """Stanowisko na ekranie spoza Magazynu: /start przekierowuje dalej, wiec
+    flash musi pokazac zwykly ekran (base.html), a nie czekac do logowania."""
+    zaloguj(client, 'stanowisko')
+    client.get('/dashboard')
+
+    html = client.get('/scan-paczki').get_data(as_text=True)
+
+    assert 'KOMUNIKATY_FLASH = [["error", "Brak uprawnie' in html
+    assert 'KOMUNIKATY_FLASH = []' in client.get('/scan-paczki').get_data(as_text=True)

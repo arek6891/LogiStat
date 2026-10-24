@@ -154,6 +154,15 @@
 
     <div class="toast-container" id="toastContainer"></div>
 
+    {# Komunikaty flash na zwyklych ekranach (przeglad 2026-10-24): odmowa dostepu
+       przekierowuje na /start, a stanowisko leci stamtad od razu na swoj ekran —
+       bez tego komunikat czekal w sesji do wylogowania. Logowanie, kafelki i
+       profil pokazuja je same. #}
+    {% if current_user.is_authenticated and not bez_menu and not wlasne_komunikaty %}
+    <script>
+        const KOMUNIKATY_FLASH = {{ get_flashed_messages(with_categories=true)|tojson }};
+    </script>
+    {% endif %}
     <script src="{{ static_v('js/base.js') }}"></script>
     {% block scripts %}{% endblock %}
 </body>

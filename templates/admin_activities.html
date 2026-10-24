@@ -24,7 +24,7 @@
                 {% endif %}
             </div>
             <div class="admin-actions">
-                <button class="btn btn-ghost btn-sm" onclick="editActivity({{ activity.id }}, '{{ activity.name }}')">✏️
+                <button class="btn btn-ghost btn-sm" onclick='editActivity({{ activity.id }}, {{ activity.name|tojson }})'>✏️
                     Edytuj</button>
                 <button class="btn btn-ghost btn-sm"
                     onclick="toggleActivity({{ activity.id }}, {{ 'true' if activity.is_active else 'false' }})">

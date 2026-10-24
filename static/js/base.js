@@ -12,6 +12,12 @@ function escapeHtml(value) {
         .replaceAll("'", '&#39;');
 }
 
+// Komunikaty flash z serwera (base.html) — np. odmowa dostepu po przekierowaniu.
+document.addEventListener('DOMContentLoaded', () => {
+    if (typeof KOMUNIKATY_FLASH === 'undefined') return;
+    for (const [rodzaj, tekst] of KOMUNIKATY_FLASH) showToast(tekst, rodzaj === 'error' ? 'error' : 'success');
+});
+
 function showToast(message, type = 'success') {
     const container = document.getElementById('toastContainer');
     const toast = document.createElement('div');

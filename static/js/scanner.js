@@ -63,7 +63,7 @@ function addScannedCard(user, attendance) {
     card.dataset.id = attendance.id;
     const time = new Date(attendance.scanned_at).toLocaleTimeString('pl');
     card.innerHTML = `
-    <div class="user-avatar">${user.display_name[0]}</div>
+    <div class="user-avatar">${escapeHtml(user.display_name[0] || '')}</div>
     <div class="user-info">
         <div class="user-name">${escapeHtml(user.display_name)}</div>
         <div class="user-time">${time}</div>

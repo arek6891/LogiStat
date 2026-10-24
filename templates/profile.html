@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{# Komunikaty pokazuje formularz ponizej — base.html nie dubluje ich toastem. #}
+{% set wlasne_komunikaty = true %}
 {% block title %}Zmiana hasła — {{ NAZWA_APLIKACJI }}{% endblock %}
 {% block content %}
 <div class="page-header">

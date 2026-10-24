@@ -76,7 +76,7 @@ function renderRatesForm(rates) {
 
         html += `
             <tr style="border-bottom:1px solid var(--border);">
-                <td style="padding:12px 0; font-weight:500;">${label}</td>
+                <td style="padding:12px 0; font-weight:500;">${escapeHtml(label)}</td>
                 <td style="padding:12px 0; text-align:right;">
                     <input type="number" class="form-control rate-input" data-cat="${cat}" value="${parseFloat(val).toFixed(2)}" min="0" step="0.01" style="width:100px; text-align:right; display:inline-block;">
                 </td>
