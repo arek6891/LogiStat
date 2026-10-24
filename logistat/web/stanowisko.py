@@ -14,7 +14,7 @@ from logistat.paczki import (
 from logistat.rozliczenie import klucz_linii, recompute_general_stat
 from logistat.tabela_ilosci import TRYB_WZOR, TRYB_ZESPOL, normalizuj_tabele
 from logistat.web.wspolne import (
-    blad_nieznanej_paczki, json_body, leader_required, parse_date, parse_shift_number)
+    blad_nieznanej_paczki, json_body, magazyn_required, parse_date, parse_shift_number)
 
 bp = Blueprint('stanowisko', __name__)
 
@@ -103,7 +103,7 @@ def tabela_z_body(data, carton, oczekiwany_tryb):
 
 
 @bp.route('/scanner/<int:shift_number>')
-@leader_required
+@magazyn_required
 def scanner(shift_number):
     if shift_number not in (1, 2):
         shift_number = 1
@@ -119,7 +119,7 @@ def scanner(shift_number):
 
 
 @bp.route('/api/scan', methods=['POST'])
-@leader_required
+@magazyn_required
 def api_scan():
     data = json_body()
     barcode = str(data.get('barcode') or '').strip()
@@ -163,7 +163,7 @@ def api_scan():
 
 
 @bp.route('/api/scan/<int:attendance_id>', methods=['DELETE'])
-@leader_required
+@magazyn_required
 def api_unscan(attendance_id):
     attendance = db.get_or_404(ShiftAttendance, attendance_id)
     db.session.delete(attendance)
@@ -172,7 +172,7 @@ def api_unscan(attendance_id):
 
 
 @bp.route('/api/shift/attendances', methods=['GET'])
-@leader_required
+@magazyn_required
 def api_shift_attendances():
     shift_date = request.args.get('date', local_today().isoformat())
     shift_number = parse_shift_number(request.args.get('shift_number', 1))
@@ -192,13 +192,13 @@ def api_shift_attendances():
 
 
 @bp.route('/scan-package')
-@leader_required
+@magazyn_required
 def scan_package():
     return render_template('scan_package.html')
 
 
 @bp.route('/api/employee-lookup', methods=['GET'])
-@leader_required
+@magazyn_required
 def api_employee_lookup():
     """Krok 1 na /scan-paczki — sprawdza kod pracownika ZANIM pojdzie dalej.
 
@@ -220,7 +220,7 @@ def api_employee_lookup():
 
 
 @bp.route('/api/package-lookup', methods=['GET'])
-@leader_required
+@magazyn_required
 def api_package_lookup():
     """Read-only lookup: sprawdza status paczki (przeskanowana / kto / zakończona) + dane."""
     barcode = (request.args.get('barcode') or '').strip()
@@ -243,13 +243,13 @@ def api_package_lookup():
 
 
 @bp.route('/scan-paczki')
-@leader_required
+@magazyn_required
 def scan_paczki():
     return render_template('scan_paczki.html')
 
 
 @bp.route('/api/package-time/przekaz', methods=['POST'])
-@leader_required
+@magazyn_required
 def api_package_time_przekaz():
     """„Paczka do dokonczenia": koniec zmiany — pracownik wpisuje, co przerobil,
     a paczka NIE jest zamykana. Start zostaje zdjety, wiec nastepna osoba wbija
@@ -308,7 +308,7 @@ def api_package_time_przekaz():
 
 
 @bp.route('/api/package-time/dolacz', methods=['POST'])
-@leader_required
+@magazyn_required
 def api_package_time_dolacz():
     """„Pakowanie zespolowe": druga/trzecia osoba dolacza do paczki juz
     rozpoczetej. Koniec wbija kazdy sam (zakladka Koniec) ze swoimi iloscami."""
@@ -346,7 +346,7 @@ def api_package_time_dolacz():
 
 
 @bp.route('/api/package-time/start', methods=['POST'])
-@leader_required
+@magazyn_required
 def api_package_time_start():
     data = json_body()
     employee_barcode = (data.get('employee_barcode') or '').strip()
@@ -407,7 +407,7 @@ def api_package_time_start():
 
 
 @bp.route('/api/package-time/end', methods=['POST'])
-@leader_required
+@magazyn_required
 def api_package_time_end():
     data = json_body()
     employee_barcode = (data.get('employee_barcode') or '').strip()

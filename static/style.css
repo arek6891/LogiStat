@@ -1600,3 +1600,31 @@ h1, h2, h3, .page-title, .sidebar-logo h1, .login-card h1 {
 .os-czynnosci { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: .74rem; color: var(--text-muted); }
 .os-czynnosci span { background: var(--bg-hover); color: var(--text-secondary); padding: 1px 8px; border-radius: 8px; font-weight: 600; }
 .os-czynnosci.os-brak { font-style: italic; }
+
+/* ── Kafelki po zalogowaniu (2026-10-24) ──────────────────────────────────── */
+.kafelki-strona { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; padding: 32px 16px; }
+.kafelki-naglowek { text-align: center; }
+.kafelki-naglowek .logo-firmy { display: inline-block; background: var(--logo-tlo); border-radius: var(--radius-sm); padding: 10px 16px; margin-bottom: 12px; line-height: 0; }
+.kafelki-naglowek .logo-firmy img { width: 220px; height: auto; }
+.kafelki { display: flex; flex-wrap: wrap; justify-content: center; gap: 24px; }
+.kafelek {
+    width: 280px; min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; padding: 28px 22px; border-radius: var(--radius-lg); cursor: pointer; text-align: center;
+    background: var(--bg-card); border: 2px solid var(--border); box-shadow: var(--shadow);
+    color: var(--text-primary); font-family: var(--font); transition: var(--transition); touch-action: manipulation;
+}
+.kafelek:hover, .kafelek:focus { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-glow), var(--shadow-lg); outline: none; }
+.kafelek.aktywny { border-color: var(--accent-2); }
+.kafelek-ikona { font-size: 3rem; line-height: 1; }
+.kafelek-nazwa { font-family: var(--font-head); font-size: 1.6rem; font-weight: 800; color: var(--accent); }
+.kafelek-opis { font-size: .88rem; color: var(--text-secondary); }
+.kafelek[data-obszar="magazyn"] .kafelek-nazwa { color: var(--success); }
+.kafelek[data-obszar="ustawienia"] .kafelek-nazwa { color: var(--danger); }
+.kafelki-komunikat { padding: 10px 16px; border-radius: var(--radius-sm); background: var(--info-bg); color: var(--info); }
+.kafelki-komunikat.error { background: var(--danger-bg); color: var(--danger); }
+.kafelki-powrot {
+    display: block; margin: -8px 12px 10px; padding: 8px 14px; border-radius: var(--radius-sm);
+    background: var(--menu-sekcja); color: var(--menu-sekcja-tekst); text-decoration: none; font-size: .85rem;
+}
+.kafelki-powrot:hover { background: var(--menu-hover); color: var(--menu-tekst); }
+.badge-stanowisko { background: var(--success-bg); color: var(--success); }

@@ -49,6 +49,7 @@ GET /paczki
 GET /scan-package
 GET /scan-paczki
 GET /scanner/<int:shift_number>
+GET /start
 GET /stats
 GET /time-tracking
 GET /worker-times
@@ -81,6 +82,7 @@ POST /api/user-options
 POST /api/users
 POST /api/worker-times/event
 POST /logout
+POST /start/<obszar>
 POST PUT /api/cost-mapping/<int:year>/<int:month>
 PUT /api/activities/<int:activity_id>
 PUT /api/category-labels

@@ -92,10 +92,13 @@ def user_options_by_kind():
     return wynik
 
 
-ROLES = ('operator', 'leader', 'admin')
-# Role z dostepem do logowania i ekranow — konta uprzywilejowane. Zakladac je,
-# zmieniac im role/haslo i dezaktywowac moze wylacznie admin.
+ROLES = ('operator', 'stanowisko', 'leader', 'admin')
+# Lider i admin — ekrany Post-Process (`leader_required`).
 PRIVILEGED_ROLES = ('leader', 'admin')
+# Konta z logowaniem (haslo). `stanowisko` (2026-10-24) = wspolne konto
+# komputera/tabletu w magazynie: widzi tylko kafelek Magazyn. Zakladac je,
+# zmieniac im role/haslo i dezaktywowac moze wylacznie admin.
+ROLE_Z_LOGOWANIEM = ('stanowisko', 'leader', 'admin')
 
 
 def active_admin_count(exclude_id=None):

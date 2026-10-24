@@ -17,7 +17,7 @@ from logistat.okresy import odejmij_okresy, suma_zlaczonych_okresow, w_okresach,
 
 
 MODULY = ['logistat.czas', 'logistat.kategorie', 'logistat.tabela_ilosci',
-          'logistat.okresy', 'logistat.normy']
+          'logistat.okresy', 'logistat.normy', 'logistat.obszary']
 
 
 @pytest.mark.parametrize('modul', MODULY)
@@ -75,7 +75,7 @@ def test_create_app_nie_dotyka_bazy():
     wynik = subprocess.run([sys.executable, '-c', kod], capture_output=True, text=True,
                            timeout=60, cwd='.', env=env)
     assert wynik.returncode == 0, wynik.stderr
-    assert int(wynik.stdout.strip()) == 100
+    assert int(wynik.stdout.strip()) == 102
 
 
 def test_logistat_models_rejestruje_wszystkie_tabele():
