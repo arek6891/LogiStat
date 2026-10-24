@@ -50,7 +50,7 @@
                 {% endif %}
 
                 {% if 'post_process' in menu_obszary %}
-                <li class="nav-section">🧑‍💼 Post-Process</li>
+                <li class="nav-section">📦 Post-Process</li>
                 <li><a href="{{ url_for('czas_pracy.worker_times') }}"
                         class="{% if request.endpoint == 'czas_pracy.worker_times' %}active{% endif %}">
                         <span class="icon">👥</span> Czasy pracowników
@@ -94,10 +94,10 @@
                 {% endif %}
 
                 {% if 'displays' in menu_obszary %}
-                <li class="nav-section">📺 Akcje - Displays</li>
+                <li class="nav-section">💍 Akcje - Displays</li>
                 <li><a href="{{ url_for('displays.displays') }}"
                         class="{% if request.endpoint == 'displays.displays' %}active{% endif %}">
-                        <span class="icon">📺</span> Displays
+                        <span class="icon">💍</span> Displays
                     </a></li>
                 {% endif %}
 

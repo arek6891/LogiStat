@@ -175,7 +175,7 @@ def test_logowanie_zeruje_wybrany_kafelek(client):
 
 # ── Akcje - Displays i Zwroty (nowe moduly, na razie puste) ──────────────────
 
-@pytest.mark.parametrize('obszar,adres,naglowek', [(DISPLAYS, '/displays', '📺 Akcje - Displays'),
+@pytest.mark.parametrize('obszar,adres,naglowek', [(DISPLAYS, '/displays', '💍 Akcje - Displays'),
                                                    (ZWROTY, '/zwroty', '↩️ Zwroty')])
 def test_nowy_modul_dla_lidera_i_admina_nie_dla_stanowiska(client, obszar, adres, naglowek):
     for rola in ('leader', 'admin'):
