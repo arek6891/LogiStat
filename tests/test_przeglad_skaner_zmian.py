@@ -110,3 +110,10 @@ def test_js_nie_bierze_dnia_utc():
         assert 'valueAsDate = new Date()' not in open(plik, encoding='utf-8').read(), plik
     skaner = open('static/js/scanner.js', encoding='utf-8').read()
     assert 'date: TODAY' not in skaner and 'nowyDzien()' in skaner
+
+
+def test_udzial_pokazuje_sztuki_nie_jednostki_rozliczenia():
+    """`suma()` udzialu = kategorie rozliczenia (Podwojne ×1,5, Flagi) — 10 podwojnych
+    pokazywalo sie jako „15 szt.”. Sztuki = `sztuki` (sztuki_tabeli)."""
+    for plik in ('static/js/scan_package.js', 'static/js/paczki.js'):
+        assert "u.suma + ' szt.'" not in open(plik, encoding='utf-8').read(), plik

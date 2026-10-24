@@ -130,7 +130,7 @@ function renderCard(c) {
                 ${row('Koniec', c.scan_end_at ? `${escapeHtml(c.scan_end_by_name) || '—'} · ${fmtDateTime(c.scan_end_at)}` : '—')}
                 ${row('Czas procesowania', fmtDuration(c.processing_seconds))}
                 ${(c.udzialy || []).map(u => row('👤 ' + escapeHtml(u.user_name || '?'),
-                    `${fmtDateTime(u.start_at)} – ${u.otwarty ? 'pracuje' : fmtDateTime(u.end_at) + ' · ' + u.suma + ' szt.'}`
+                    `${fmtDateTime(u.start_at)} – ${u.otwarty ? 'pracuje' : fmtDateTime(u.end_at) + ' · ' + u.sztuki + ' szt.'}`
                     + (u.zamkniete_przez ? ` · zamknął: ${escapeHtml(u.zamkniete_przez)}` : ''))).join('')}
             </div>
         </div>`;

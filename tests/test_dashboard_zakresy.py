@@ -118,3 +118,24 @@ def test_dashboard_ma_zakladke_i_filtr(leader_client):
 
     assert 'id="tab-dni"' in html and 'Per Loading date' in html
     assert 'id="zalOd"' in html and 'id="zalDo"' in html
+
+
+def test_podsumowanie_liczy_do_dokonczenia_jako_w_toku(leader_client):
+    """Przeglad 2026-10-24: Podsumowanie liczylo tylko scan_start_at, a plan
+    pliku (_agregaty_planu) takze paczki „do dokonczenia” (bez startu, z udzialami)."""
+    from conftest import make_user
+    from logistat.models import UdzialPaczki
+    dzien = date(2026, 9, 3)
+    k = karton('DOK1', dzien)
+    u = make_user('operator')
+    db.session.flush()
+    db.session.add(UdzialPaczki(carton_id=k.id, user_id=u.id, rodzaj='przekazana',
+                                start_at=datetime(2026, 9, 3, 8),
+                                end_at=datetime(2026, 9, 3, 9)))
+    db.session.commit()
+
+    zal = leader_client.get('/api/dashboard/zalegle?date_from=2026-09-03&date_to=2026-09-03').get_json()
+    plan = leader_client.get('/api/dashboard/plik?date=2026-09-03').get_json()
+
+    assert zal['dni'][0]['w_toku'] == 1
+    assert zal['dni'][0]['w_toku'] == plan['w_toku']
