@@ -21,7 +21,7 @@ const moznaPrzydzielic = (uid, aid) =>
     Number(aid) === 0 || przeszkolony(uid, aid) || zapisanePary.has(para(uid, aid));
 
 // Init date to today
-document.getElementById('assignDate').valueAsDate = new Date();
+document.getElementById('assignDate').value = dzisLokalnie();
 loadedDate = document.getElementById('assignDate').value;
 
 async function switchShift(num) {

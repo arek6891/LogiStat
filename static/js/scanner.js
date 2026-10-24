@@ -26,32 +26,41 @@ barcodeInput.addEventListener('blur', () => {
     setTimeout(() => barcodeInput.focus(), 100);
 });
 
+// Karta stanowiska bywa otwarta przez noc (sesja 30 dni): po zmianie dnia
+// przeladuj — lista i naglowek sa z wczoraj (obecnosc serwer i tak zapisze na dzis).
+function nowyDzien() {
+    if (dzisLokalnie() === TODAY) return false;
+    location.reload();
+    return true;
+}
+setInterval(nowyDzien, 60000);
+
 async function processScan(barcode) {
+    if (nowyDzien()) return;
     try {
         const res = await fetch('/api/scan', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 barcode: barcode,
-                shift_number: SHIFT_NUMBER,
-                date: TODAY
+                shift_number: SHIFT_NUMBER
             })
         });
-        const data = await res.json();
+        // Wygasla sesja = przekierowanie na /login (HTML) — bez tego operator
+        // myslal, ze skan przeszedl.
+        const data = await res.json().catch(() => ({}));
 
-        if (res.status === 404) {
-            showToast(data.error, 'error');
-            return;
-        }
         if (data.already_scanned) {
             showToast(data.warning, 'warning');
             return;
         }
-        if (res.ok) {
+        if (res.ok && data.attendance) {
             showToast(data.message, 'success');
             addScannedCard(data.user, data.attendance);
             scanCount.textContent = parseInt(scanCount.textContent) + 1;
+            return;
         }
+        showToast(data.error || `Skan NIE został zapisany (błąd ${res.status}) — odśwież stronę i zaloguj się ponownie.`, 'error');
     } catch (err) {
         showToast('Błąd połączenia z serwerem.', 'error');
     }
@@ -81,7 +90,10 @@ async function removeAttendance(id) {
             document.querySelector(`.scanned-card[data-id="${id}"]`)?.remove();
             scanCount.textContent = Math.max(0, parseInt(scanCount.textContent) - 1);
             showToast('Usunięto rejestrację.', 'info');
+            return;
         }
+        const data = await res.json().catch(() => ({}));
+        showToast(data.error || `Nie usunięto (błąd ${res.status}).`, 'error');
     } catch (err) {
         showToast('Błąd.', 'error');
     }

@@ -1,7 +1,7 @@
 // Skrypt strony templates/data_entry.html (wyniesiony z szablonu 2026-10-16).
 let currentShift = 1;
 
-document.getElementById('entryDate').valueAsDate = new Date();
+document.getElementById('entryDate').value = dzisLokalnie();
 
 // Data, dla ktorej tabela jest wczytana. Zmiana pola daty zaczyna
 // przeladowanie dopiero po dokonczeniu zapisow, a do tego czasu autozapis

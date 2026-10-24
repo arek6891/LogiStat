@@ -18,6 +18,14 @@ document.addEventListener('DOMContentLoaded', () => {
     for (const [rodzaj, tekst] of KOMUNIKATY_FLASH) showToast(tekst, rodzaj === 'error' ? 'error' : 'success');
 });
 
+// Dzisiejsza data YYYY-MM-DD w strefie przegladarki (hala = Warszawa).
+// Nie `valueAsDate` z new Date() — to bierze dzien UTC, wiec miedzy polnoca
+// a 1:00/2:00 pole pokazywalo wczoraj, a autozapis pisal pod wczoraj.
+function dzisLokalnie() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function showToast(message, type = 'success') {
     const container = document.getElementById('toastContainer');
     const toast = document.createElement('div');
