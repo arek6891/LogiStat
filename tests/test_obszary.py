@@ -1,7 +1,8 @@
-"""Kafelki po zalogowaniu: Magazyn / Post-Process / Ustawienia (operacja 2026-10-24).
+"""Kafelki po zalogowaniu: Magazyn / Post-Process / Akcje - Displays / Zwroty / Ustawienia
+(operacja 2026-10-24).
 
-- rola → kafelki: stanowisko = Magazyn, lider = Magazyn + Post-Process,
-  admin = wszystkie trzy; konto stanowiska po zalogowaniu od razu w Magazynie,
+- rola → kafelki: stanowisko = Magazyn, lider = Magazyn + Post-Process + Akcje - Displays
+  + Zwroty, admin = wszystkie piec; konto stanowiska po zalogowaniu od razu w Magazynie,
 - kafelek wybiera tylko MENU (wersja lagodna, operacja 2026-10-24): ekran z innego
   kafelka roli otwiera sie i przelacza menu; API kafelka nie zmienia,
 - konto stanowiska nie wejdzie na zaden ekran ani API Post-Process / Ustawien,
@@ -10,7 +11,7 @@
 import pytest
 from conftest import login, make_user
 
-from logistat.obszary import MAGAZYN, POST_PROCESS, USTAWIENIA, obszary_endpointu, \
+from logistat.obszary import DISPLAYS, MAGAZYN, POST_PROCESS, USTAWIENIA, ZWROTY, obszary_endpointu, \
     wszystkie_przypisane
 
 
@@ -99,17 +100,19 @@ def test_operator_dalej_sie_nie_loguje(client):
 
 # ── lider / admin ────────────────────────────────────────────────────────────
 
-def test_lider_widzi_dwa_kafelki_admin_trzy(client):
+def test_lider_widzi_cztery_kafelki_admin_piec(client):
     zaloguj(client, 'leader')
     html = client.get('/start').get_data(as_text=True)
     assert 'data-obszar="magazyn"' in html and 'data-obszar="post_process"' in html
+    assert 'data-obszar="displays"' in html and 'Akcje - Displays' in html
+    assert 'data-obszar="zwroty"' in html
     assert 'data-obszar="ustawienia"' not in html
     assert wybierz(client, USTAWIENIA).status_code == 403
 
     client.post('/logout')
     zaloguj(client, 'admin')
     html = client.get('/start').get_data(as_text=True)
-    assert html.count('data-obszar=') == 3
+    assert html.count('data-obszar=') == 5
 
 
 def test_kafelek_wybiera_tylko_menu(client):
@@ -154,6 +157,8 @@ def test_wybor_kafelka_otwiera_jego_start(client):
     zaloguj(client, 'admin')
 
     assert client.post('/start/post_process').headers['Location'].endswith('/dashboard')
+    assert client.post('/start/displays').headers['Location'].endswith('/displays')
+    assert client.post('/start/zwroty').headers['Location'].endswith('/zwroty')
     assert client.post('/start/ustawienia').headers['Location'].endswith('/admin/panel')
 
 
@@ -166,6 +171,43 @@ def test_logowanie_zeruje_wybrany_kafelek(client):
     with client.session_transaction() as s:
         assert 'obszar' not in s
         assert not s.permanent, 'tylko stanowisko ma stala sesje'
+
+
+# ── Akcje - Displays i Zwroty (nowe moduly, na razie puste) ──────────────────
+
+@pytest.mark.parametrize('obszar,adres,naglowek', [(DISPLAYS, '/displays', '📺 Akcje - Displays'),
+                                                   (ZWROTY, '/zwroty', '↩️ Zwroty')])
+def test_nowy_modul_dla_lidera_i_admina_nie_dla_stanowiska(client, obszar, adres, naglowek):
+    for rola in ('leader', 'admin'):
+        zaloguj(client, rola)
+        wybierz(client, obszar)
+        html = client.get(adres).get_data(as_text=True)
+        assert 'w przygotowaniu' in html and naglowek in html, rola
+        assert 'Przydzielanie' not in html, 'menu tylko wybranego kafelka'
+        client.post('/logout')
+
+    zaloguj(client, 'stanowisko')
+    r = client.get(adres)
+    assert r.status_code == 302 and '/start' in r.headers['Location']
+    assert wybierz(client, obszar).status_code == 403
+
+
+# ── menu A→Z ─────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize('obszar,adres', [(MAGAZYN, '/scan-paczki'),
+                                          (POST_PROCESS, '/dashboard'),
+                                          (USTAWIENIA, '/admin/panel')])
+def test_menu_kafelka_alfabetycznie(client, obszar, adres):
+    """Operacja 2026-10-24: pozycje menu po lewej od A (gora) do Z (dol)."""
+    import re
+    zaloguj(client, 'admin')
+    wybierz(client, obszar)
+    html = client.get(adres).get_data(as_text=True)
+    menu = html[html.index('class="sidebar-nav"'):html.index('class="sidebar-footer"')]
+    nazwy = [n.strip() for n in re.findall(r'</span>\s*([^<]+?)\s*</a>', menu)]
+    alfabet = ' aąbcćdeęfghijklłmnńoóprsśtuwyzźż'
+    assert len(nazwy) > 1
+    assert nazwy == sorted(nazwy, key=lambda t: [alfabet.find(c) for c in t.lower()])
 
 
 # ── zakladanie kont stanowisk ────────────────────────────────────────────────
@@ -195,13 +237,15 @@ STRONY = {
     MAGAZYN: ['/scanner/1', '/time-tracking', '/scan-paczki', '/scan-package'],
     POST_PROCESS: ['/dashboard', '/forecast', '/assignment', '/data-entry', '/stats', '/paczki',
                    '/worker-times', '/import-csv', '/general-stats', '/admin/users'],
+    DISPLAYS: ['/displays'],
+    ZWROTY: ['/zwroty'],
     USTAWIENIA: ['/admin/panel', '/admin/activities', '/admin/country-mapping',
                  '/admin/user-options', '/admin/category-labels', '/admin/settings',
                  '/admin/cost-mapping'],
 }
 
 
-@pytest.mark.parametrize('obszar', [MAGAZYN, POST_PROCESS, USTAWIENIA])
+@pytest.mark.parametrize('obszar', [MAGAZYN, POST_PROCESS, DISPLAYS, ZWROTY, USTAWIENIA])
 def test_strony_kafelka_wolaja_api_swojego_kafelka(client, obszar):
     """Mapa w logistat/obszary.py jest reczna: kazdy adres /api/… z HTML-a
     i skryptow strony kafelka pasuje do trasy przypisanej temu kafelkowi —

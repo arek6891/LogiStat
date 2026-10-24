@@ -21,7 +21,7 @@
                 <h1>LogiStat</h1>
                 <div class="subtitle">Workforce Management</div>
             </div>
-            {# Kafelki (2026-10-24): menu pokazuje tylko sekcje wybranego kafelka;
+            {# Kafelki (2026-10-24): menu pokazuje tylko sekcje wybranego kafelka, pozycje A→Z;
                bez wybranego — wszystkie sekcje roli. Powrot do kafelkow, gdy rola ma ich kilka. #}
             {% if obszary_roli|length > 1 %}
             <a href="{{ url_for('auth.kafelki') }}" class="kafelki-powrot">
@@ -31,10 +31,6 @@
             <ul class="sidebar-nav">
                 {% if 'magazyn' in menu_obszary %}
                 <li class="nav-section">👷 Magazyn</li>
-                <li><a href="{{ url_for('stanowisko.scanner', shift_number=1) }}"
-                        class="{% if request.endpoint == 'stanowisko.scanner' %}active{% endif %}">
-                        <span class="icon">📷</span> Skaner zmian
-                    </a></li>
                 <li><a href="{{ url_for('czas_pracy.time_tracking') }}"
                         class="{% if request.endpoint == 'czas_pracy.time_tracking' %}active{% endif %}">
                         <span class="icon">🕐</span> Czas pracy
@@ -47,10 +43,18 @@
                         class="{% if request.endpoint == 'stanowisko.scan_package' %}active{% endif %}">
                         <span class="icon">🔎</span> Paczki inspektor
                     </a></li>
+                <li><a href="{{ url_for('stanowisko.scanner', shift_number=1) }}"
+                        class="{% if request.endpoint == 'stanowisko.scanner' %}active{% endif %}">
+                        <span class="icon">📷</span> Skaner zmian
+                    </a></li>
                 {% endif %}
 
                 {% if 'post_process' in menu_obszary %}
                 <li class="nav-section">🧑‍💼 Post-Process</li>
+                <li><a href="{{ url_for('czas_pracy.worker_times') }}"
+                        class="{% if request.endpoint == 'czas_pracy.worker_times' %}active{% endif %}">
+                        <span class="icon">👥</span> Czasy pracowników
+                    </a></li>
                 <li><a href="{{ url_for('dashboard.dashboard') }}"
                         class="{% if request.endpoint == 'dashboard.dashboard' %}active{% endif %}">
                         <span class="icon">🏠</span> Dashboard
@@ -59,13 +63,9 @@
                         class="{% if request.endpoint == 'forecast.forecast_page' %}active{% endif %}">
                         <span class="icon">📈</span> Forecast
                     </a></li>
-                <li><a href="{{ url_for('przydzial.assignment') }}"
-                        class="{% if request.endpoint == 'przydzial.assignment' %}active{% endif %}">
-                        <span class="icon">📋</span> Przydzielanie
-                    </a></li>
-                <li><a href="{{ url_for('przydzial.data_entry') }}"
-                        class="{% if request.endpoint == 'przydzial.data_entry' %}active{% endif %}">
-                        <span class="icon">✏️</span> Wpis ilości
+                <li><a href="{{ url_for('imports.import_csv_page') }}"
+                        class="{% if request.endpoint == 'imports.import_csv_page' %}active{% endif %}">
+                        <span class="icon">📥</span> Import danych
                     </a></li>
                 <li><a href="{{ url_for('normy.stats') }}"
                         class="{% if request.endpoint == 'normy.stats' %}active{% endif %}">
@@ -75,13 +75,9 @@
                         class="{% if request.endpoint == 'paczki.paczki_view' %}active{% endif %}">
                         <span class="icon">📦</span> Paczki (dane)
                     </a></li>
-                <li><a href="{{ url_for('czas_pracy.worker_times') }}"
-                        class="{% if request.endpoint == 'czas_pracy.worker_times' %}active{% endif %}">
-                        <span class="icon">👥</span> Czasy pracowników
-                    </a></li>
-                <li><a href="{{ url_for('imports.import_csv_page') }}"
-                        class="{% if request.endpoint == 'imports.import_csv_page' %}active{% endif %}">
-                        <span class="icon">📥</span> Import danych
+                <li><a href="{{ url_for('przydzial.assignment') }}"
+                        class="{% if request.endpoint == 'przydzial.assignment' %}active{% endif %}">
+                        <span class="icon">📋</span> Przydzielanie
                     </a></li>
                 <li><a href="{{ url_for('rozliczenie.general_stats_page') }}"
                         class="{% if request.endpoint == 'rozliczenie.general_stats_page' %}active{% endif %}">
@@ -90,6 +86,26 @@
                 <li><a href="{{ url_for('admin.admin_users') }}"
                         class="{% if request.endpoint == 'admin.admin_users' %}active{% endif %}">
                         <span class="icon">👤</span> Użytkownicy
+                    </a></li>
+                <li><a href="{{ url_for('przydzial.data_entry') }}"
+                        class="{% if request.endpoint == 'przydzial.data_entry' %}active{% endif %}">
+                        <span class="icon">✏️</span> Wpis ilości
+                    </a></li>
+                {% endif %}
+
+                {% if 'displays' in menu_obszary %}
+                <li class="nav-section">📺 Akcje - Displays</li>
+                <li><a href="{{ url_for('displays.displays') }}"
+                        class="{% if request.endpoint == 'displays.displays' %}active{% endif %}">
+                        <span class="icon">📺</span> Displays
+                    </a></li>
+                {% endif %}
+
+                {% if 'zwroty' in menu_obszary %}
+                <li class="nav-section">↩️ Zwroty</li>
+                <li><a href="{{ url_for('zwroty.zwroty') }}"
+                        class="{% if request.endpoint == 'zwroty.zwroty' %}active{% endif %}">
+                        <span class="icon">↩️</span> Zwroty
                     </a></li>
                 {% endif %}
 

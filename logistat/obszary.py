@@ -1,4 +1,5 @@
-"""Kafelki po zalogowaniu (operacja 2026-10-24): Magazyn / Post-Process / Ustawienia.
+"""Kafelki po zalogowaniu (operacja 2026-10-24): Magazyn / Post-Process /
+Akcje - Displays / Zwroty / Ustawienia.
 
 Kazdy endpoint nalezy do jednego lub kilku obszarow (kafelkow), albo do
 `WSPOLNE` (logowanie, profil, ekran kafelkow). Rola decyduje, ktore kafelki
@@ -13,6 +14,8 @@ Czysta logika — bez Flaska i bazy (import z `aplikacja.py` i `web/`).
 
 MAGAZYN = 'magazyn'
 POST_PROCESS = 'post_process'
+DISPLAYS = 'displays'
+ZWROTY = 'zwroty'
 USTAWIENIA = 'ustawienia'
 
 # Kolejnosc = kolejnosc kafelkow. `start` = pierwszy ekran po wyborze kafelka.
@@ -25,6 +28,15 @@ OBSZARY = {
         'nazwa': 'Post-Process', 'ikona': '🧑‍💼', 'start': 'dashboard.dashboard',
         'opis': 'Lider: dashboard, przydzielanie, normy, paczki, import, statystyki, użytkownicy',
     },
+    # Nowe moduly (2026-10-24) — na razie puste ekrany startowe.
+    DISPLAYS: {
+        'nazwa': 'Akcje - Displays', 'ikona': '📺', 'start': 'displays.displays',
+        'opis': 'Nowy moduł — w przygotowaniu',
+    },
+    ZWROTY: {
+        'nazwa': 'Zwroty', 'ikona': '↩️', 'start': 'zwroty.zwroty',
+        'opis': 'Nowy moduł — w przygotowaniu',
+    },
     USTAWIENIA: {
         'nazwa': 'Ustawienia', 'ikona': '🛡️', 'start': 'admin.admin_panel',
         'opis': 'Admin: czynności, stawki, kraje, nazwy kategorii, progi',
@@ -34,8 +46,8 @@ OBSZARY = {
 # Rola → kafelki. Operator (skanowany na zmianie) nie loguje sie wcale.
 ROLE_OBSZARY = {
     'stanowisko': (MAGAZYN,),
-    'leader': (MAGAZYN, POST_PROCESS),
-    'admin': (MAGAZYN, POST_PROCESS, USTAWIENIA),
+    'leader': (MAGAZYN, POST_PROCESS, DISPLAYS, ZWROTY),
+    'admin': (MAGAZYN, POST_PROCESS, DISPLAYS, ZWROTY, USTAWIENIA),
 }
 
 # Dostepne zawsze po zalogowaniu (i przed wyborem kafelka).
@@ -89,6 +101,12 @@ _ENDPOINTY = {
         'admin.admin_users', 'admin.api_users', 'admin.api_user_create',
         'admin.api_user_update', 'admin.api_user_delete',
         'admin.api_user_options', 'admin.api_activities', 'admin.api_country_mappings',
+    },
+    DISPLAYS: {
+        'displays.displays',
+    },
+    ZWROTY: {
+        'zwroty.zwroty',
     },
     USTAWIENIA: {
         'admin.admin_panel', 'admin.admin_activities', 'admin.admin_country_mapping',
