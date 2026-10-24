@@ -3,6 +3,7 @@ from datetime import date, datetime
 
 from flask import Blueprint, abort, jsonify, render_template, request
 from flask_login import current_user
+from werkzeug.exceptions import HTTPException
 
 from logistat.czas import iso_z, local_day_bounds, local_today, teraz_utc
 from logistat.czas_pracy_dane import MAX_DNI_OSOBY, otwarci_szkoleni, wiersze_czasow
@@ -48,10 +49,13 @@ def stan_czasu_dzis(user):
     Zwraca `{'shift', 'events', 'work_ended', 'trwajace'}`; `trwajace` to
     otwarte stany z `TRYBY_CZASU` (wiecej `*_start` niz `*_end`, bez flagi na User).
     """
+    # Najwczesniejsza obecnosc dnia — ta sama, od ktorej wiersz Czasow pracownikow
+    # (wiersze_czasow). Byla najpozniejsza: przy skanie na obie zmiany przerwy
+    # szly na druga, a ekran pokazywal pierwsza bez zdarzen (przeglad 2026-10-24).
     attendance = ShiftAttendance.query.join(Shift).filter(
         ShiftAttendance.user_id == user.id,
         Shift.date == local_today()
-    ).order_by(ShiftAttendance.scanned_at.desc()).first()
+    ).order_by(ShiftAttendance.scanned_at.asc()).first()
     if not attendance:
         abort(400, f'{user.display_name} nie jest zeskanowany/a na zmianę dziś.')
 
@@ -218,7 +222,12 @@ def api_training_aktywne():
     wynik = []
     for uid in sorted(u for u, n in licznik.items() if n > 0):
         trener = db.session.get(User, uid)
-        stan = stan_czasu_dzis(trener)
+        try:
+            stan = stan_czasu_dzis(trener)
+        except HTTPException:
+            # Szkolacy bez dzisiejszej obecnosci (usunieta w trakcie) — pomin,
+            # zamiast wywracac liste na wszystkich stacjach.
+            continue
         if 'training' in stan['trwajace']:
             wynik.append(opis_szkolenia(trener, stan))
     return jsonify({'szkolenia': wynik}), 200

@@ -194,9 +194,16 @@ def otwarci_szkoleni(trener_id):
         WorkerTimeEvent.timestamp >= od)}
     wynik = []
     for uid, shift_id in sorted(pary):
-        typy = [e.event_type for e in WorkerTimeEvent.query.filter(
+        zdarzenia = WorkerTimeEvent.query.filter(
             WorkerTimeEvent.user_id == uid, WorkerTimeEvent.shift_id == shift_id,
-            WorkerTimeEvent.event_type.in_(('trainee_start', 'trainee_end')))]
-        if typy.count('trainee_start') > typy.count('trainee_end'):
+            WorkerTimeEvent.event_type.in_(('trainee_start', 'trainee_end'))
+        ).order_by(WorkerTimeEvent.timestamp, WorkerTimeEvent.id).all()
+        typy = [e.event_type for e in zdarzenia]
+        starty = [e for e in zdarzenia if e.event_type == 'trainee_start']
+        # Otwarte szkolenie nalezy do szkolacego z OSTATNIEGO startu (stany sie
+        # wykluczaja, wiec otwarty moze byc tylko jeden). Wczesniej wystarczal
+        # dowolny start u tego trenera — koniec szkolenia A zamykal osobe u B.
+        if (typy.count('trainee_start') > typy.count('trainee_end')
+                and starty[-1].training_lead_id == trener_id):
             wynik.append((db.session.get(User, uid), shift_id))
     return wynik
