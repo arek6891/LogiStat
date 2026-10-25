@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}LogiStat — wybierz obszar{% endblock %}
+{% block title %}{{ NAZWA_APLIKACJI }} — wybierz obszar{% endblock %}
 
 {# Kafelki po zalogowaniu (2026-10-24). Kafelek wybiera, ktore moduly pokazuje
    menu; dostep do ekranow wynika z roli. Lista kafelkow z roli
@@ -8,7 +8,7 @@
 <div class="kafelki-strona">
     <div class="kafelki-naglowek">
         <div class="logo-firmy"><img src="{{ static_v('img/logwin.svg') }}" alt="Logwin"></div>
-        <h1>LogiStat</h1>
+        <h1>{{ NAZWA_APLIKACJI }}</h1>
         <p class="subtitle">Witaj, {{ current_user.display_name }} — wybierz obszar pracy</p>
     </div>
 
@@ -33,5 +33,6 @@
     <form method="post" action="{{ url_for('auth.logout') }}" class="kafelki-wyloguj">
         <button type="submit" class="btn btn-ghost">Wyloguj</button>
     </form>
+    <p class="autorzy">Aplikację stworzyli i zaprojektowali: {{ AUTORZY_APLIKACJI }}</p>
 </div>
 {% endblock %}

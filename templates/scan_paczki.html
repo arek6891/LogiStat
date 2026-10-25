@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Czasy paczek — LogiStat{% endblock %}
+{% block title %}Czasy paczek — {{ NAZWA_APLIKACJI }}{% endblock %}
 
 {% block head %}
 <style>
@@ -213,7 +213,7 @@
             <div class="scan-input-wrap">
                 <input type="text" id="{{ prefix }}-emp" placeholder="Zeskanuj kod pracownika…"
                     autocomplete="off" {% if autofocus %}autofocus{% endif %}
-                    onkeydown="handleKey(event, '{{ prefix }}-emp', '{{ prefix }}-pkg')">
+                    onkeydown='handleKey(event, {{ (prefix ~ "-emp")|tojson }}, {{ (prefix ~ "-pkg")|tojson }})'>
                 <div class="emp-name" id="{{ prefix }}-emp-name"></div>
             </div>
         </div>
@@ -223,7 +223,7 @@
             <div class="scan-input-wrap">
                 <input type="text" id="{{ prefix }}-pkg" placeholder="Zeskanuj kod paczki…"
                     autocomplete="off" disabled
-                    onkeydown="handleKey(event, '{{ prefix }}-pkg', null, () => {{ akcja }})">
+                    onkeydown='handleKey(event, {{ (prefix ~ "-pkg")|tojson }}, null, () => {{ akcja }})'>
             </div>
         </div>
 {% endmacro %}
@@ -247,9 +247,9 @@
                2026-10-23): Anuluj czerwony po lewej, zapis zielony po prawej. #}
             <div class="qty-foot">
                 <button type="button" class="btn przycisk-stanowiska przycisk-anuluj"
-                        onclick="anulujKoniec('{{ prefix }}')">✖ Anuluj</button>
+                        onclick='anulujKoniec({{ prefix|tojson }})'>✖ Anuluj</button>
                 <button type="button" class="btn przycisk-stanowiska przycisk-zapisz"
-                        onclick="zapiszIlosci('{{ prefix }}')">{{ przycisk }}</button>
+                        onclick='zapiszIlosci({{ prefix|tojson }})'>{{ przycisk }}</button>
             </div>
         </div>
 {% endmacro %}
@@ -307,7 +307,7 @@
             Paczka <strong>nie zostanie zamknięta</strong> — następna osoba wbija zwykły „Start paczki".</p>
         {{ kroki('dok', "otworzPanelIlosci('dok')") }}
         {{ panel_ilosci('dok',
-            '📤 Wpisz tylko to, co TY przerobiłeś (każdą sztukę raz: pojedynczo, podwójnie, potrójnie albo uszkodzona). Paczka zostanie otwarta dla następnej osoby.',
+            '📤 Wpisz tylko to, co TY przerobiłeś (każdą sztukę raz: w tabeli jako pojedyncze, uszkodzone albo niesprocesowane, a podwójne i potrójne pod tabelą). Paczka zostanie otwarta dla następnej osoby.',
             '📤 Zapisz i przekaż') }}
         <div class="result-box" id="dok-result"></div>
         <div class="recent-list" id="dok-recent" style="display:none;">

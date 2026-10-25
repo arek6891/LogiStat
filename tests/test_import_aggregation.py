@@ -1,7 +1,8 @@
 """Niezmienniki agregacji importu — `process_import_rows`.
 
 `GeneralStat.amounts` jest czysta agregacja kartonow: pisze do niej tylko
-import (delta za nowe kartony) i `recompute_general_stat` (suma calej grupy).
+import i `recompute_general_stat` — zawsze z sumy calej grupy (od 2026-10-24 import
+tez; wczesniej dodawal delte za nowe kartony).
 Te testy pilnuja, ze paczka nie zostanie policzona dwa razy ani zgubiona.
 """
 from datetime import date
@@ -168,3 +169,15 @@ def test_nowa_linia_ma_pusty_category_data(acting_admin):
 
     assert set(cd) == set(STAT_CATEGORIES)
     assert all(v == {'amount': 0, 'cost': 0.0} for v in cd.values())
+
+
+def test_ponowny_import_liczy_amounts_z_sumy_nie_przyrostowo(acting_admin):
+    """Przeglad 2026-10-24: `amounts += nowe` przenosilo kazdy wczesniejszy
+    rozjazd (i gubilo sie przy dwoch importach naraz). Ma byc SUM(stueckzahl)."""
+    process_import_rows([row('B1', 10)], ZIEL)
+    gstat().amounts = 999          # rozjazd, np. po wyscigu dwoch importow
+    db.session.commit()
+
+    process_import_rows([row('B2', 5)], ZIEL)
+
+    assert gstat().amounts == 15

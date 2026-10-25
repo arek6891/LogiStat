@@ -1,6 +1,6 @@
 """Pomocniki wspolne dla tras: dekoratory rol, odczyt danych z zadania
 (400 przy zlej wartosci), bezpieczne przekierowanie po logowaniu."""
-from datetime import date
+from datetime import date, datetime, timezone
 from functools import wraps
 from urllib.parse import urlsplit
 
@@ -97,12 +97,32 @@ def parse_date(value, pole='date') -> date:
         raise BadRequest(f'Nieprawidłowa data w "{pole}" (oczekiwano YYYY-MM-DD).')
 
 
-def require_int(value, pole):
-    """Liczba calkowita albo 400 z nazwa pola."""
+def require_int(value, pole, minimum=None):
+    """Liczba calkowita (opcjonalnie >= minimum) albo 400 z nazwa pola."""
+    if isinstance(value, bool):
+        abort(400, f'Pole "{pole}" musi być liczbą całkowitą.')
     try:
-        return int(value)
+        n = int(value)
     except (TypeError, ValueError):
         abort(400, f'Pole "{pole}" musi być liczbą całkowitą.')
+    if minimum is not None and n < minimum:
+        abort(400, f'Pole "{pole}" nie może być mniejsze niż {minimum}.')
+    return n
+
+
+def parse_czas_utc(tekst):
+    """Czas z przegladarki → naive UTC albo 400. Przegladarka wysyla
+    `toISOString().slice(0,19)` (UTC bez strefy); czas ze strefa (`Z`, `+02:00`)
+    jest przeliczany na UTC. Wczesniej None / liczba konczyly sie 500-ka."""
+    if not isinstance(tekst, str) or not tekst.strip():
+        abort(400, 'Nieprawidłowy format czasu.')
+    try:
+        ts = datetime.fromisoformat(tekst.strip().replace('Z', '+00:00'))
+    except ValueError:
+        abort(400, 'Nieprawidłowy format czasu.')
+    if ts.tzinfo is not None:
+        ts = ts.astimezone(timezone.utc).replace(tzinfo=None)
+    return ts
 
 
 def bezpieczny_next(adres):

@@ -135,6 +135,25 @@ Quantities entered at package end are the **source of truth for `category_data`*
 - *`JSON.parse('{{ x|tojson|safe }}')`:* `tojson` w apostrofach JS — `"`/`\` w nazwie kategorii (edytuje admin) zmienialy literal i strona przestawala dzialac. Teraz `const x = {{ x|tojson }};` (tojson jest bezpieczny w `<script>`).
 - *`migrate_columns()`:* przy `IF NOT EXISTS` blad to zawsze prawdziwy blad, a except go polykal — aplikacja wstawala bez kolumny i padala na pierwszym zapytaniu. Teraz start przerywa `RuntimeError` z nazwa kolumny; lista w `MIGRACJE_KOLUMN` (stala modulu, test podmienia ja na zla kolumne).
 
+## Przeglad modulow menu i nazwa SaRa (2026-10-24)
+
+**Zgloszenie.** Operacja: przejrzec wszystkie moduly z menu („czy wszystko sie zgadza i nie ma bledow”), poprawic znalezione; nazwa na ekranach „SaRa”; na logowaniu i kafelkach stopka z autorami.
+
+**Jak.** Trzy przeglady kodu (Magazyn, Post-Process, Ustawienia + kafelki) i przeklikanie kazdego ekranu z menu w przegladarce jako admin / lider / stanowisko (tryb jasny i ciemny, kopia lokalna na danych syntetycznych — realnych danych z .31 nie kopiujemy). Ekrany: zero bledow JS i nieudanych API. Kod: lista bledow, kazdy poprawiony z testem, ktory najpierw padal.
+
+**Decyzje.**
+- *Nazwa:* tylko ekrany (`NAZWA_APLIKACJI`); pakiet, kontenery, bazy, domeny i klucz `localStorage` zostaja `logistat` — zmiana klucza motywu skasowalaby kazdemu wybor trybu ciemnego.
+- *XSS:* inline handler z tekstem z Jinja w apostrofach JS (kod paczki z importu na `/paczki`, kraj, czynnosc) — autoescape nie chroni, bo przegladarka odkodowuje `&#39;` przed JS. Regula: `onclick='f({{ x|tojson }})'`, pilnuje `test_xss.py`.
+- *Skaner zmian:* data obecnosci tylko z serwera — konto stanowiska ma sesje 30 dni i karta otwarta od wczoraj zapisywala obecnosc na wczoraj (rano wszyscy „nie sa zeskanowani dzis”).
+- *Usuwanie obecnosci przez stanowisko* — decyzja operacji 2026-10-25: konto stanowiska nie usuwa obecnosci wcale, nawet dzisiejszej (403, bez przycisku ✕); pomylke usuwa lider. Obecnosc ze zdarzeniami czasu pracy nie usuwa sie nikomu (409).
+- *Przydzielanie:* zapis podmienia tylko to, co widac na tablicy (osoby z zapisu + obecni przy aktywnych czynnosciach). Alternatywa „pokaz wylaczone czynnosci na tablicy” odrzucona — wylaczona czynnosc ma zniknac z wyboru.
+- *Import:* `amounts` linii z sumy pod blokada wiersza — `+=` przenosil rozjazdy i gubil sie przy dwoch importach naraz.
+- *Szkolenia:* otwarte szkolenie osoby nalezy do szkolacego z jej ostatniego `trainee_start`.
+- *Czas pracy:* nowe zdarzenia ida na najwczesniejsza obecnosc dnia (jak wiersz `/worker-times`), nie najpozniejsza; odczyt (stan i wiersz) bierze zdarzenia ze wszystkich obecnosci dnia — na `.31` byly 2 dni ze zdarzeniami na drugiej obecnosci (sprawdzone licznikiem, bez danych osobowych), po samej zmianie zapisu by zniknely.
+- *Skaner po polnocy:* przeladowanie porownuje dzien wg zegara przegladarki z dniem zaladowania strony, nie z `TODAY` serwera — tablet ze zla strefa przeladowywalby sie w kolko.
+- *Ostatni admin:* `active_admin_count()` blokuje wiersze wszystkich aktywnych adminow — dwaj admini degradujacy sie nawzajem naraz nie zostawia systemu bez admina.
+- *Uchwyt ⠿ w Czynnosciach:* usuniety (obiecywal zmiane kolejnosci, ktorej nie ma) — przeciaganie nie bylo zamawiane.
+
 ## Kafelki po zalogowaniu i konta stanowisk (2026-10-24)
 
 **Zgloszenie.** Operacja: rozdzielic wejscia do menu kafelkami zaraz po logowaniu; dla magazynu logowanie kontami stanowisko1, stanowisko2… widzacymi tylko moduly Pracownika (kafelek Magazyn); Lider → Post-Process; Admin → Ustawienia (tylko admin). Admin widzi 3 kafelki, lider 2, stanowisko 1.
@@ -143,7 +162,7 @@ Quantities entered at package end are the **source of truth for `category_data`*
 
 **Konstrukcja.** Prawa roli = dekoratory (`@magazyn_required` dla ekranow stanowisk = kazda rola z logowaniem; reszta bez zmian `@leader_required` / `@admin_required`) plus `pilnuj_obszaru()` (before_app_request), ktory na mapie endpoint → kafelki z czystego modulu `logistat/obszary.py` odmawia tylko ekranow spoza kafelkow roli, a dla stron ustawia kafelek menu. Mapa obejmuje kazda trase (test: nowa trasa bez wpisu = czerwony test), API wspoldzielone przez kilka kafelkow (np. `GET /api/activities` — Uzytkownicy i Czynnosci) maja kilka; drugi test sprawdza, ze kazde `/api/…` ze strony kafelka jest w tym kafelku (inaczej konto stanowiska dostaloby 403 na swoim ekranie). „Zmien haslo” ukryte dla stanowiska — konto wspolne, haslo zmienia admin.
 
-**Akcje - Displays i menu A→Z (2026-10-24, operacja).** Czwarty kafelek „Akcje - Displays” (📺, klucz `displays`) dla lidera i admina — nowy modul, na razie jeden pusty ekran `/displays` (`logistat/web/displays.py`, `@leader_required`), kolejnosc kafelkow: Magazyn, Post-Process, Akcje - Displays, Zwroty, Ustawienia (admin widzi 5, lider 4). Tak samo piaty kafelek „Zwroty” (↩️, klucz `zwroty`, pusty ekran `/zwroty`, `logistat/web/zwroty.py`) — tez lider i admin. Pozycje menu w kazdej sekcji ulozone alfabetycznie od A do Z (polskie litery wg alfabetu, „Czas pracy” przed „Czasy paczek”); sekcje zostaja w kolejnosci kafelkow. Pilnuje `test_menu_kafelka_alfabetycznie` — nowa pozycja menu idzie na swoje miejsce w alfabecie.
+**Akcje - Displays i menu A→Z (2026-10-24, operacja).** Czwarty kafelek „Akcje - Displays” (💍 — stojaki sklepowe na biżuterię i akcesoria, klucz `displays`; ikona Post-Process 📦 — paczki) dla lidera i admina — nowy modul, na razie jeden pusty ekran `/displays` (`logistat/web/displays.py`, `@leader_required`), kolejnosc kafelkow: Magazyn, Post-Process, Akcje - Displays, Zwroty, Ustawienia (admin widzi 5, lider 4). Tak samo piaty kafelek „Zwroty” (↩️, klucz `zwroty`, pusty ekran `/zwroty`, `logistat/web/zwroty.py`) — tez lider i admin. Pozycje menu w kazdej sekcji ulozone alfabetycznie od A do Z (polskie litery wg alfabetu, „Czas pracy” przed „Czasy paczek”); sekcje zostaja w kolejnosci kafelkow. Pilnuje `test_menu_kafelka_alfabetycznie` — nowa pozycja menu idzie na swoje miejsce w alfabecie.
 
 ## Grupy P1/P2/P3 i plan Post Processingu w Przydzielaniu (2026-10-23)
 

@@ -1,8 +1,9 @@
 """Czas pracy: skan przerw / Inne / konca pracy, szkolenia (trener + szkoleni), przeglad i korekta czasow."""
-from datetime import date, datetime
+from datetime import date
 
 from flask import Blueprint, abort, jsonify, render_template, request
 from flask_login import current_user
+from werkzeug.exceptions import HTTPException
 
 from logistat.czas import iso_z, local_day_bounds, local_today, teraz_utc
 from logistat.czas_pracy_dane import MAX_DNI_OSOBY, otwarci_szkoleni, wiersze_czasow
@@ -10,7 +11,8 @@ from logistat.extensions import db
 from logistat.models import (
     EVENT_TYPES, KOMUNIKATY_TRWANIA, Shift, ShiftAttendance, TRYBY_CZASU, TRYBY_SKANU, User,
     WorkerTimeEvent, get_setting_int)
-from logistat.web.wspolne import json_body, leader_required, magazyn_required, require_int
+from logistat.web.wspolne import (
+    json_body, leader_required, magazyn_required, parse_czas_utc, require_int)
 
 bp = Blueprint('czas_pracy', __name__)
 
@@ -48,16 +50,22 @@ def stan_czasu_dzis(user):
     Zwraca `{'shift', 'events', 'work_ended', 'trwajace'}`; `trwajace` to
     otwarte stany z `TRYBY_CZASU` (wiecej `*_start` niz `*_end`, bez flagi na User).
     """
-    attendance = ShiftAttendance.query.join(Shift).filter(
+    # Najwczesniejsza obecnosc dnia — ta sama, od ktorej wiersz Czasow pracownikow
+    # (wiersze_czasow). Byla najpozniejsza: przy skanie na obie zmiany przerwy
+    # szly na druga, a ekran pokazywal pierwsza bez zdarzen (przeglad 2026-10-24).
+    obecnosci = ShiftAttendance.query.join(Shift).filter(
         ShiftAttendance.user_id == user.id,
         Shift.date == local_today()
-    ).order_by(ShiftAttendance.scanned_at.desc()).first()
-    if not attendance:
+    ).order_by(ShiftAttendance.scanned_at.asc()).all()
+    if not obecnosci:
         abort(400, f'{user.display_name} nie jest zeskanowany/a na zmianę dziś.')
 
-    shift = attendance.shift
-    events = WorkerTimeEvent.query.filter_by(
-        user_id=user.id, shift_id=shift.id
+    # Nowe zdarzenia na pierwsza obecnosc; stan ze zdarzen WSZYSTKICH obecnosci
+    # dnia (do 2026-10-24 szly na najpozniejsza — tamte tez maja sie liczyc).
+    shift = obecnosci[0].shift
+    events = WorkerTimeEvent.query.filter(
+        WorkerTimeEvent.user_id == user.id,
+        WorkerTimeEvent.shift_id.in_({a.shift_id for a in obecnosci})
     ).order_by(WorkerTimeEvent.timestamp, WorkerTimeEvent.id).all()
 
     def otwarte(prefix):
@@ -218,7 +226,12 @@ def api_training_aktywne():
     wynik = []
     for uid in sorted(u for u, n in licznik.items() if n > 0):
         trener = db.session.get(User, uid)
-        stan = stan_czasu_dzis(trener)
+        try:
+            stan = stan_czasu_dzis(trener)
+        except HTTPException:
+            # Szkolacy bez dzisiejszej obecnosci (usunieta w trakcie) — pomin,
+            # zamiast wywracac liste na wszystkich stacjach.
+            continue
         if 'training' in stan['trwajace']:
             wynik.append(opis_szkolenia(trener, stan))
     return jsonify({'szkolenia': wynik}), 200
@@ -359,10 +372,7 @@ def api_wejscie_update(attendance_id):
     inaczej przerwa / koniec pracy wypadlyby przed poczatkiem pracy."""
     att = db.get_or_404(ShiftAttendance, attendance_id)
     data = json_body()
-    try:
-        ts = datetime.fromisoformat(str(data.get('timestamp', '')))
-    except ValueError:
-        abort(400, 'Nieprawidłowy format czasu.')
+    ts = parse_czas_utc(data.get('timestamp'))
     od, do = local_day_bounds(att.shift.date)
     if not (od <= ts < do):
         abort(400, f'Wejście musi być w dniu zmiany ({att.shift.date.strftime("%d.%m.%Y")}).')
@@ -395,10 +405,7 @@ def api_time_event_create():
         return jsonify({'error': 'Brakuje wymaganych pól.'}), 400
     if event_type not in EVENT_TYPES:
         return jsonify({'error': 'Nieprawidłowy typ zdarzenia.'}), 400
-    try:
-        ts = datetime.fromisoformat(str(ts_str))
-    except (TypeError, ValueError):
-        return jsonify({'error': 'Nieprawidłowy format czasu.'}), 400
+    ts = parse_czas_utc(ts_str)
 
     # Bez tego bledne id konczylo sie naruszeniem klucza obcego i 500-ka
     # (na Postgresie transakcja padala w commicie).
@@ -434,10 +441,7 @@ def api_time_event_update(event_id):
             return jsonify({'error': 'Ta osoba nie jest osobą szkolącą.'}), 400
         event.event_type = data['event_type']
     if 'timestamp' in data:
-        try:
-            event.timestamp = datetime.fromisoformat(data['timestamp'])
-        except ValueError:
-            return jsonify({'error': 'Nieprawidłowy format czasu.'}), 400
+        event.timestamp = parse_czas_utc(data['timestamp'])
     if 'note' in data:
         event.note = data['note']
     event.recorded_by = current_user.id

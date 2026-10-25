@@ -1,13 +1,15 @@
 """Stanowiska na hali: skaner zmian (obecnosc), Czasy paczek (start / koniec / do dokonczenia /
 zespol, tabela ilosci), podglad paczki i pracownika."""
 from flask import Blueprint, jsonify, render_template, request
+from flask_login import current_user
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
 from logistat.czas import local_today, teraz_utc
 from logistat.extensions import db
 from logistat.models import (
     ImportedCarton, Shift, ShiftAttendance, UDZIAL_PRZEKAZANA, UDZIAL_ZESPOL, UdzialPaczki,
-    User, get_or_create_shift)
+    User, WorkerTimeEvent, get_or_create_shift)
 from logistat.paczki import (
     lista_osob, otwarte_udzialy, parse_scan_categories, przelicz_ilosci_udzialow,
     zamknij_paczke_wielu_osob, zapisz_tabele_kartonu)
@@ -115,7 +117,8 @@ def scanner(shift_number):
                            shift_number=shift_number,
                            shift=shift,
                            attendances=attendances,
-                           today=today)
+                           today=today,
+                           moze_usuwac=current_user.role != 'stanowisko')
 
 
 @bp.route('/api/scan', methods=['POST'])
@@ -124,7 +127,9 @@ def api_scan():
     data = json_body()
     barcode = str(data.get('barcode') or '').strip()
     shift_number = parse_shift_number(data.get('shift_number', 1))
-    shift_date = parse_date(data.get('date'))
+    # Zawsze dzis (Warszawa) — `date` z body jest ignorowane (przeglad 2026-10-24):
+    # karta stanowiska otwarta od wczoraj (sesja 30 dni) zapisywala obecnosc na wczoraj.
+    shift_date = local_today()
 
     if not barcode:
         return jsonify({'error': 'Brak kodu kreskowego.'}), 400
@@ -143,17 +148,23 @@ def api_scan():
     existing = ShiftAttendance.query.filter_by(
         shift_id=shift.id, user_id=user.id
     ).first()
+    juz = {
+        'warning': f'{user.display_name} już zarejestrowany/a na zmianę {shift_number}.',
+        'user': user.to_dict(),
+        'already_scanned': True
+    }
     if existing:
-        return jsonify({
-            'warning': f'{user.display_name} już zarejestrowany/a na zmianę {shift_number}.',
-            'user': user.to_dict(),
-            'already_scanned': True
-        }), 200
+        return jsonify(juz), 200
 
     # Register attendance
     attendance = ShiftAttendance(shift_id=shift.id, user_id=user.id)
     db.session.add(attendance)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        # Dwa stanowiska zeskanowaly te osobe naraz — unikalny (shift, user).
+        db.session.rollback()
+        return jsonify(juz), 200
 
     return jsonify({
         'message': f'{user.display_name} zarejestrowany/a na zmianę {shift_number}.',
@@ -166,6 +177,16 @@ def api_scan():
 @magazyn_required
 def api_unscan(attendance_id):
     attendance = db.get_or_404(ShiftAttendance, attendance_id)
+    # Konto stanowiska (wspolne) nie usuwa obecnosci wcale — nawet dzisiejszej
+    # (operacje 2026-10-25); pomylke poprawia lider.
+    if current_user.role == 'stanowisko':
+        return jsonify({'error': 'Stanowisko nie usuwa rejestracji — poproś lidera.'}), 403
+    # Ze zdarzeniami czasu pracy (przerwa, Inne, szkolenie, koniec) obecnosc zostaje:
+    # po usunieciu zdarzenia znikaly z /worker-times, a otwarta przerwa „przepadala”.
+    if WorkerTimeEvent.query.filter_by(user_id=attendance.user_id,
+                                       shift_id=attendance.shift_id).first():
+        return jsonify({'error': 'Ta osoba ma już zapisane przerwy lub czas pracy na tej zmianie — '
+                                 'popraw je w „Czasy pracowników”, rejestracja zostaje.'}), 409
     db.session.delete(attendance)
     db.session.commit()
     return jsonify({'message': 'Usunięto rejestrację.'}), 200

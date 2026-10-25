@@ -27,8 +27,10 @@ def wiersze_czasow(date_from, date_to, user_id=None):
     if user_id is not None:
         q = q.filter(ShiftAttendance.user_id == user_id)
     pierwsza = {}
+    zmiany_dnia = {}    # (dzien, osoba) → shift_id wszystkich obecnosci tego dnia
     for att in q.all():
         klucz = (att.shift.date, att.user_id)
+        zmiany_dnia.setdefault(klucz, set()).add(att.shift_id)
         if klucz not in pierwsza or att.scanned_at < pierwsza[klucz].scanned_at:
             pierwsza[klucz] = att
     if not pierwsza:
@@ -46,19 +48,23 @@ def wiersze_czasow(date_from, date_to, user_id=None):
         if nazwa not in lista:
             lista.append(nazwa)
 
-    # Zdarzenia wszystkich wierszy jednym zapytaniem (filtr osoby: do 92 dni).
+    # Zdarzenia wszystkich wierszy jednym zapytaniem (filtr osoby: do 92 dni) — ze
+    # wszystkich obecnosci dnia: do 2026-10-24 przy dwoch obecnosciach zdarzenia
+    # szly na pozniejsza, a wiersz jest od najwczesniejszej.
+    dzien_zmiany = {sid: d for (d, _), sids in zmiany_dnia.items() for sid in sids}
     zdarzenia = {}
     for e in (WorkerTimeEvent.query
-              .filter(WorkerTimeEvent.shift_id.in_({a.shift_id for a in pierwsza.values()}),
+              .filter(WorkerTimeEvent.shift_id.in_(set(dzien_zmiany)),
                       WorkerTimeEvent.user_id.in_({u for _, u in pierwsza}))
               .options(joinedload(WorkerTimeEvent.user), joinedload(WorkerTimeEvent.recorder))
               .order_by(WorkerTimeEvent.timestamp).all()):
-        zdarzenia.setdefault((e.user_id, e.shift_id), []).append(e)
+        if e.shift_id in zmiany_dnia.get((dzien_zmiany[e.shift_id], e.user_id), ()):
+            zdarzenia.setdefault((e.user_id, dzien_zmiany[e.shift_id]), []).append(e)
 
     wynik = []
     for (dzien, uid), att in pierwsza.items():
         wiersz = _compute_worker_times(uid, att.shift, att.scanned_at,
-                                       zdarzenia.get((uid, att.shift_id), []))
+                                       zdarzenia.get((uid, dzien), []))
         wiersz.update({
             'date':          dzien.isoformat(),
             'user_id':       uid,
@@ -194,9 +200,16 @@ def otwarci_szkoleni(trener_id):
         WorkerTimeEvent.timestamp >= od)}
     wynik = []
     for uid, shift_id in sorted(pary):
-        typy = [e.event_type for e in WorkerTimeEvent.query.filter(
+        zdarzenia = WorkerTimeEvent.query.filter(
             WorkerTimeEvent.user_id == uid, WorkerTimeEvent.shift_id == shift_id,
-            WorkerTimeEvent.event_type.in_(('trainee_start', 'trainee_end')))]
-        if typy.count('trainee_start') > typy.count('trainee_end'):
+            WorkerTimeEvent.event_type.in_(('trainee_start', 'trainee_end'))
+        ).order_by(WorkerTimeEvent.timestamp, WorkerTimeEvent.id).all()
+        typy = [e.event_type for e in zdarzenia]
+        starty = [e for e in zdarzenia if e.event_type == 'trainee_start']
+        # Otwarte szkolenie nalezy do szkolacego z OSTATNIEGO startu (stany sie
+        # wykluczaja, wiec otwarty moze byc tylko jeden). Wczesniej wystarczal
+        # dowolny start u tego trenera — koniec szkolenia A zamykal osobe u B.
+        if (typy.count('trainee_start') > typy.count('trainee_end')
+                and starty[-1].training_lead_id == trener_id):
             wynik.append((db.session.get(User, uid), shift_id))
     return wynik

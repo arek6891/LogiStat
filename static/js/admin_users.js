@@ -119,6 +119,8 @@ async function deactivateUser(id) {
         if (res.ok) {
             showToast('Dezaktywowano.', 'success');
             location.reload();
+        } else {
+            await pokazBladOdpowiedzi(res, 'Nie dezaktywowano');
         }
     } catch (err) {
         showToast('Błąd.', 'error');
@@ -135,6 +137,8 @@ async function activateUser(id) {
         if (res.ok) {
             showToast('Aktywowano.', 'success');
             location.reload();
+        } else {
+            await pokazBladOdpowiedzi(res, 'Nie aktywowano');
         }
     } catch (err) {
         showToast('Błąd.', 'error');

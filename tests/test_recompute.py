@@ -111,3 +111,10 @@ def test_bez_uebergabe_lub_daty_jest_no_opem(acting_admin):
     db.session.commit()
 
     assert GeneralStat.query.count() == 0
+
+
+def test_zlaczenie_linii_nie_ucina_polowek():
+    """Przeglad 2026-10-24: _suma_kategorii robila int() — 7,5 + 1 dawalo 8."""
+    from logistat.rozliczenie import _suma_kategorii
+    s = _suma_kategorii({'labelling_tvl': {'amount': 7.5}}, {'labelling_tvl': {'amount': 1}})
+    assert s['labelling_tvl']['amount'] == 8.5

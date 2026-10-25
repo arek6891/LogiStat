@@ -256,7 +256,7 @@ function otworzQty(btn) {
     if (udzialy.length) {
         // Paczka kilku osob: pola pokazuja SUME, tu rozbicie — poprawka zmienia sume.
         kto.textContent = 'Wpisali: ' + udzialy.map(u =>
-            `${u.kto} ${u.otwarty ? '(pracuje)' : u.suma + ' szt.'}`).join(' · ')
+            `${u.kto} ${u.otwarty ? '(pracuje)' : u.sztuki + ' szt.'}`).join(' · ')
             + (btn.dataset.koniec ? ` · koniec ${btn.dataset.koniec}` : ' · paczka niezakończona');
     } else {
         kto.textContent = btn.dataset.koniec

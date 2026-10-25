@@ -102,11 +102,13 @@ ROLE_Z_LOGOWANIEM = ('stanowisko', 'leader', 'admin')
 
 
 def active_admin_count(exclude_id=None):
-    """Ilu aktywnych adminow zostanie, jesli pominac `exclude_id`."""
-    q = User.query.filter_by(role='admin', is_active_user=True)
-    if exclude_id is not None:
-        q = q.filter(User.id != exclude_id)
-    return q.count()
+    """Ilu aktywnych adminow zostanie, jesli pominac `exclude_id`.
+
+    Blokuje wiersze WSZYSTKICH aktywnych adminow (FOR UPDATE) do konca transakcji:
+    dwaj admini degradujacy sie nawzajem naraz przechodzili obaj i nie zostawal
+    zaden (przeglad 2026-10-24). Ten sam zbior blokad = drugi czeka na pierwszego."""
+    admini = User.query.filter_by(role='admin', is_active_user=True).with_for_update().all()
+    return sum(1 for u in admini if u.id != exclude_id)
 
 
 class ProbaLogowania(db.Model):

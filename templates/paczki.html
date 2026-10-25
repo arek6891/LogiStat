@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Paczki (Dane CSV) — LogiStat{% endblock %}
+{% block title %}Paczki (Dane CSV) — {{ NAZWA_APLIKACJI }}{% endblock %}
 {% block content %}
 <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
     <div>
@@ -241,7 +241,7 @@
                     <span style="color:var(--text-muted);">—</span>
                     {% endif %}
                     <button class="btn btn-ghost btn-sm" style="margin-left:.5rem;padding:2px 6px;font-size:.75rem;"
-                        onclick="openReassign({{ item.id }}, '{{ item.barcode }}', {{ item.processed_by or 'null' }})"
+                        onclick='openReassign({{ item.id }}, {{ item.barcode|tojson }}, {{ item.processed_by or "null" }})'
                         title="Przepisz pracownika">✎</button>
                     {% if item.udzialy %}
                     {# Paczka kilku osob (przekazana / zespol): kto, kiedy, ile wpisal #}

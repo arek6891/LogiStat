@@ -67,6 +67,8 @@ async function loadPlanDnia() {
     const box = document.getElementById('planDzien');
     try {
         const res = await fetch('/api/dashboard/plik?date=' + encodeURIComponent(inp.value));
+        // Bez sprawdzenia 400/401 pokazywalo mylace „Brak paczek”.
+        if (!res.ok) throw new Error(res.status);
         box.innerHTML = renderPlan(await res.json());
     } catch {
         box.innerHTML = '<div class="card" style="color:var(--danger);">Błąd ładowania.</div>';

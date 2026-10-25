@@ -1,10 +1,10 @@
 {% extends 'base.html' %}
-{% block title %}LogiStat — Login{% endblock %}
+{% block title %}{{ NAZWA_APLIKACJI }} — Login{% endblock %}
 
 {% block content_noauth %}
 <div class="login-page">
     <div class="login-card card">
-        <h1>LogiStat</h1>
+        <h1>{{ NAZWA_APLIKACJI }}</h1>
         <p class="subtitle">Zaloguj się — stanowisko, lider lub administrator</p>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -26,5 +26,6 @@
             <button type="submit" class="btn btn-primary btn-lg">Zaloguj</button>
         </form>
     </div>
+    <p class="autorzy">Aplikację stworzyli i zaprojektowali: {{ AUTORZY_APLIKACJI }}</p>
 </div>
 {% endblock %}

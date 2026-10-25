@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}LogiStat{% endblock %}</title>
+    <title>{% block title %}{{ NAZWA_APLIKACJI }}{% endblock %}</title>
     <link rel="icon" type="image/svg+xml" href="{{ static_v('favicon.svg') }}">
     <link rel="stylesheet" href="{{ static_v('style.css') }}">
     <script src="{{ static_v('js/motyw.js') }}"></script>
@@ -18,7 +18,7 @@
             <div class="sidebar-logo">
                 {# Logo na bialej plakietce — na zielonym/grafitowym menu szary napis by zniknal #}
                 <div class="logo-firmy"><img src="{{ static_v('img/logwin.svg') }}" alt="Logwin"></div>
-                <h1>LogiStat</h1>
+                <h1>{{ NAZWA_APLIKACJI }}</h1>
                 <div class="subtitle">Workforce Management</div>
             </div>
             {# Kafelki (2026-10-24): menu pokazuje tylko sekcje wybranego kafelka, pozycje A→Z;
@@ -50,7 +50,7 @@
                 {% endif %}
 
                 {% if 'post_process' in menu_obszary %}
-                <li class="nav-section">🧑‍💼 Post-Process</li>
+                <li class="nav-section">📦 Post-Process</li>
                 <li><a href="{{ url_for('czas_pracy.worker_times') }}"
                         class="{% if request.endpoint == 'czas_pracy.worker_times' %}active{% endif %}">
                         <span class="icon">👥</span> Czasy pracowników
@@ -94,10 +94,10 @@
                 {% endif %}
 
                 {% if 'displays' in menu_obszary %}
-                <li class="nav-section">📺 Akcje - Displays</li>
+                <li class="nav-section">💍 Akcje - Displays</li>
                 <li><a href="{{ url_for('displays.displays') }}"
                         class="{% if request.endpoint == 'displays.displays' %}active{% endif %}">
-                        <span class="icon">📺</span> Displays
+                        <span class="icon">💍</span> Displays
                     </a></li>
                 {% endif %}
 
@@ -154,6 +154,15 @@
 
     <div class="toast-container" id="toastContainer"></div>
 
+    {# Komunikaty flash na zwyklych ekranach (przeglad 2026-10-24): odmowa dostepu
+       przekierowuje na /start, a stanowisko leci stamtad od razu na swoj ekran —
+       bez tego komunikat czekal w sesji do wylogowania. Logowanie, kafelki i
+       profil pokazuja je same. #}
+    {% if current_user.is_authenticated and not bez_menu and not wlasne_komunikaty %}
+    <script>
+        const KOMUNIKATY_FLASH = {{ get_flashed_messages(with_categories=true)|tojson }};
+    </script>
+    {% endif %}
     <script src="{{ static_v('js/base.js') }}"></script>
     {% block scripts %}{% endblock %}
 </body>

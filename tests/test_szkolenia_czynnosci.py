@@ -88,6 +88,8 @@ def test_odznaczone_szkolenie_nie_zdejmuje_zapisanego_przydzialu(leader_client):
     a1, a2 = czynnosci(2)
     przeszkol(u, a1)
     przeszkol(inna, a2)
+    obecny(u)       # na tablicy sa tylko obecni — „zdjeta” = przeciagnieta z czynnosci
+    obecny(inna)
     assert zapisz(leader_client, (u, a1)).status_code == 200
     SzkolenieCzynnosci.query.filter_by(user_id=u.id).delete()
     db.session.commit()

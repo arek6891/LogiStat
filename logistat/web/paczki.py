@@ -13,7 +13,7 @@ from logistat.extensions import db
 from logistat.import_paczek import _cell_to_date
 from logistat.models import CountryMapping, ImportedCarton, UdzialPaczki, User, etykiety_kategorii
 from logistat.paczki import (
-    bledy_paczki, lista_osob, otwarte_udzialy, parse_scan_categories, przelicz_ilosci_udzialow,
+    bledy_paczki, lista_osob, odswiez_roznice, otwarte_udzialy, parse_scan_categories, przelicz_ilosci_udzialow,
     zamknij_paczke_wielu_osob, zapisz_tabele_kartonu)
 from logistat.rozliczenie import klucz_linii, recompute_general_stat
 from logistat.tabela_ilosci import (
@@ -378,12 +378,17 @@ def api_package_update(carton_id):
     carton.modified_by = current_user.id
 
     new_group = klucz_linii(carton)
+    # ❗ liczy sie wzgledem Stückzahl — po jej zmianie flaga musi sie odswiezyc.
+    odswiez_roznice(carton)
 
     try:
         db.session.flush()  # push the carton UPDATE so recompute SUMs see new values / catch collision
         recompute_general_stat(*old_group, actor_id=current_user.id)
         if new_group != old_group:
-            recompute_general_stat(*new_group, actor_id=current_user.id)
+            # Paczka z ilosciami ze skanu niesie je na nowa linie — bez from_scan
+            # nowa linia powstawala 'manual' z pustymi kategoriami (przeglad 2026-10-24).
+            recompute_general_stat(*new_group, actor_id=current_user.id,
+                                   from_scan=bool(carton.get_scan_categories()))
         db.session.commit()
     except IntegrityError:
         db.session.rollback()

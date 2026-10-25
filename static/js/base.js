@@ -12,6 +12,27 @@ function escapeHtml(value) {
         .replaceAll("'", '&#39;');
 }
 
+// Komunikaty flash z serwera (base.html) — np. odmowa dostepu po przekierowaniu.
+document.addEventListener('DOMContentLoaded', () => {
+    if (typeof KOMUNIKATY_FLASH === 'undefined') return;
+    for (const [rodzaj, tekst] of KOMUNIKATY_FLASH) showToast(tekst, rodzaj === 'error' ? 'error' : 'success');
+});
+
+// Dzisiejsza data YYYY-MM-DD w strefie przegladarki (hala = Warszawa).
+// Nie `valueAsDate` z new Date() — to bierze dzien UTC, wiec miedzy polnoca
+// a 1:00/2:00 pole pokazywalo wczoraj, a autozapis pisal pod wczoraj.
+function dzisLokalnie() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Komunikat bledu odpowiedzi API (`data.error`), a bez JSON-a — kod HTTP.
+// Dotad czesc przyciskow przy 400/403 nie mowila nic (przeglad 2026-10-24).
+async function pokazBladOdpowiedzi(res, domyslny = 'Nie udało się') {
+    const dane = await res.json().catch(() => ({}));
+    showToast(dane.error || `${domyslny} (błąd ${res.status}).`, 'error');
+}
+
 function showToast(message, type = 'success') {
     const container = document.getElementById('toastContainer');
     const toast = document.createElement('div');

@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}LogiStat — Mapowanie krajów i zleceń{% endblock %}
+{% block title %}{{ NAZWA_APLIKACJI }} — Mapowanie krajów i zleceń{% endblock %}
 
 {% block content %}
 <div class="page-header">
@@ -38,10 +38,10 @@
                     </td>
                     <td style="padding:12px 16px;text-align:right;">
                         <button class="btn btn-ghost btn-sm"
-                            onclick="editMapping({{ m.id }}, '{{ m.country|e }}', '{{ m.innenauftrag|e }}')">✏️
+                            onclick='editMapping({{ m.id }}, {{ m.country|tojson }}, {{ m.innenauftrag|tojson }})'>✏️
                             Edytuj</button>
                         <button class="btn btn-ghost btn-sm" style="color:var(--danger);"
-                            onclick="deleteMapping({{ m.id }}, '{{ m.country|e }}')">🗑️ Usuń</button>
+                            onclick='deleteMapping({{ m.id }}, {{ m.country|tojson }})'>🗑️ Usuń</button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -82,7 +82,7 @@
         <input type="hidden" id="deleteId" value="">
         <div class="modal-actions">
             <button class="btn btn-ghost" onclick="closeDeleteModal()">Anuluj</button>
-            <button class="btn btn-primary" style="background:var(--danger);" onclick="confirmDelete()">Usuń</button>
+            <button class="btn btn-danger" onclick="confirmDelete()">Usuń</button>
         </div>
     </div>
 </div>

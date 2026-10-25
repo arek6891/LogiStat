@@ -21,7 +21,7 @@ const moznaPrzydzielic = (uid, aid) =>
     Number(aid) === 0 || przeszkolony(uid, aid) || zapisanePary.has(para(uid, aid));
 
 // Init date to today
-document.getElementById('assignDate').valueAsDate = new Date();
+document.getElementById('assignDate').value = dzisLokalnie();
 loadedDate = document.getElementById('assignDate').value;
 
 async function switchShift(num) {
@@ -35,8 +35,13 @@ async function switchShift(num) {
 }
 
 // ── Load assignment data ──
+// Tablica w trakcie wczytywania innej zmiany / daty: karty sa jeszcze stare,
+// a `currentShift` juz nowy — zapis poszedlby pod zla zmiane (przeglad 2026-10-24).
+let wczytywanie = false;
+
 async function loadData() {
     const dateVal = document.getElementById('assignDate').value;
+    wczytywanie = true;
     try {
         const res = await fetch(`/api/assignment/data?date=${dateVal}&shift_number=${currentShift}`);
         const data = await res.json();
@@ -53,6 +58,8 @@ async function loadData() {
         renderBoard(data);
     } catch (err) {
         showToast('Błąd ładowania danych.', 'error');
+    } finally {
+        wczytywanie = false;
     }
 }
 
@@ -61,20 +68,27 @@ function renderBoard(data) {
     document.querySelectorAll('.assignment-drop-zone').forEach(z => z.innerHTML = '');
     selectedCards.clear();
 
+    // Strefa czynnosci, ktora jest na tablicy (aktywna) — przydzial do wylaczonej
+    // nie przykrywa aktywnego.
     const assignedMap = {};
     data.assignments.forEach(a => {
-        assignedMap[a.user_id] = a.activity_id;
+        if (document.getElementById(`zone-${a.activity_id}`)) assignedMap[a.user_id] = a.activity_id;
     });
 
-    // Render assigned users into their activity zones
+    // Kazdy obecny ma karte: bez strefy (czynnosc wylaczona w trakcie zmiany)
+    // laduje w Nieprzydzielonych — wczesniej znikal z tablicy (przeglad 2026-10-24).
+    // Serwer zostawia jego przydzial, dopoki lider go nie przeciagnie.
     data.attendees.forEach(user => {
-        const activityId = assignedMap[user.id] || 0;
-        const zoneId = activityId === 0 ? 'unassignedZone' : `zone-${activityId}`;
-        const zone = document.getElementById(zoneId);
-        if (zone) {
-            zone.appendChild(createUserCard(user));
-        }
+        const zone = document.getElementById(`zone-${assignedMap[user.id] || 0}`)
+            || document.getElementById('unassignedZone');
+        zone.appendChild(createUserCard(user));
     });
+    const wylaczone = (data.w_wylaczonych || []).filter(w => !assignedMap[w.user_id]);
+    if (wylaczone.length) {
+        const nazwy = [...new Set(wylaczone.map(w => w.czynnosc))].join(', ');
+        showToast(`${wylaczone.length} os. przydzielonych do wyłączonej czynności (${nazwy}) — są w „Nieprzydzielonych”. `
+            + 'Ich przydział zostaje, dopóki ich nie przeciągniesz.', 'warning');
+    }
 
     updateCounts();
 }
@@ -351,6 +365,11 @@ async function loadSuggestions() {
 // zbierany TERAZ, a wersja w chwili wysylki — kolejne zapisy tej zmiany
 // ida jeden po drugim (klucz), wiec kazdy dostaje wersje z poprzedniego.
 function saveAssignments() {
+    if (wczytywanie) {
+        // Wczytywanie i tak zaraz przerysuje tablice ze stanu z bazy.
+        showToast('Tablica się jeszcze wczytuje — przeciągnij ponownie za chwilę.', 'warning');
+        return;
+    }
     const assignments = [];
     document.querySelectorAll('.assignment-drop-zone').forEach(zone => {
         const activityId = parseInt(zone.dataset.activity);

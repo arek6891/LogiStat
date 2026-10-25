@@ -7,13 +7,18 @@ from logistat.extensions import db
 from logistat.models import ImportedCarton
 
 
+def _w_toku():
+    """W toku = ktos przy niej pracuje albo czeka na dokonczenie po poprzedniej
+    osobie. Jedna definicja dla planu pliku i Podsumowania (przeglad 2026-10-24)."""
+    return and_(ImportedCarton.scan_end_at.is_(None),
+                or_(ImportedCarton.scan_start_at.isnot(None), ImportedCarton.udzialy.any()))
+
+
 def _agregaty_planu():
     """Kolumny planu pliku: paczek, sztuk, zrobione, zrobione szt., w toku.
     Jedna definicja dla jednego dnia (Dzis / Wybrany dzien) i zakresu (Per Loading date)."""
     zrobiona = ImportedCarton.scan_end_at.isnot(None)
-    # W toku = ktos przy niej pracuje albo czeka na dokonczenie po poprzedniej osobie.
-    w_toku = and_(ImportedCarton.scan_end_at.is_(None),
-                  or_(ImportedCarton.scan_start_at.isnot(None), ImportedCarton.udzialy.any()))
+    w_toku = _w_toku()
     return (
         func.count(ImportedCarton.id),
         func.coalesce(func.sum(ImportedCarton.stueckzahl), 0),
@@ -70,7 +75,7 @@ def zalegle_wg_daty_pliku(od=None, do=None):
         ImportedCarton.data_pliku,
         func.count(ImportedCarton.id),
         func.coalesce(func.sum(ImportedCarton.stueckzahl), 0),
-        func.coalesce(func.sum(case((ImportedCarton.scan_start_at.isnot(None), 1), else_=0)), 0),
+        func.coalesce(func.sum(case((_w_toku(), 1), else_=0)), 0),
     ).filter(ImportedCarton.scan_end_at.is_(None))
     if od:
         q = q.filter(ImportedCarton.data_pliku >= od)
