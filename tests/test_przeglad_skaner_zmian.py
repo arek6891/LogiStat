@@ -72,7 +72,8 @@ def test_obecnosc_bez_zdarzen_usuwa_sie(leader_client):
     assert db.session.get(ShiftAttendance, aid) is None
 
 
-def test_stanowisko_usuwa_tylko_dzisiejsza_obecnosc(client):
+def test_stanowisko_nie_usuwa_obecnosci(client):
+    """Operacje 2026-10-25: konto stanowiska nie usuwa obecnosci wcale, nawet dzisiejszej."""
     u = make_user('operator', barcode_id='EMP5')
     stara = Shift(date=local_today() - timedelta(days=2), shift_number=1)
     db.session.add(stara)
@@ -86,7 +87,19 @@ def test_stanowisko_usuwa_tylko_dzisiejsza_obecnosc(client):
     assert client.delete(f'/api/scan/{a.id}').status_code == 403
     assert db.session.get(ShiftAttendance, a.id) is not None
     dzis = _obecnosc(client, 'EMP5')
-    assert client.delete(f'/api/scan/{dzis}').status_code == 200
+    assert client.delete(f'/api/scan/{dzis}').status_code == 403
+    assert db.session.get(ShiftAttendance, dzis) is not None
+    strona = client.get('/scanner/1').get_data(as_text=True)
+    assert 'removeAttendance(' not in strona.split('<script')[0]
+    assert 'const MOZE_USUWAC = false' in strona
+
+
+def test_lider_widzi_przycisk_usuwania(leader_client):
+    make_user('operator', barcode_id='EMP7')
+    _obecnosc(leader_client, 'EMP7')
+    strona = leader_client.get('/scanner/1').get_data(as_text=True)
+    assert 'removeAttendance(' in strona
+    assert 'const MOZE_USUWAC = true' in strona
 
 
 def test_zdarzenie_sprawdzane_dla_tej_zmiany(leader_client):

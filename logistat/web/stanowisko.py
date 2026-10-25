@@ -117,7 +117,8 @@ def scanner(shift_number):
                            shift_number=shift_number,
                            shift=shift,
                            attendances=attendances,
-                           today=today)
+                           today=today,
+                           moze_usuwac=current_user.role != 'stanowisko')
 
 
 @bp.route('/api/scan', methods=['POST'])
@@ -176,10 +177,10 @@ def api_scan():
 @magazyn_required
 def api_unscan(attendance_id):
     attendance = db.get_or_404(ShiftAttendance, attendance_id)
-    # Konto stanowiska (wspolne) poprawia tylko dzisiejsza pomylke; starsze — lider.
-    if current_user.role == 'stanowisko' and attendance.shift.date != local_today():
-        return jsonify({'error': 'Stanowisko może usunąć tylko dzisiejszą rejestrację — '
-                                 'starszą usuwa lider.'}), 403
+    # Konto stanowiska (wspolne) nie usuwa obecnosci wcale — nawet dzisiejszej
+    # (operacje 2026-10-25); pomylke poprawia lider.
+    if current_user.role == 'stanowisko':
+        return jsonify({'error': 'Stanowisko nie usuwa rejestracji — poproś lidera.'}), 403
     # Ze zdarzeniami czasu pracy (przerwa, Inne, szkolenie, koniec) obecnosc zostaje:
     # po usunieciu zdarzenia znikaly z /worker-times, a otwarta przerwa „przepadala”.
     if WorkerTimeEvent.query.filter_by(user_id=attendance.user_id,

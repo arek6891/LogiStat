@@ -31,7 +31,7 @@
                 <div class="user-name">{{ a.user.display_name }}</div>
                 <div class="user-time">{{ a.scanned_at | localdt('%H:%M:%S') }}</div>
             </div>
-            <button class="remove-btn" onclick="removeAttendance({{ a.id }})" title="Usuń">✕</button>
+            {% if moze_usuwac %}<button class="remove-btn" onclick="removeAttendance({{ a.id }})" title="Usuń">✕</button>{% endif %}
         </div>
         {% endfor %}
     </div>
@@ -42,6 +42,7 @@
 <script>
     const SHIFT_NUMBER = {{ shift_number|tojson }};
     const TODAY = {{ today.isoformat()|tojson }};
+    const MOZE_USUWAC = {{ moze_usuwac|tojson }};
 </script>
 <script src="{{ static_v('js/scanner.js') }}"></script>
 {% endblock %}

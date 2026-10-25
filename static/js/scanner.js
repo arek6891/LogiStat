@@ -79,7 +79,7 @@ function addScannedCard(user, attendance) {
         <div class="user-name">${escapeHtml(user.display_name)}</div>
         <div class="user-time">${time}</div>
     </div>
-    <button class="remove-btn" onclick="removeAttendance(${attendance.id})" title="Usuń">✕</button>
+    ${MOZE_USUWAC ? `<button class="remove-btn" onclick="removeAttendance(${attendance.id})" title="Usuń">✕</button>` : ''}
 `;
     scannedList.prepend(card);
 }

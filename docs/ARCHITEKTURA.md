@@ -145,7 +145,7 @@ Quantities entered at package end are the **source of truth for `category_data`*
 - *Nazwa:* tylko ekrany (`NAZWA_APLIKACJI`); pakiet, kontenery, bazy, domeny i klucz `localStorage` zostaja `logistat` — zmiana klucza motywu skasowalaby kazdemu wybor trybu ciemnego.
 - *XSS:* inline handler z tekstem z Jinja w apostrofach JS (kod paczki z importu na `/paczki`, kraj, czynnosc) — autoescape nie chroni, bo przegladarka odkodowuje `&#39;` przed JS. Regula: `onclick='f({{ x|tojson }})'`, pilnuje `test_xss.py`.
 - *Skaner zmian:* data obecnosci tylko z serwera — konto stanowiska ma sesje 30 dni i karta otwarta od wczoraj zapisywala obecnosc na wczoraj (rano wszyscy „nie sa zeskanowani dzis”).
-- *Usuwanie obecnosci przez stanowisko* (pytanie do operacji otwarte): na razie zachowawczo — tylko dzisiejsza, a obecnosc ze zdarzeniami czasu pracy nie usuwa sie nikomu (409).
+- *Usuwanie obecnosci przez stanowisko* — decyzja operacji 2026-10-25: konto stanowiska nie usuwa obecnosci wcale, nawet dzisiejszej (403, bez przycisku ✕); pomylke usuwa lider. Obecnosc ze zdarzeniami czasu pracy nie usuwa sie nikomu (409).
 - *Przydzielanie:* zapis podmienia tylko to, co widac na tablicy (osoby z zapisu + obecni przy aktywnych czynnosciach). Alternatywa „pokaz wylaczone czynnosci na tablicy” odrzucona — wylaczona czynnosc ma zniknac z wyboru.
 - *Import:* `amounts` linii z sumy pod blokada wiersza — `+=` przenosil rozjazdy i gubil sie przy dwoch importach naraz.
 - *Szkolenia:* otwarte szkolenie osoby nalezy do szkolacego z jej ostatniego `trainee_start`.
