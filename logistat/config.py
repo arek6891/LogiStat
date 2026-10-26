@@ -7,9 +7,9 @@ import os
 DEV_SECRET_KEY = 'logistat-dev-key-change-me'
 # Gorny limit uploadu (import CSV/Excel czyta plik do pamieci przez file.read(),
 # a gunicorn ma 2 workery — bez limitu jeden plik potrafi wywalic kontener).
-# Nazwa na ekranach (2026-10-24, operacja: „SaRa”). Kod, pakiet `logistat`,
+# Nazwa na ekranach (2026-10-24, operacja: „SaRa”; od 2026-10-26 wielkimi literami „SARA”). Kod, pakiet `logistat`,
 # kontenery, bazy, domeny i zmienne LOGISTAT_* zostaja bez zmian.
-NAZWA_APLIKACJI = 'SaRa'
+NAZWA_APLIKACJI = 'SARA'
 AUTORZY_APLIKACJI = 'Arkadiusz Sobczyk i Adam Reliszka'
 
 DEFAULT_MAX_UPLOAD_MB = 32

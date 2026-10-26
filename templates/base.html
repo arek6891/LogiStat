@@ -30,7 +30,14 @@
             {% endif %}
             <ul class="sidebar-nav">
                 {% if 'magazyn' in menu_obszary %}
-                <li class="nav-section">👷 Magazyn</li>
+                {# Kafelek Magazyn (operacja 2026-10-26): Skaner zmian osobno na gorze („Zmiany"),
+                   reszta stanowisk pod belka „Post-Processing". A→Z w obrebie belki. #}
+                <li class="nav-section">🔁 Zmiany</li>
+                <li><a href="{{ url_for('stanowisko.scanner', shift_number=1) }}"
+                        class="{% if request.endpoint == 'stanowisko.scanner' %}active{% endif %}">
+                        <span class="icon">📷</span> Skaner zmian
+                    </a></li>
+                <li class="nav-section">👷 Post-Processing</li>
                 <li><a href="{{ url_for('czas_pracy.time_tracking') }}"
                         class="{% if request.endpoint == 'czas_pracy.time_tracking' %}active{% endif %}">
                         <span class="icon">🕐</span> Czas pracy
@@ -42,10 +49,6 @@
                 <li><a href="{{ url_for('stanowisko.scan_package') }}"
                         class="{% if request.endpoint == 'stanowisko.scan_package' %}active{% endif %}">
                         <span class="icon">🔎</span> Paczki inspektor
-                    </a></li>
-                <li><a href="{{ url_for('stanowisko.scanner', shift_number=1) }}"
-                        class="{% if request.endpoint == 'stanowisko.scanner' %}active{% endif %}">
-                        <span class="icon">📷</span> Skaner zmian
                     </a></li>
                 {% endif %}
 

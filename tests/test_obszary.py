@@ -198,16 +198,34 @@ def test_nowy_modul_dla_lidera_i_admina_nie_dla_stanowiska(client, obszar, adres
                                           (POST_PROCESS, '/dashboard'),
                                           (USTAWIENIA, '/admin/panel')])
 def test_menu_kafelka_alfabetycznie(client, obszar, adres):
-    """Operacja 2026-10-24: pozycje menu po lewej od A (gora) do Z (dol)."""
+    """Operacja 2026-10-24: pozycje menu po lewej od A (gora) do Z (dol) — w obrebie
+    kazdej belki (Magazyn ma od 2026-10-26 dwie: „Zmiany" na gorze i „Post-Processing")."""
     import re
     zaloguj(client, 'admin')
     wybierz(client, obszar)
     html = client.get(adres).get_data(as_text=True)
     menu = html[html.index('class="sidebar-nav"'):html.index('class="sidebar-footer"')]
-    nazwy = [n.strip() for n in re.findall(r'</span>\s*([^<]+?)\s*</a>', menu)]
     alfabet = ' aąbcćdeęfghijklłmnńoóprsśtuwyzźż'
-    assert len(nazwy) > 1
-    assert nazwy == sorted(nazwy, key=lambda t: [alfabet.find(c) for c in t.lower()])
+    wszystkie = 0
+    for belka in menu.split('class="nav-section"')[1:]:
+        nazwy = [n.strip() for n in re.findall(r'</span>\s*([^<]+?)\s*</a>', belka)]
+        wszystkie += len(nazwy)
+        assert nazwy == sorted(nazwy, key=lambda t: [alfabet.find(c) for c in t.lower()])
+    assert wszystkie > 1
+
+
+def test_magazyn_skaner_zmian_w_belce_zmiany_na_gorze(client):
+    """Operacja 2026-10-26: w Magazynie najpierw belka „Zmiany" (tylko Skaner zmian),
+    pod nia „Post-Processing" z pozostalymi ekranami stanowisk."""
+    zaloguj(client, 'stanowisko')
+    html = client.get('/scan-paczki').get_data(as_text=True)
+    menu = html[html.index('class="sidebar-nav"'):html.index('class="sidebar-footer"')]
+    belki = menu.split('class="nav-section"')[1:]
+
+    assert [b[1:b.index('</li>')] for b in belki] == ['🔁 Zmiany', '👷 Post-Processing']
+    assert 'Skaner zmian' in belki[0] and 'Czas pracy' not in belki[0]
+    assert 'Skaner zmian' not in belki[1]
+    assert all(n in belki[1] for n in ('Czas pracy', 'Czasy paczek', 'Paczki inspektor'))
 
 
 # ── zakladanie kont stanowisk ────────────────────────────────────────────────
