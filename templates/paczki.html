@@ -250,7 +250,7 @@
                         {% set otwarci = item.udzialy | selectattr('end_at', 'none') | list %}
                         {% if otwarci %}<span class="udzial-znacznik">👥 zespół pracuje</span>{% endif %}
                         {% for u in item.udzialy %}
-                        <div>👤 {{ u.user.display_name if u.user else '?' }}
+                        <div>👤 {% if u.user %}<a class="link-normy" href="{{ url_for('normy.stats', user=u.user_id) }}" title="Otwórz normy pracownika">{{ u.user.display_name }}</a>{% else %}?{% endif %}
                             · {{ u.start_at | localdt('%H:%M') }}–{{ u.end_at | localdt('%H:%M') if u.end_at else '…' }}
                             {% if u.end_at %}· {{ u.sztuki() }} szt.{% endif %}
                             {% if u.zamkniete_przez %}<span title="Nie wbił(a) końca — bez ilości, poza normami">· bez ilości (zamknął: {{ u.zamykajacy.display_name if u.zamykajacy else '?' }})</span>{% endif %}
@@ -269,7 +269,7 @@
                 <td style="font-size:.8rem;{% if not item.scan_start_at %}color:var(--text-muted){% endif %};">
                     {% if item.scan_start_at %}
                     <div>{{ item.scan_start_at | localdt('%d.%m %H:%M:%S') }}</div>
-                    {% if item.scan_start_by_user %}<div style="color:var(--text-muted);font-size:.75rem;">{{ item.scan_start_by_user.display_name }}</div>{% endif %}
+                    {% if item.scan_start_by_user %}<div style="font-size:.75rem;"><a class="link-normy" href="{{ url_for('normy.stats', user=item.scan_start_by) }}" title="Otwórz normy pracownika">{{ item.scan_start_by_user.display_name }}</a></div>{% endif %}
                     {% if not item.scan_end_at %}
                     {# Paczka w trakcie nalezy do tego, kto ja zaczal — bez tego przycisku
                        nikt inny nie moze jej ani zaczac, ani skonczyc. #}
@@ -283,7 +283,7 @@
                 <td style="font-size:.8rem;{% if not item.scan_end_at %}color:var(--text-muted){% endif %};">
                     {% if item.scan_end_at %}
                     <div>{{ item.scan_end_at | localdt('%d.%m %H:%M:%S') }}</div>
-                    {% if item.scan_end_by_user %}<div style="color:var(--text-muted);font-size:.75rem;">{{ item.scan_end_by_user.display_name }}</div>{% endif %}
+                    {% if item.scan_end_by_user %}<div style="font-size:.75rem;"><a class="link-normy" href="{{ url_for('normy.stats', user=item.scan_end_by) }}" title="Otwórz normy pracownika">{{ item.scan_end_by_user.display_name }}</a></div>{% endif %}
                     {% else %}—{% endif %}
                 </td>
                 <td style="font-size:.85rem;font-weight:600;">

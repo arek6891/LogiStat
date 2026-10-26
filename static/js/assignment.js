@@ -107,8 +107,13 @@ function createUserCard(user) {
     <div class="checkbox"></div>
     <div class="mini-avatar">${escapeHtml(user.display_name[0])}</div>
     <span>${escapeHtml(user.display_name)}</span>
+    <a class="link-normy" href="/stats?user=${user.id}" target="_blank" draggable="false"
+       title="Normy pracownika (nowa karta)">📊</a>
     <em class="grupa-p" data-grupa="${g ? g.grupa : ''}" title="${escapeHtml(tytulGrupy)}">${g ? g.grupa : '—'}</em>
 `;
+
+    // Klik w 📊 otwiera Normy osoby, nie zaznacza karty
+    card.querySelector('.link-normy').addEventListener('click', (e) => e.stopPropagation());
 
     // Click to select/deselect
     card.addEventListener('click', (e) => {

@@ -9,7 +9,7 @@ from datetime import date, timedelta
 
 from conftest import make_user, strona_z_js
 
-from logistat.czas import local_day_bounds, local_today
+from logistat.czas import local_day_bounds, local_today, teraz_utc
 from logistat.extensions import db
 from logistat.models import Activity, ImportedCarton
 
@@ -206,3 +206,26 @@ def test_normy_otwieraja_osobe_z_linku(leader_client):
     html = strona_z_js(leader_client, '/stats')
 
     assert "q.get('user')" in html
+
+
+def test_przydzielanie_i_czasy_linkuja_do_norm(leader_client):
+    # Karta w Przydzielaniu: klik = zaznaczenie, wiec Normy pod osobnym 📊.
+    assert '/stats?user=${user.id}' in strona_z_js(leader_client, '/assignment')
+    assert '/stats?user=${w.user_id}' in strona_z_js(leader_client, '/worker-times')
+
+
+def test_paczki_linkuja_start_i_koniec_do_norm(leader_client):
+    a = make_user('operator', username='ala', display_name='Ala')
+    b = make_user('operator', username='ola', display_name='Ola')
+    teraz = teraz_utc()
+    db.session.add(ImportedCarton(
+        barcode='LINK-1', land='PL', stueckzahl=5, data_pliku=local_today(),
+        uebergabe_nr='UB-1', scan_start_by=a.id, scan_start_at=teraz,
+        scan_end_by=b.id, scan_end_at=teraz))
+    db.session.commit()
+
+    html = leader_client.get('/paczki?status=wszystkie&date_from=%s&date_to=%s'
+                             % (local_today(), local_today())).get_data(as_text=True)
+
+    assert f'href="/stats?user={a.id}"' in html
+    assert f'href="/stats?user={b.id}"' in html
