@@ -5,6 +5,8 @@ od 1 do kilkuset sztuk i sama liczba paczek nie mowi, ile towaru zostalo.
 """
 from datetime import date, timedelta
 
+from conftest import strona_z_js
+
 from logistat.czas import local_day_bounds, local_today
 from logistat.extensions import db
 from logistat.models import ImportedCarton
@@ -49,3 +51,15 @@ def test_dashboard_bez_starych_pol(leader_client):
 
     assert not {'total_cartons', 'done_cartons', 'remaining_cartons', 'remaining_pieces',
                 'progress_pct'} & set(d)
+
+
+def test_sztuki_duze_paczki_male(leader_client):
+    """Operacja pracuje na sztukach (2026-10-26): duza liczba = sztuki,
+    paczki w malym podpisie — kafle Dzis / Podsumowanie i plan pliku."""
+    html = strona_z_js(leader_client, '/dashboard')
+
+    assert 'id="piecesTodayVal" class="dash-val"' in html
+    assert 'id="remainingPiecesVal" class="dash-val"' in html
+    assert '<strong id="doneTodayVal">' in html
+    assert '<strong id="remainingVal">' in html
+    assert 'class="dash-val" style="color:${kolor};">${num(sztuk)}' in html

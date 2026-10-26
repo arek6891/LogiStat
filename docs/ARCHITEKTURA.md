@@ -323,6 +323,10 @@ Quantities entered at package end are the **source of truth for `category_data`*
 - W menu pozycja przeszla do grupy Lider (menu grupuje wg tego, kto uzywa ekranu).
 - „Loading date" zastepuje „Data pliku" **tylko w tekstach dla uzytkownika** (wszedzie, takze w polskich zdaniach: „Popraw Loading date", „Podaj Loading date."). Kolumna `data_pliku`, pola API i `date_typ=plik` bez zmian — zmiana nazwy w bazie wymagalaby migracji i zmiany API, a uzytkownikowi nic by nie dala. W kodzie i w tym dokumencie pojecie dalej nazywa sie „data pliku".
 
+## Dashboard: sztuki duze, paczki male (2026-10-26)
+
+Operations asked for pieces as the main figure on every dashboard: they plan and report in pieces, and a carton holds anything from 1 to several hundred pieces, so the package count alone said little. Presentation only: tiles show pieces in `.dash-val` with packages in the sub-line (the two separate „Zakończone dziś” / „Niezrobione” tiles were merged into one each, ids kept), tables put a bold Sztuki column first, shift and worker cards show pieces large and packages small, and the „Pracownicy dziś” bar is scaled by pieces. Not changed: „W toku” and „❗ Do potwierdzenia” (the API counts packages only), and the „Postęp” percentage, which is defined on packages (`procent`) — switching it to pieces would change its meaning and needs an operations decision.
+
 ## Dashboard: zakres w Podsumowaniu, zakladka „Per Loading date" (2026-10-12)
 
 **Decyzje uzytkownika:** zakres w Podsumowaniu filtruje po **Loading date** (dacie pliku), nie po dacie zakonczenia — niezrobione paczki zakonczenia nie maja. Podsumowanie **dalej pokazuje tylko niezrobione**; zakres tylko zaweza liste. Nowa zakladka to **tabela dni z zakresu** (nie zastepuje „Wybranego dnia").

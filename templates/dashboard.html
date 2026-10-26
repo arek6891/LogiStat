@@ -40,13 +40,8 @@
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:2rem;">
         <div class="card" style="text-align:center;">
             <div class="dash-label">Zakończone dziś</div>
-            <div id="doneTodayVal" class="dash-val" style="color:var(--accent);">—</div>
-            <div class="dash-sub">paczek · wg czasu skanu, z plików z każdego dnia</div>
-        </div>
-        <div class="card" style="text-align:center;">
-            <div class="dash-label">Zakończone dziś</div>
             <div id="piecesTodayVal" class="dash-val" style="color:var(--success);">—</div>
-            <div class="dash-sub">szt.</div>
+            <div class="dash-sub">szt. · <strong id="doneTodayVal">—</strong> paczek · wg czasu skanu, z plików z każdego dnia</div>
         </div>
         <div class="card" style="text-align:center;">
             <div class="dash-label">Obecni dziś</div>
@@ -98,13 +93,8 @@
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:2rem;">
         <div class="card" style="text-align:center;">
             <div class="dash-label">Niezrobione</div>
-            <div id="remainingVal" class="dash-val" style="color:var(--warning);">—</div>
-            <div class="dash-sub">paczek</div>
-        </div>
-        <div class="card" style="text-align:center;">
-            <div class="dash-label">Niezrobione</div>
             <div id="remainingPiecesVal" class="dash-val" style="color:var(--warning);">—</div>
-            <div class="dash-sub">szt.</div>
+            <div class="dash-sub">szt. · <strong id="remainingVal">—</strong> paczek</div>
         </div>
         <div class="card" style="text-align:center;">
             <div class="dash-label">W toku</div>

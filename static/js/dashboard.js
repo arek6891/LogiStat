@@ -29,8 +29,8 @@ function renderPlan(p) {
     const kafel = (etykieta, paczek, sztuk, kolor) => `
         <div class="card" style="text-align:center;">
             <div class="dash-label">${etykieta}</div>
-            <div class="dash-val" style="color:${kolor};">${num(paczek)}</div>
-            <div class="dash-sub">paczek · <strong>${num(sztuk)}</strong> szt.</div>
+            <div class="dash-val" style="color:${kolor};">${num(sztuk)}</div>
+            <div class="dash-sub">szt. · <strong>${num(paczek)}</strong> paczek</div>
         </div>`;
     return `
     <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem;">
@@ -88,16 +88,16 @@ function renderZalegle(z) {
     box.innerHTML = `<table style="width:100%;border-collapse:collapse;">
         <thead style="background:var(--bg-secondary);"><tr>
             <th style="${th}text-align:left;">Loading date</th>
-            <th style="${th}text-align:right;">Paczek</th>
             <th style="${th}text-align:right;">Sztuk</th>
+            <th style="${th}text-align:right;">Paczek</th>
             <th style="${th}text-align:right;">W toku</th>
         </tr></thead>
         <tbody>${z.dni.map(d => `<tr style="border-top:1px solid var(--border);">
             <td style="padding:10px 16px;">${d.data_pliku
                 ? `<a href="/paczki?date_typ=plik&date_from=${d.data_pliku}&date_to=${d.data_pliku}">${fmtData(d.data_pliku)}</a>`
                 : 'bez daty'}</td>
-            <td style="padding:10px 16px;text-align:right;font-weight:700;color:var(--warning);">${num(d.paczek)}</td>
-            <td style="padding:10px 16px;text-align:right;">${num(d.sztuk)}</td>
+            <td style="padding:10px 16px;text-align:right;font-weight:700;color:var(--warning);">${num(d.sztuk)}</td>
+            <td style="padding:10px 16px;text-align:right;font-size:.85rem;color:var(--text-muted);">${num(d.paczek)}</td>
             <td style="padding:10px 16px;text-align:right;color:var(--info);">${num(d.w_toku)}</td>
         </tr>`).join('')}</tbody></table>`;
 }
@@ -163,8 +163,9 @@ function renderDni(d) {
     }
     const th = 'padding:10px 16px;font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;';
     const td = 'padding:10px 16px;text-align:right;';
-    const para = (paczek, sztuk) => `<strong>${num(paczek)}</strong>
-        <div style="font-size:.75rem;color:var(--text-muted);">${num(sztuk)} szt.</div>`;
+    // Sztuki duze (na nich pracuje operacja), paczki male pod spodem.
+    const para = (paczek, sztuk) => `<strong>${num(sztuk)}</strong> szt.
+        <div style="font-size:.75rem;color:var(--text-muted);">${num(paczek)} paczek</div>`;
     const pasek = p => `<div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;">
             <div style="background:var(--bg-hover);border-radius:6px;height:8px;width:90px;overflow:hidden;">
                 <div style="height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-2));width:${p}%;"></div>
@@ -214,14 +215,14 @@ function renderShiftCard(s) {
             <div style="font-weight:700;font-size:1.05rem;"><span class="shift-badge" data-shift="${parseInt(s.shift_number) || ''}" style="font-size:1rem;">🔁 Zmiana ${parseInt(s.shift_number) || ''}</span>${badge}</div>
             <div style="font-size:.8rem;color:var(--text-muted);white-space:nowrap;">${s.present_count} obecnych</div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--border);">
+        <div style="display:grid;grid-template-columns:2fr 1fr;border-bottom:1px solid var(--border);">
             <div style="padding:14px 16px;text-align:center;border-right:1px solid var(--border);">
-                <div style="font-size:1.8rem;font-weight:800;color:var(--accent);">${s.packages}</div>
-                <div style="font-size:.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">paczek</div>
+                <div style="font-size:1.8rem;font-weight:800;color:var(--success);">${num(s.pieces)}</div>
+                <div style="font-size:.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">sztuk</div>
             </div>
             <div style="padding:14px 16px;text-align:center;">
-                <div style="font-size:1.8rem;font-weight:800;color:var(--success);">${s.pieces.toLocaleString('pl')}</div>
-                <div style="font-size:.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">sztuk</div>
+                <div style="font-size:1.1rem;font-weight:700;color:var(--text-secondary);">${num(s.packages)}</div>
+                <div style="font-size:.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">paczek</div>
             </div>
         </div>
         <table style="width:100%;border-collapse:collapse;">
@@ -247,9 +248,9 @@ async function loadShifts() {
         const u = d.unattributed;
         if (u && u.packages > 0) {
             box.innerHTML = `<div class="card" style="border-left:3px solid var(--warning);">
-                <div style="font-weight:600;margin-bottom:.35rem;">⚠️ Paczki nieprzypisane do zmiany: ${u.packages} (${u.pieces.toLocaleString('pl')} szt.)</div>
+                <div style="font-weight:600;margin-bottom:.35rem;">⚠️ Nieprzypisane do zmiany: ${num(u.pieces)} szt. (${num(u.packages)} paczek)</div>
                 <div style="font-size:.85rem;color:var(--text-muted);margin-bottom:.5rem;">Pracownicy bez zeskanowanej obecności lub obecni na obu zmianach:</div>
-                <div style="font-size:.85rem;line-height:1.6;">${u.workers.map(w => `<a href="/stats?user=${w.user_id}" title="Otwórz normy pracownika">${escapeHtml(w.name)}</a> — ${w.packages} pacz. / ${w.pieces.toLocaleString('pl')} szt. <span style="color:var(--text-muted);">(${w.reason})</span>`).join('<br>')}</div>
+                <div style="font-size:.85rem;line-height:1.6;">${u.workers.map(w => `<a href="/stats?user=${w.user_id}" title="Otwórz normy pracownika">${escapeHtml(w.name)}</a> — <strong>${num(w.pieces)} szt.</strong> / ${num(w.packages)} pacz. <span style="color:var(--text-muted);">(${w.reason})</span>`).join('<br>')}</div>
             </div>`;
         } else {
             box.innerHTML = '';
@@ -288,13 +289,13 @@ async function load() {
         if (!d.workers_today.length) {
             wt.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-muted);">Brak skanowań dziś.</div>';
         } else {
-            const maxPkg = Math.max(...d.workers_today.map(w => w.packages), 1);
+            const maxSzt = Math.max(...d.workers_today.map(w => w.pieces), 1);
             wt.innerHTML = `<table style="width:100%;border-collapse:collapse;">
                 <thead style="background:var(--bg-secondary);">
                     <tr>
                         <th style="padding:10px 16px;text-align:left;font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;">Pracownik</th>
-                        <th style="padding:10px 16px;text-align:right;font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;">Paczki</th>
                         <th style="padding:10px 16px;text-align:right;font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;">Sztuki</th>
+                        <th style="padding:10px 16px;text-align:right;font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;">Paczki</th>
                     </tr>
                 </thead>
                 <tbody>${d.workers_today.map(w => `
@@ -308,13 +309,13 @@ async function load() {
                                 <div>
                                     <div style="font-weight:600;font-size:.9rem;"><a href="/stats?user=${w.user_id}" title="Otwórz normy pracownika">${escapeHtml(w.name)}</a></div>
                                     <div style="height:4px;background:var(--bg-hover);border-radius:2px;width:100px;margin-top:4px;overflow:hidden;">
-                                        <div style="height:100%;border-radius:2px;background:var(--accent);width:${Math.round(w.packages/maxPkg*100)}%;"></div>
+                                        <div style="height:100%;border-radius:2px;background:var(--accent);width:${Math.round(w.pieces/maxSzt*100)}%;"></div>
                                     </div>
                                 </div>
                             </div>
                         </td>
-                        <td style="padding:10px 16px;text-align:right;font-weight:700;color:var(--accent);">${w.packages}</td>
-                        <td style="padding:10px 16px;text-align:right;color:var(--text-secondary);">${w.pieces.toLocaleString('pl')}</td>
+                        <td style="padding:10px 16px;text-align:right;font-weight:700;font-size:1.05rem;color:var(--success);">${num(w.pieces)}</td>
+                        <td style="padding:10px 16px;text-align:right;font-size:.85rem;color:var(--text-muted);">${num(w.packages)}</td>
                     </tr>`).join('')}
                 </tbody></table>`;
         }
@@ -374,14 +375,14 @@ async function load() {
                         </div>
                     </div>
                     <!-- Liczniki paczek -->
-                    <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--border);">
+                    <div style="display:grid;grid-template-columns:2fr 1fr;border-bottom:1px solid var(--border);">
                         <div style="padding:12px 16px;text-align:center;border-right:1px solid var(--border);">
-                            <div style="font-size:1.6rem;font-weight:800;color:var(--accent);">${w.packages_today}</div>
-                            <div style="font-size:.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">paczek dziś</div>
+                            <div style="font-size:1.6rem;font-weight:800;color:var(--success);">${num(w.pieces_today)}</div>
+                            <div style="font-size:.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">sztuk dziś</div>
                         </div>
                         <div style="padding:12px 16px;text-align:center;">
-                            <div style="font-size:1.6rem;font-weight:800;color:var(--success);">${w.pieces_today.toLocaleString('pl')}</div>
-                            <div style="font-size:.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">sztuk dziś</div>
+                            <div style="font-size:1.05rem;font-weight:700;color:var(--text-secondary);">${num(w.packages_today)}</div>
+                            <div style="font-size:.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">paczek dziś</div>
                         </div>
                     </div>
                     <!-- Czynności -->
