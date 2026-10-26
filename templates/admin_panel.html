@@ -63,5 +63,27 @@
             </p>
         </div>
     </a>
+    <a href="{{ url_for('zwroty.admin_cennik') }}" class="card"
+        style="text-decoration:none;color:inherit;cursor:pointer;transition:transform 0.2s,box-shadow 0.2s;"
+        onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 8px 32px rgb(var(--accent-rgb) / 0.3)'"
+        onmouseout="this.style.transform='';this.style.boxShadow=''">
+        <div style="padding:32px;text-align:center;">
+            <div style="font-size:3rem;margin-bottom:16px;">🧾</div>
+            <h3 style="margin:0 0 8px 0;font-size:1.2rem;">Cennik zwrotów</h3>
+            <p style="color:var(--text-muted);margin:0;font-size:0.9rem;">Ceny czynności raportu Invoice specification (Zwroty), miesiącami
+            </p>
+        </div>
+    </a>
+    <a href="{{ url_for('zwroty.admin_licencje') }}" class="card"
+        style="text-decoration:none;color:inherit;cursor:pointer;transition:transform 0.2s,box-shadow 0.2s;"
+        onmouseover="this.style.transform='translateY(-4px)';this.style.boxShadow='0 8px 32px rgb(var(--accent-rgb) / 0.3)'"
+        onmouseout="this.style.transform='';this.style.boxShadow=''">
+        <div style="padding:32px;text-align:center;">
+            <div style="font-size:3rem;margin-bottom:16px;">📦</div>
+            <h3 style="margin:0 0 8px 0;font-size:1.2rem;">Listy Sorting Data</h3>
+            <p style="color:var(--text-muted);margin:0;font-size:0.9rem;">Licencje i wysyłki — wiersze raportu Sorting Data (Zwroty)
+            </p>
+        </div>
+    </a>
 </div>
 {% endblock %}

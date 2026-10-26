@@ -4,6 +4,7 @@ DELETE /api/scan/<int:attendance_id>
 DELETE /api/user-options/<int:option_id>
 DELETE /api/users/<int:user_id>
 DELETE /api/worker-times/event/<int:event_id>
+DELETE /api/zwroty/licencje/<int:lic_id>
 GET /
 GET /admin/activities
 GET /admin/category-labels
@@ -13,6 +14,8 @@ GET /admin/panel
 GET /admin/settings
 GET /admin/user-options
 GET /admin/users
+GET /admin/zwroty/cennik
+GET /admin/zwroty/licencje
 GET /api/activities
 GET /api/assignment/data
 GET /api/assignment/suggestions
@@ -37,6 +40,7 @@ GET /api/time/training/aktywne
 GET /api/user-options
 GET /api/users
 GET /api/worker-times
+GET /api/zwroty/cennik/<int:rok>/<int:miesiac>
 GET /assignment
 GET /dashboard
 GET /data-entry
@@ -55,8 +59,12 @@ GET /stats
 GET /time-tracking
 GET /worker-times
 GET /zwroty
+GET /zwroty/invoice-specification
+GET /zwroty/invoice-specification/export
 GET /zwroty/paczki
 GET /zwroty/paczki/export
+GET /zwroty/sorting-data
+GET /zwroty/sorting-data/export
 GET POST /login
 GET POST /profile
 POST /api/activities
@@ -85,6 +93,7 @@ POST /api/time/training/trener
 POST /api/user-options
 POST /api/users
 POST /api/worker-times/event
+POST /api/zwroty/licencje
 POST /logout
 POST /start/<obszar>
 POST PUT /api/cost-mapping/<int:year>/<int:month>
@@ -104,3 +113,7 @@ PUT /api/user-options/<int:option_id>
 PUT /api/users/<int:user_id>
 PUT /api/worker-times/event/<int:event_id>
 PUT /api/worker-times/wejscie/<int:attendance_id>
+PUT /api/zwroty/cennik/<int:rok>/<int:miesiac>
+PUT /api/zwroty/invoice-specification/ilosc
+PUT /api/zwroty/licencje/<int:lic_id>
+PUT /api/zwroty/sorting-data
