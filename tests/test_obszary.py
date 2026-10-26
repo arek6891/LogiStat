@@ -175,8 +175,7 @@ def test_logowanie_zeruje_wybrany_kafelek(client):
 
 # ── Akcje - Displays i Zwroty (nowe moduly, na razie puste) ──────────────────
 
-@pytest.mark.parametrize('obszar,adres,naglowek', [(DISPLAYS, '/displays', '💍 Akcje - Displays'),
-                                                   (ZWROTY, '/zwroty', '↩️ Zwroty')])
+@pytest.mark.parametrize('obszar,adres,naglowek', [(DISPLAYS, '/displays', '💍 Akcje - Displays')])
 def test_nowy_modul_dla_lidera_i_admina_nie_dla_stanowiska(client, obszar, adres, naglowek):
     for rola in ('leader', 'admin'):
         zaloguj(client, rola)
@@ -190,6 +189,18 @@ def test_nowy_modul_dla_lidera_i_admina_nie_dla_stanowiska(client, obszar, adres
     r = client.get(adres)
     assert r.status_code == 302 and '/start' in r.headers['Location']
     assert wybierz(client, obszar).status_code == 403
+
+
+def test_pusta_pozycja_zwroty_przekierowuje_i_nie_ma_jej_w_menu(client):
+    """Operacje 2026-10-26: pusta „Zwroty” zniknela z menu; stary adres
+    (zakladki) prowadzi na Zwroty Paczek."""
+    zaloguj(client, 'leader')
+    wybierz(client, ZWROTY)
+    r = client.get('/zwroty')
+    assert r.status_code == 302 and r.headers['Location'].endswith('/zwroty/paczki')
+    html = client.get('/zwroty/paczki').get_data(as_text=True)
+    assert 'href="/zwroty"' not in html
+    assert 'Zwroty Paczek' in html
 
 
 # ── menu A→Z ─────────────────────────────────────────────────────────────────
@@ -256,7 +267,7 @@ STRONY = {
     POST_PROCESS: ['/dashboard', '/forecast', '/assignment', '/data-entry', '/stats', '/paczki',
                    '/worker-times', '/import-csv', '/general-stats', '/admin/users'],
     DISPLAYS: ['/displays'],
-    ZWROTY: ['/zwroty', '/zwroty/paczki', '/zwroty/invoice-specification', '/zwroty/sorting-data'],
+    ZWROTY: ['/zwroty/paczki', '/zwroty/invoice-specification', '/zwroty/sorting-data'],
     USTAWIENIA: ['/admin/panel', '/admin/activities', '/admin/country-mapping',
                  '/admin/user-options', '/admin/category-labels', '/admin/settings',
                  '/admin/cost-mapping', '/admin/zwroty/licencje', '/admin/zwroty/cennik'],

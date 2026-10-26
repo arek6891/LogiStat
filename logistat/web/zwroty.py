@@ -9,7 +9,7 @@
 """
 from datetime import date
 
-from flask import Blueprint, abort, jsonify, render_template, request
+from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -38,7 +38,9 @@ SZEROKOSCI_KOLUMN = (22.1, 10.7, 13.7, 17.9, 9.3, 9.0, 12.7, 11.6,
 @bp.route('/zwroty')
 @leader_required
 def zwroty():
-    return render_template('zwroty.html')
+    # Pusta pozycja usunieta z menu (operacje 2026-10-26); adres zostaje
+    # (zakladki, mapa tras) i prowadzi na ekran startowy kafelka.
+    return redirect(url_for('zwroty.zwroty_paczek'))
 
 
 def _dzien(wartosc):

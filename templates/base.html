@@ -114,10 +114,6 @@
                         class="{% if request.endpoint == 'zwroty.sorting_data_view' %}active{% endif %}">
                         <span class="icon">🗂️</span> Sorting Data
                     </a></li>
-                <li><a href="{{ url_for('zwroty.zwroty') }}"
-                        class="{% if request.endpoint == 'zwroty.zwroty' %}active{% endif %}">
-                        <span class="icon">↩️</span> Zwroty
-                    </a></li>
                 <li><a href="{{ url_for('zwroty.zwroty_paczek') }}"
                         class="{% if request.endpoint == 'zwroty.zwroty_paczek' %}active{% endif %}">
                         <span class="icon">📦</span> Zwroty Paczek
