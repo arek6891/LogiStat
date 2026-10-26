@@ -34,8 +34,8 @@ OBSZARY = {
         'opis': 'Nowy moduł — w przygotowaniu',
     },
     ZWROTY: {
-        'nazwa': 'Zwroty', 'ikona': '↩️', 'start': 'zwroty.zwroty',
-        'opis': 'Nowy moduł — w przygotowaniu',
+        'nazwa': 'Zwroty', 'ikona': '↩️', 'start': 'zwroty.zwroty_paczek',
+        'opis': 'Zwroty Paczek — tabela zwrotów, eksport do Excela',
     },
     USTAWIENIA: {
         'nazwa': 'Ustawienia', 'ikona': '🛡️', 'start': 'admin.admin_panel',
@@ -106,7 +106,7 @@ _ENDPOINTY = {
         'displays.displays',
     },
     ZWROTY: {
-        'zwroty.zwroty',
+        'zwroty.zwroty', 'zwroty.zwroty_paczek', 'zwroty.zwroty_paczek_export',
     },
     USTAWIENIA: {
         'admin.admin_panel', 'admin.admin_activities', 'admin.admin_country_mapping',

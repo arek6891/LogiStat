@@ -158,7 +158,7 @@ def test_wybor_kafelka_otwiera_jego_start(client):
 
     assert client.post('/start/post_process').headers['Location'].endswith('/dashboard')
     assert client.post('/start/displays').headers['Location'].endswith('/displays')
-    assert client.post('/start/zwroty').headers['Location'].endswith('/zwroty')
+    assert client.post('/start/zwroty').headers['Location'].endswith('/zwroty/paczki')
     assert client.post('/start/ustawienia').headers['Location'].endswith('/admin/panel')
 
 
@@ -256,7 +256,7 @@ STRONY = {
     POST_PROCESS: ['/dashboard', '/forecast', '/assignment', '/data-entry', '/stats', '/paczki',
                    '/worker-times', '/import-csv', '/general-stats', '/admin/users'],
     DISPLAYS: ['/displays'],
-    ZWROTY: ['/zwroty'],
+    ZWROTY: ['/zwroty', '/zwroty/paczki'],
     USTAWIENIA: ['/admin/panel', '/admin/activities', '/admin/country-mapping',
                  '/admin/user-options', '/admin/category-labels', '/admin/settings',
                  '/admin/cost-mapping'],

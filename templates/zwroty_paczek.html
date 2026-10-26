@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block title %}Zwroty Paczek — {{ NAZWA_APLIKACJI }}{% endblock %}
+
+{# Zwroty Paczek (2026-10-26): naglowki 1:1 z arkusza operacji (NAGLOWKI_ZWROTOW),
+   ekran i Excel z tej samej funkcji wiersze_zwrotow(). Domyslnie dzisiejszy dzien. #}
+{% block content %}
+{% set zapytanie = {'date_from': filtry.od.isoformat(), 'date_to': filtry.do.isoformat(),
+                    'brand': filtry.brand, 'paketnummer': filtry.paketnummer} %}
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
+    <div>
+        <h1>↩️ Zwroty Paczek</h1>
+        <p style="color:var(--text-muted);">
+            {% if filtry.od == filtry.do %}Dzień: <strong>{{ filtry.od.strftime('%d.%m.%Y') }}</strong>{% if filtry.od == dzis %} (dziś){% endif %}
+            {% else %}Zakres: <strong>{{ filtry.od.strftime('%d.%m.%Y') }} – {{ filtry.do.strftime('%d.%m.%Y') }}</strong>{% endif %}
+            · {{ wiersze|length }} paczek
+        </p>
+    </div>
+    <form method="GET" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+        <input type="date" name="date_from" value="{{ filtry.od.isoformat() }}" class="form-control" style="width:140px;" title="Data od">
+        <span style="color:var(--text-muted);">—</span>
+        <input type="date" name="date_to" value="{{ filtry.do.isoformat() }}" class="form-control" style="width:140px;" title="Data do">
+        <select name="brand" class="form-control" style="width:130px;" title="Brand">
+            <option value="">— Brand —</option>
+            {% for b in brandy %}
+            <option value="{{ b }}" {% if filtry.brand == b %}selected{% endif %}>{{ b }}</option>
+            {% endfor %}
+        </select>
+        <input type="text" name="paketnummer" value="{{ filtry.paketnummer or '' }}" class="form-control" style="width:190px;" placeholder="Paketnummer">
+        <button type="submit" class="btn btn-primary">Filtruj</button>
+        <a href="{{ url_for('zwroty.zwroty_paczek') }}" class="btn btn-secondary" style="padding:0.5rem;" title="Wyczyść — dzisiejszy dzień">✖</a>
+        <a href="{{ url_for('zwroty.zwroty_paczek_export', **zapytanie) }}" class="btn btn-success" title="Pobierz tabelę z bieżącymi filtrami">⬇ Excel</a>
+    </form>
+</div>
+
+<div class="card" style="padding:0;overflow-x:auto;">
+    <table class="data-table">
+        <thead>
+            <tr>{% for n in naglowki %}<th>{{ n }}</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+            {% for w in wiersze %}
+            <tr>{% for v in w %}<td>{% if v is not none and v.strftime is defined %}{{ v.strftime('%d.%m.%Y') }}{% elif v is not none %}{{ v }}{% endif %}</td>{% endfor %}</tr>
+            {% else %}
+            <tr><td colspan="{{ naglowki|length }}">
+                <div class="empty-state"><div class="icon">📭</div><p>Brak zwrotów w wybranym zakresie.</p></div>
+            </td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

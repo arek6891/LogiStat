@@ -55,6 +55,8 @@ GET /stats
 GET /time-tracking
 GET /worker-times
 GET /zwroty
+GET /zwroty/paczki
+GET /zwroty/paczki/export
 GET POST /login
 GET POST /profile
 POST /api/activities

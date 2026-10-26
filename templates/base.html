@@ -110,6 +110,10 @@
                         class="{% if request.endpoint == 'zwroty.zwroty' %}active{% endif %}">
                         <span class="icon">↩️</span> Zwroty
                     </a></li>
+                <li><a href="{{ url_for('zwroty.zwroty_paczek') }}"
+                        class="{% if request.endpoint == 'zwroty.zwroty_paczek' %}active{% endif %}">
+                        <span class="icon">📦</span> Zwroty Paczek
+                    </a></li>
                 {% endif %}
 
                 {% if 'ustawienia' in menu_obszary %}
