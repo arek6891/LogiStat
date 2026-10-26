@@ -931,9 +931,13 @@ tr:last-child td {
 
 /* Linki do pracownika / paczki w tabelach — ten sam kolor co na Dashboardzie
    (domyslny niebieski przegladarki byl slabo widoczny na ciemnym tle). */
-a.js-osoba {
+a.js-osoba,
+a.link-normy {
     color: var(--info);
 }
+
+/* 📊 na karcie w Przydzielaniu — Normy osoby w nowej karcie (klik w karte = zaznaczenie) */
+.assignment-user-card .link-normy { text-decoration: none; cursor: pointer; }
 
 .assignment-user-card.bez-szkolenia {
     border-color: var(--warning);

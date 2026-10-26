@@ -177,7 +177,7 @@ Every PR: **green CI** (`.github/workflows/testy.yml` — pytest on Postgres 16 
 - Per-worker `GET /api/stats/user/<id>`: `paczki_podsumowanie` (`podsumuj_paczki_pracownika()`) — totals + per day/month averages over days/months **with ≥ 1 finished carton**, independent of `activity_id`; none → `null`.
 - Per-worker `norma` = **the worker's row from `przeglad_zespolu()`** + `miejsce` / `w_rankingu` / `powod_braku_oceny` (`za_malo_paczek` · `brak_czasu` · `brak_paczek`). Never compute it a second way (`test_ocena_osoby_zgadza_sie_z_przegladem`); clicking a name copies the date range.
 - Charts `wykres_dzienny` / `wykres_miesieczny` from finished packages by local day/month of `scan_end_at`: bars = pieces, line = szt./h (`null` without time), dashed = mean and target.
-- Dashboard names → `/stats?user=<id>` (`user_id` in `workers_today`, `unattributed.workers`); `stats.html` reads `?user=` (+ dates), name from the API.
+- Names link to `/stats?user=<id>` (class `link-normy`): Dashboard (`user_id` in `workers_today`, `unattributed.workers`), `/worker-times` rows, `/paczki` Start / Koniec / team rows (2026-10-26); Przydzielanie via a separate 📊 on the card (**new tab** — a click on the card selects it, and the board is live work). `stats.html` reads `?user=` (+ dates), name from the API.
 - Rows link to `/paczki?osoba=<id>&date_typ=koniec&date_from=&date_to=` (no `status` needed).
 
 ## Key implementation details

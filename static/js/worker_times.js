@@ -272,7 +272,7 @@ function renderTable(workers) {
                         background:linear-gradient(135deg,var(--accent),var(--accent-2));
                         display:flex;align-items:center;justify-content:center;
                         font-size:.8rem;font-weight:700;color:var(--on-accent);">${escapeHtml(w.user_name[0])}</div>
-                    <span style="font-weight:600;">${escapeHtml(w.user_name)}</span>
+                    <a class="link-normy" href="/stats?user=${w.user_id}" title="Otwórz normy pracownika" style="font-weight:600;">${escapeHtml(w.user_name)}</a>
                     ${w.on_break ? '<span style="margin-left:4px;font-size:.75rem;background:var(--warning-bg);color:var(--warning);padding:2px 8px;border-radius:8px;">na przerwie</span>' : ''}
                     ${w.on_other ? '<span style="margin-left:4px;font-size:.75rem;background:rgb(var(--accent-rgb) / .18);color:var(--accent);padding:2px 8px;border-radius:8px;">Inne</span>' : ''}
                     ${w.on_trainee ? '<span style="margin-left:4px;font-size:.75rem;background:var(--info-bg);color:var(--info);padding:2px 8px;border-radius:8px;">🎓 szkolony/a</span>' : ''}
