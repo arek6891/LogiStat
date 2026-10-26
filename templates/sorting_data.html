@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block title %}Sorting Data — {{ NAZWA_APLIKACJI }}{% endblock %}
+
+{# Sorting Data (2026-10-26): uklad 1:1 z zakladki arkusza operacji, caly rok.
+   Wszystko wpisywane recznie (autozapis), „Total boxes built” = suma licencji.
+   Wiersze (licencje / wysylki) ustawia admin: Ustawienia → Listy Sorting Data. #}
+{% macro komorka(lic_id, m, pole, wartosc, pas) -%}
+<td data-pas="{{ pas }}"><input type="text" inputmode="numeric" class="liczba sd-pole"
+    data-lic="{{ lic_id }}" data-m="{{ m }}" data-pole="{{ pole }}"
+    value="{{ wartosc if wartosc is not none else '' }}"></td>
+{%- endmacro %}
+
+{% block content %}
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:1rem;">
+    <div>
+        <h1>📦 Sorting Data</h1>
+        <p style="color:var(--text-muted);">Cały rok, wartości wpisywane ręcznie — każde pole zapisuje się samo chwilę po wpisaniu.
+            {% if current_user.role == 'admin' %}Wiersze: <a href="{{ url_for('zwroty.admin_licencje') }}">Ustawienia → Listy Sorting Data</a>.{% endif %}</p>
+    </div>
+    <form method="GET" id="okresSorting" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+        <input type="number" name="rok" value="{{ dane.rok }}" min="2000" max="2100" class="form-control" style="width:100px;" title="Rok">
+        <button type="submit" class="btn btn-primary">Pokaż</button>
+        <a href="{{ url_for('zwroty.sorting_data_export', rok=dane.rok) }}" class="btn btn-success js-eksport">⬇ Excel</a>
+        <span class="autozapis-status" id="autoZapisStatus"></span>
+    </form>
+</div>
+
+<div class="card arkusz" style="overflow-x:auto;padding:12px;">
+    <table class="arkusz-sorting">
+        <thead>
+            <tr><th style="background:var(--bg-card);border:none;"></th>
+                {% for m in miesiace %}<th colspan="2" data-pas="{{ loop.index0 % 2 }}">{{ m }}</th>{% endfor %}</tr>
+            <tr><th style="background:var(--bg-card);border:none;"></th>
+                {% for m in miesiace %}<th data-pas="{{ loop.index0 % 2 }}">Cartons</th><th data-pas="{{ loop.index0 % 2 }}">Pallets</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+            {% for w in dane.licencje %}
+            <tr><td>{{ w.nazwa }}{% if not w.aktywna %} <span class="z-systemu" title="Wyłączona w Ustawieniach — widać ją, bo ma dane w tym roku">(wyłączona)</span>{% endif %}</td>
+                {% for m in range(1, 13) %}{{ komorka(w.id, m, 'cartons', w.mies[m].cartons, (m - 1) % 2) }}{{ komorka(w.id, m, 'pallets', w.mies[m].pallets, (m - 1) % 2) }}{% endfor %}</tr>
+            {% endfor %}
+            <tr class="suma"><td>Total boxes built</td>
+                {% for m in range(1, 13) %}<td class="srodek" data-suma="{{ m }}-cartons">{{ dane.suma[m].cartons }}</td><td class="srodek" data-suma="{{ m }}-pallets">{{ dane.suma[m].pallets }}</td>{% endfor %}</tr>
+            {% for w in dane.wysylki %}
+            <tr><td>{{ w.nazwa }}{% if not w.aktywna %} <span class="z-systemu" title="Wyłączona w Ustawieniach — widać ją, bo ma dane w tym roku">(wyłączona)</span>{% endif %}</td>
+                {% for m in range(1, 13) %}{{ komorka(w.id, m, 'cartons', w.mies[m].cartons, (m - 1) % 2) }}{{ komorka(w.id, m, 'pallets', w.mies[m].pallets, (m - 1) % 2) }}{% endfor %}</tr>
+            {% endfor %}
+            <tr><td>POS processed</td>
+                {% for m in range(1, 13) %}{{ komorka('', m, 'pos_processed', dane.pos[m], (m - 1) % 2) }}<td data-pas="{{ (m - 1) % 2 }}"></td>{% endfor %}</tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const SORTING = {{ {'rok': dane.rok, 'licencje': dane.licencje | map(attribute='id') | list} | tojson }};
+</script>
+<script src="{{ static_v('js/sorting_data.js') }}"></script>
+{% endblock %}

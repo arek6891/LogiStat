@@ -256,10 +256,10 @@ STRONY = {
     POST_PROCESS: ['/dashboard', '/forecast', '/assignment', '/data-entry', '/stats', '/paczki',
                    '/worker-times', '/import-csv', '/general-stats', '/admin/users'],
     DISPLAYS: ['/displays'],
-    ZWROTY: ['/zwroty', '/zwroty/paczki'],
+    ZWROTY: ['/zwroty', '/zwroty/paczki', '/zwroty/invoice-specification', '/zwroty/sorting-data'],
     USTAWIENIA: ['/admin/panel', '/admin/activities', '/admin/country-mapping',
                  '/admin/user-options', '/admin/category-labels', '/admin/settings',
-                 '/admin/cost-mapping'],
+                 '/admin/cost-mapping', '/admin/zwroty/licencje', '/admin/zwroty/cennik'],
 }
 
 

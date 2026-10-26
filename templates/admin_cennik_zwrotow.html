@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}{{ NAZWA_APLIKACJI }} — Cennik zwrotów{% endblock %}
+
+{# Cennik Invoice specification (2026-10-26): Price per czynnosc i miesiac.
+   Jawny „Zapisz” (rozliczenie), jak Cennik kategorii; puste pole = brak ceny. #}
+{% block content %}
+<div class="page-header">
+    <h2>🧾 Cennik zwrotów</h2>
+    <p class="subtitle">Ceny (EUR) czynności z raportu Invoice specification w danym miesiącu.
+        Puste pole = brak ceny — Total charge tej pozycji zostaje pusty, a raport to pokazuje.</p>
+</div>
+
+<div class="card" style="max-width:720px; margin:0 auto;">
+    <div style="display:flex; gap:1rem; align-items:flex-end; flex-wrap:wrap;">
+        <div><label style="display:block;font-size:.85rem;color:var(--text-muted);">Rok</label>
+            <input type="number" id="rokCen" class="form-control" value="{{ dzis.year }}" min="2000" max="2100" style="width:110px;"></div>
+        <div><label style="display:block;font-size:.85rem;color:var(--text-muted);">Miesiąc</label>
+            <select id="miesiacCen" class="form-control" style="width:170px;">
+                {% for m in ['Styczeń','Luty','Marzec','Kwiecień','Maj','Czerwiec','Lipiec','Sierpień','Wrzesień','Październik','Listopad','Grudzień'] %}
+                <option value="{{ loop.index }}" {% if loop.index == dzis.month %}selected{% endif %}>{{ m }}</option>{% endfor %}
+            </select></div>
+        <button class="btn btn-secondary" id="pokazCeny">Pokaż ceny</button>
+    </div>
+
+    <table style="margin-top:1.25rem;" id="tabelaCen">
+        <thead><tr><th>Activity</th><th>UoM</th><th style="text-align:right;">Price (EUR)</th></tr></thead>
+        <tbody>
+            {% for klucz, nazwa, uom in czynnosci %}
+            <tr><td>{{ nazwa }}</td><td>{{ uom }}</td>
+                <td style="text-align:right;"><input type="number" min="0" step="0.01" class="form-control cena-pole"
+                    data-klucz="{{ klucz }}" style="width:120px;text-align:right;display:inline-block;" disabled></td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1rem;flex-wrap:wrap;gap:.75rem;">
+        <button class="btn btn-ghost" id="kopiujCeny" disabled>📄 Skopiuj z poprzedniego miesiąca</button>
+        <div style="display:flex;gap:12px;align-items:center;">
+            <span id="cenyZmienione" style="display:none;color:var(--warning);font-weight:600;font-size:.85rem;">● Niezapisane zmiany cen</span>
+            <button class="btn btn-primary" id="zapiszCeny" disabled>Zapisz ceny <span id="cenyOkres"></span></button>
+        </div>
+    </div>
+</div>
+
+<div style="margin-top:16px; text-align:center;">
+    <a href="{{ url_for('admin.admin_panel') }}" class="btn btn-ghost btn-sm">← Powrót do Panelu Admina</a>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ static_v('js/admin_cennik_zwrotow.js') }}"></script>
+{% endblock %}

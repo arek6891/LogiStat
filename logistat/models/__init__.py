@@ -64,3 +64,9 @@ from logistat.models.czas_pracy import (  # noqa: F401
     historia_celu_lista,
     POCZATEK_HISTORII_CELU,
 )
+from logistat.models.zwroty import (  # noqa: F401
+    LicencjaZwrotow,
+    SortingDataWpis,
+    IloscMiesiacaZwrotow,
+    CenaZwrotow,
+)

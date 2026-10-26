@@ -107,11 +107,19 @@ _ENDPOINTY = {
     },
     ZWROTY: {
         'zwroty.zwroty', 'zwroty.zwroty_paczek', 'zwroty.zwroty_paczek_export',
+        # Invoice specification i Sorting Data (2026-10-26)
+        'zwroty.invoice_specification_view', 'zwroty.invoice_specification_export',
+        'zwroty.api_invoice_ilosc',
+        'zwroty.sorting_data_view', 'zwroty.sorting_data_export', 'zwroty.api_sorting_data',
     },
     USTAWIENIA: {
         'admin.admin_panel', 'admin.admin_activities', 'admin.admin_country_mapping',
         'admin.admin_user_options', 'admin.admin_category_labels', 'admin.admin_settings',
         'admin.admin_cost_mapping',
+        # Zwroty (2026-10-26): listy Sorting Data i cennik Invoice specification
+        'zwroty.admin_licencje', 'zwroty.api_licencja_dodaj', 'zwroty.api_licencja_zmien',
+        'zwroty.api_licencja_usun', 'zwroty.admin_cennik', 'zwroty.api_cennik',
+        'zwroty.api_cennik_zapisz',
         'admin.api_activities', 'admin.api_activity_create', 'admin.api_activity_update',
         'admin.api_activity_delete', 'admin.api_activities_reorder',
         'admin.api_country_mappings', 'admin.api_country_mapping_create',

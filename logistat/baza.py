@@ -7,9 +7,10 @@ import os
 
 from logistat.config import DEFAULT_ADMIN_PASSWORD
 from logistat.extensions import db
+from logistat.faktura_zwrotow import LICENCJE_DOMYSLNE, ZNACZNIK_LICENCJI
 from logistat.models import (
-    Activity, AppSetting, CountryMapping, GeneralStat, ImportedCarton, USER_OPTION_DEFAULTS,
-    User, UserOption, zaznacz_wszystkich_przeszkolonych)
+    Activity, AppSetting, CountryMapping, GeneralStat, ImportedCarton, LicencjaZwrotow,
+    USER_OPTION_DEFAULTS, User, UserOption, zaznacz_wszystkich_przeszkolonych)
 from logistat.normy_dane import zasiej_historie_celu
 from logistat.rozliczenie import _odsun_linie, przenies_linie, recompute_general_stat
 
@@ -97,6 +98,17 @@ def seed_data():
         db.session.add(AppSetting(key='user_options_seeded', value='1'))
         db.session.commit()
         log.info('[SEED] Domyslne listy uzytkownikow utworzone.')
+
+    # Listy Sorting Data (2026-10-26) — raz, z arkusza operacji; jak wyzej znacznik,
+    # zeby skasowane przez admina pozycje nie wracaly po restarcie.
+    if db.session.get(AppSetting, ZNACZNIK_LICENCJI) is None:
+        for rodzaj, nazwy in LICENCJE_DOMYSLNE.items():
+            if LicencjaZwrotow.query.filter_by(rodzaj=rodzaj).count() == 0:
+                for i, nazwa in enumerate(nazwy):
+                    db.session.add(LicencjaZwrotow(rodzaj=rodzaj, nazwa=nazwa.strip(), kolejnosc=i))
+        db.session.add(AppSetting(key=ZNACZNIK_LICENCJI, value='1'))
+        db.session.commit()
+        log.info('[SEED] Listy Sorting Data (licencje, wysylki) utworzone.')
 
     if CountryMapping.query.count() == 0:
         for country, innenauftrag in DEFAULT_COUNTRY_MAPPINGS:

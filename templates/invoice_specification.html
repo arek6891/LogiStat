@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block title %}Invoice specification — {{ NAZWA_APLIKACJI }}{% endblock %}
+
+{# Invoice specification (2026-10-26): uklad 1:1 z zakladki arkusza operacji.
+   Ilosci wpisuje lider (autozapis), Sorting returns liczy system z Zwroty Paczek,
+   Price ustawia admin w Ustawieniach → Cennik zwrotów. Lider nie dostaje cen. #}
+{% block content %}
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:1rem;">
+    <div>
+        <h1>🧾 Invoice specification</h1>
+        <p style="color:var(--text-muted);">Raport miesięczny — ilości zapisują się same chwilę po wpisaniu.
+            {% if pokaz_ceny %}Ceny: <a href="{{ url_for('zwroty.admin_cennik') }}">Ustawienia → Cennik zwrotów</a>.{% endif %}</p>
+    </div>
+    <form method="GET" id="okresFaktury" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+        <input type="number" name="rok" value="{{ dane.rok }}" min="2000" max="2100" class="form-control" style="width:100px;" title="Year">
+        <select name="miesiac" class="form-control" style="width:180px;" title="Month">
+            {% for m in miesiace %}<option value="{{ loop.index }}" {% if loop.index == dane.miesiac %}selected{% endif %}>{{ loop.index }} — {{ m }}</option>{% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primary">Pokaż</button>
+        <a href="{{ url_for('zwroty.invoice_specification_export', rok=dane.rok, miesiac=dane.miesiac) }}" class="btn btn-success js-eksport">⬇ Excel</a>
+        <span class="autozapis-status" id="autoZapisStatus"></span>
+    </form>
+</div>
+
+{% if dane.brak_cen %}
+<div class="card" style="border-left:3px solid var(--warning);margin-bottom:1rem;">
+    ⚠️ Brak ceny w {{ '%02d' % dane.miesiac }}/{{ dane.rok }} dla: <strong>{{ dane.brak_cen | join(', ') }}</strong> —
+    Total charge tych pozycji jest pusty. <a href="{{ url_for('zwroty.admin_cennik') }}">Ustaw ceny</a>.
+</div>
+{% endif %}
+
+<div class="card arkusz" style="overflow-x:auto;">
+    <div class="arkusz-tytul">Warehousing Activities</div>
+    <div class="arkusz-podtytul">Returns logistics service</div>
+    <table class="arkusz-okres">
+        <tr><td>Year</td><td>{{ dane.rok }}</td></tr>
+        <tr><td>Month</td><td>{{ dane.miesiac }}</td></tr>
+    </table>
+    <table class="arkusz-faktura">
+        <thead><tr>
+            <th>Activity</th><th class="srodek">Total quantity</th><th class="srodek">UoM</th>
+            {% if pokaz_ceny %}<th class="srodek">Price</th><th class="srodek">Total charge</th>{% endif %}
+        </tr></thead>
+        <tbody>
+            {% for w in dane.wiersze %}
+            <tr data-klucz="{{ w.klucz }}">
+                <td>{{ w.activity }}</td>
+                <td class="srodek">
+                    {% if w.auto %}<strong class="ilosc-auto">{{ w.ilosc }}</strong>
+                        <div class="z-systemu" title="Liczba paczek z raportu Zwroty Paczek w tym miesiącu">z raportu Zwroty Paczek</div>
+                    {% else %}<input type="text" inputmode="numeric" class="liczba ilosc-faktury" data-klucz="{{ w.klucz }}"
+                        value="{{ w.ilosc if w.ilosc is not none else '' }}" aria-label="{{ w.activity }} — Total quantity">{% endif %}
+                </td>
+                <td class="srodek">{{ w.uom }}</td>
+                {% if pokaz_ceny %}
+                <td class="kwota">{% if w.cena is none %}<span class="brak-ceny">brak ceny</span>{% else %}{{ '%.2f' % w.cena }} EUR{% endif %}</td>
+                <td class="kwota" data-charge="{{ w.klucz }}">{% if w.charge is not none %}{{ '%.2f' % w.charge }} EUR{% else %}—{% endif %}</td>
+                {% endif %}
+            </tr>
+            {% endfor %}
+            {% if pokaz_ceny %}
+            <tr class="odstep"><td colspan="5" style="border:none;height:10px;"></td></tr>
+            <tr class="suma"><td>Total charge</td><td></td><td></td><td></td><td class="kwota" id="totalCharge">{{ '%.2f' % dane.total }} EUR</td></tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const INVOICE = {{ {'rok': dane.rok, 'miesiac': dane.miesiac, 'pokaz_ceny': pokaz_ceny, 'wiersze': dane.wiersze} | tojson }};
+</script>
+<script src="{{ static_v('js/invoice_specification.js') }}"></script>
+{% endblock %}
