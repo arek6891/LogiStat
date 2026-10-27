@@ -1,0 +1,34 @@
+{# Listy z Ustawien (2026-10-26/27): wiersze Sorting Data i przyciski Przyjecia
+   zwrotu. Wymaga: rodzaje {rodzaj: tytul}, licencje {rodzaj: [..]}, uzywane, max_nazwy.
+   Skrypt: static/js/admin_licencje_zwrotow.js. #}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:24px;">
+    {% for rodzaj, tytul in rodzaje.items() %}
+    <div class="card">
+        <h3 style="margin-top:0;">{{ tytul }}</h3>
+        <table>
+            <thead><tr><th style="width:70px;">Kolejność</th><th>Nazwa</th><th style="width:80px;">Aktywna</th><th style="width:60px;"></th></tr></thead>
+            <tbody>
+                {% for lic in licencje[rodzaj] %}
+                <tr data-id="{{ lic.id }}">
+                    <td style="white-space:nowrap;">
+                        <button class="btn btn-ghost btn-sm js-przesun" data-kierunek="-1" title="W górę" {% if loop.first %}disabled{% endif %}>↑</button>
+                        <button class="btn btn-ghost btn-sm js-przesun" data-kierunek="1" title="W dół" {% if loop.last %}disabled{% endif %}>↓</button>
+                    </td>
+                    <td><input type="text" class="form-control js-nazwa" value="{{ lic.nazwa }}" maxlength="{{ max_nazwy }}"
+                               data-oryginal="{{ lic.nazwa }}" title="Zmiana nazwy zapisuje się po wyjściu z pola"></td>
+                    <td style="text-align:center;"><input type="checkbox" class="js-aktywna" {% if lic.aktywna %}checked{% endif %}></td>
+                    <td>{% if lic.id in uzywane %}<span title="Ma dane w Sorting Data — można tylko wyłączyć">🔒</span>
+                        {% else %}<button class="btn btn-danger btn-sm js-usun" title="Usuń">✕</button>{% endif %}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" style="color:var(--text-muted);">Lista pusta.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <form class="js-dodaj" data-rodzaj="{{ rodzaj }}" style="display:flex;gap:.5rem;margin-top:12px;">
+            <input type="text" name="nazwa" class="form-control" maxlength="{{ max_nazwy }}" placeholder="Nowa pozycja" required>
+            <button type="submit" class="btn btn-primary">➕ Dodaj</button>
+        </form>
+    </div>
+    {% endfor %}
+</div>

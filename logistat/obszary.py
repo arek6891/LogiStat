@@ -22,7 +22,7 @@ USTAWIENIA = 'ustawienia'
 OBSZARY = {
     MAGAZYN: {
         'nazwa': 'Magazyn', 'ikona': '👷', 'start': 'stanowisko.scan_paczki',
-        'opis': 'Stanowiska: skaner zmian, czas pracy, czasy paczek, inspektor paczek',
+        'opis': 'Stanowiska: skaner zmian, czas pracy, czasy paczek, inspektor paczek, przyjęcie zwrotu',
     },
     POST_PROCESS: {
         'nazwa': 'Post-Process', 'ikona': '📦', 'start': 'dashboard.dashboard',
@@ -71,6 +71,8 @@ _ENDPOINTY = {
         'stanowisko.api_package_time_przekaz', 'stanowisko.api_package_time_dolacz',
         # Paczki inspektor
         'stanowisko.scan_package', 'stanowisko.api_package_lookup',
+        # Przyjecie zwrotu (2026-10-27) — wiersze raportu Zwroty Paczek
+        'zwroty.przyjecie_zwrotu', 'zwroty.api_przyjecie_zwrotu',
     },
     POST_PROCESS: {
         'dashboard.dashboard', 'dashboard.api_dashboard', 'dashboard.api_dashboard_plik',
@@ -120,6 +122,7 @@ _ENDPOINTY = {
         'zwroty.admin_licencje', 'zwroty.api_licencja_dodaj', 'zwroty.api_licencja_zmien',
         'zwroty.api_licencja_usun', 'zwroty.admin_cennik', 'zwroty.api_cennik',
         'zwroty.api_cennik_zapisz',
+        'zwroty.admin_przyjecie', 'zwroty.api_etykiety_przyjecia',
         'admin.api_activities', 'admin.api_activity_create', 'admin.api_activity_update',
         'admin.api_activity_delete', 'admin.api_activities_reorder',
         'admin.api_country_mappings', 'admin.api_country_mapping_create',

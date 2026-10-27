@@ -50,6 +50,13 @@
                         class="{% if request.endpoint == 'stanowisko.scan_package' %}active{% endif %}">
                         <span class="icon">🔎</span> Paczki inspektor
                     </a></li>
+                {# Belka Zwroty kafelka Magazyn (operacja 2026-10-27) — inna ikona niz sekcja
+                   kafelka Zwroty (admin bez wybranego kafelka widzi obie). #}
+                <li class="nav-section">📥 Zwroty</li>
+                <li><a href="{{ url_for('zwroty.przyjecie_zwrotu') }}"
+                        class="{% if request.endpoint == 'zwroty.przyjecie_zwrotu' %}active{% endif %}">
+                        <span class="icon">📥</span> Przyjęcie zwrotu
+                    </a></li>
                 {% endif %}
 
                 {% if 'post_process' in menu_obszary %}
@@ -127,7 +134,7 @@
                         <span class="icon">⚙️</span> Czynności
                     </a></li>
                 <li><a href="{{ url_for('admin.admin_panel') }}"
-                        class="{% if request.endpoint in ('admin.admin_panel', 'admin.admin_country_mapping', 'admin.admin_user_options', 'admin.admin_category_labels', 'admin.admin_settings', 'admin.admin_cost_mapping', 'zwroty.admin_licencje', 'zwroty.admin_cennik') %}active{% endif %}">
+                        class="{% if request.endpoint in ('admin.admin_panel', 'admin.admin_country_mapping', 'admin.admin_user_options', 'admin.admin_category_labels', 'admin.admin_settings', 'admin.admin_cost_mapping', 'zwroty.admin_licencje', 'zwroty.admin_cennik', 'zwroty.admin_przyjecie') %}active{% endif %}">
                         <span class="icon">🛡️</span> Panel Admina
                     </a></li>
                 {% endif %}

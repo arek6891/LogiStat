@@ -233,10 +233,12 @@ def test_magazyn_skaner_zmian_w_belce_zmiany_na_gorze(client):
     menu = html[html.index('class="sidebar-nav"'):html.index('class="sidebar-footer"')]
     belki = menu.split('class="nav-section"')[1:]
 
-    assert [b[1:b.index('</li>')] for b in belki] == ['🔁 Zmiany', '👷 Post-Processing']
+    assert [b[1:b.index('</li>')] for b in belki] == ['🔁 Zmiany', '👷 Post-Processing', '📥 Zwroty']
     assert 'Skaner zmian' in belki[0] and 'Czas pracy' not in belki[0]
     assert 'Skaner zmian' not in belki[1]
     assert all(n in belki[1] for n in ('Czas pracy', 'Czasy paczek', 'Paczki inspektor'))
+    # Operacja 2026-10-27: trzecia belka „Zwroty” z Przyjęciem zwrotu.
+    assert 'Przyjęcie zwrotu' in belki[2] and 'Przyjęcie zwrotu' not in belki[1]
 
 
 # ── zakladanie kont stanowisk ────────────────────────────────────────────────
@@ -263,14 +265,15 @@ def test_konto_stanowiska_zaklada_tylko_admin(client):
 # ── strony kafelka siegaja tylko po API ze swojego kafelka ───────────────────
 
 STRONY = {
-    MAGAZYN: ['/scanner/1', '/time-tracking', '/scan-paczki', '/scan-package'],
+    MAGAZYN: ['/scanner/1', '/time-tracking', '/scan-paczki', '/scan-package', '/zwroty/przyjecie'],
     POST_PROCESS: ['/dashboard', '/forecast', '/assignment', '/data-entry', '/stats', '/paczki',
                    '/worker-times', '/import-csv', '/general-stats', '/admin/users'],
     DISPLAYS: ['/displays'],
     ZWROTY: ['/zwroty/paczki', '/zwroty/invoice-specification', '/zwroty/sorting-data'],
     USTAWIENIA: ['/admin/panel', '/admin/activities', '/admin/country-mapping',
                  '/admin/user-options', '/admin/category-labels', '/admin/settings',
-                 '/admin/cost-mapping', '/admin/zwroty/licencje', '/admin/zwroty/cennik'],
+                 '/admin/cost-mapping', '/admin/zwroty/licencje', '/admin/zwroty/cennik',
+                 '/admin/zwroty/przyjecie'],
 }
 
 

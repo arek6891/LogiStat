@@ -8,7 +8,7 @@
 Wszystkie liczby syntetyczne.
 """
 import io
-from datetime import date
+from datetime import date, datetime
 
 import openpyxl
 import pytest
@@ -16,7 +16,7 @@ import pytest
 from logistat.extensions import db
 from logistat.faktura_zwrotow import KLUCZ_POS, LICENCJA, LICENCJE_DOMYSLNE, WYSYLKA
 from logistat.models import (
-    CenaZwrotow, IloscMiesiacaZwrotow, LicencjaZwrotow, SortingDataWpis)
+    CenaZwrotow, IloscMiesiacaZwrotow, LicencjaZwrotow, SortingDataWpis, ZwrotPaczki)
 from logistat.zwroty_dane import invoice_specification, sorting_data
 
 CENA_TESTOWA = 7.37  # nietypowa, zeby jej szukac w HTML / Excelu lidera
@@ -67,19 +67,23 @@ def test_walidacja_ilosci(leader_client, body, blad):
     assert r.status_code == 400 and blad in r.get_json()['error']
 
 
-def test_sorting_returns_to_liczba_wierszy_raportu_zwrotow(flask_app, monkeypatch):
-    """Arkusz: 1816 wierszy (4 Paketnummer powtorzone) → Sorting returns 1816."""
-    wywolania = []
+def test_sorting_returns_to_liczba_wierszy_raportu_zwrotow(flask_app):
+    """Arkusz: 1816 wierszy (4 Paketnummer powtorzone) → Sorting returns 1816.
+    Granice miesiaca po czasie lokalnym (Warszawa), nie UTC."""
+    def zwrot(token, kiedy_utc, paket='%A'):
+        db.session.add(ZwrotPaczki(
+            paketnummer=paket, brand='ACC', pos_nummer='NO', kurier='DPD', retoure=1,
+            verpackungsvorschrift='Yes', token=token, przyjeto_at=kiedy_utc))
 
-    def stub(od, do, **_):
-        wywolania.append((od, do))
-        return [('%A',), ('%A',), ('%B',)]
+    zwrot('t-luty-1', datetime(2026, 2, 10, 9))
+    zwrot('t-luty-2', datetime(2026, 2, 10, 10))          # ten sam Paketnummer — liczy sie znowu
+    zwrot('t-luty-3', datetime(2026, 2, 28, 22, 30), '%B')  # 28.02 23:30 w Warszawie
+    zwrot('t-marzec', datetime(2026, 2, 28, 23, 30))        # 01.03 00:30 w Warszawie
+    zwrot('t-styczen', datetime(2026, 1, 31, 22, 59))       # 31.01 23:59 w Warszawie
+    db.session.commit()
 
-    monkeypatch.setattr('logistat.zwroty_dane.wiersze_zwrotow', stub)
     w = invoice_specification(2026, 2)['wiersze'][0]
-
     assert (w['klucz'], w['ilosc'], w['auto']) == ('sorting_returns', 3, True)
-    assert wywolania == [(date(2026, 2, 1), date(2026, 2, 28))]
 
 
 def test_total_charge_i_brak_ceny(flask_app):

@@ -6,6 +6,9 @@
   roczne w ukladzie arkuszy operacji; ilosci wpisuje lider (autozapis), ceny
   ustawia admin w Ustawieniach (miesiacami), listy wierszy Sorting Data tez admin.
   Lider nie widzi cen ani Total charge — ani na ekranie, ani w Excelu.
+- „Przyjęcie zwrotu” (2026-10-27, kafelek Magazyn): pracownik przechodzi ekran
+  po ekranie, jeden zapis = jeden wiersz Zwrotow Paczek. Napisy ekranow
+  i przyciski (brandy, kurierzy, Verpackungsvorschrift) ustawia admin.
 """
 from datetime import date
 
@@ -22,17 +25,28 @@ from logistat.faktura_zwrotow import (
     CZYNNOSCI_AUTO, CZYNNOSCI_FAKTURY, KLUCZ_POS, KLUCZE_FAKTURY, MAX_ILOSC_ZWROTOW,
     MIESIACE_EN, NAZWA_LICENCJI_MAX, POLA_SORTING, RODZAJE_LICENCJI)
 from logistat.models import LicencjaZwrotow, SortingDataWpis
+from logistat.przyjecie_zwrotu import (
+    BRAK_POS, BRAND, ETYKIETA_MAX, ETYKIETY_DOMYSLNE, KOLUMNA_ETYKIETY, KURIER, LICZNIKI,
+    MAX_LICZNIK, OPAKOWANIE, PAKETNUMMER_MAX, RODZAJE_PRZYJECIA, TOKEN_MAX, pos_nummer)
 from logistat.web.excel import odpowiedz_xlsx
-from logistat.web.wspolne import acting_as_admin, admin_required, json_body, leader_required
+from logistat.web.wspolne import (
+    acting_as_admin, admin_required, json_body, leader_required, magazyn_required)
 from logistat.zwroty_dane import (
-    NAGLOWKI_ZWROTOW, brandy_zwrotow, ceny_miesiaca, invoice_specification, sorting_data,
-    wiersze_zwrotow, zapisz_ceny, zapisz_ilosc_miesiaca, zapisz_sorting)
+    brandy_zwrotow, ceny_miesiaca, etykiety_przyjecia, invoice_specification,
+    kurierzy_raportu, listy_przyjecia, naglowki_zwrotow, opcje_przyjecia, sorting_data,
+    wiersze_zwrotow, zapisz_ceny, zapisz_etykiety, zapisz_ilosc_miesiaca, zapisz_sorting,
+    zapisz_zwrot)
+
+# Listy edytowane w Ustawieniach — Sorting Data i przyciski Przyjecia zwrotu.
+RODZAJE_LIST = {**RODZAJE_LICENCJI, **RODZAJE_PRZYJECIA}
 
 bp = Blueprint('zwroty', __name__)
 
-# Szerokosci kolumn z arkusza operacji (Return_September_2026).
-SZEROKOSCI_KOLUMN = (22.1, 10.7, 13.7, 17.9, 9.3, 9.0, 12.7, 11.6,
-                     26.3, 19.3, 28.6, 20.9, 25.6, 13.7, 11.7)
+# Szerokosci kolumn z arkusza operacji (Return_September_2026): przed
+# kurierami, kolumna kuriera (jak DPD / UPS), po kurierach.
+SZEROKOSCI_PRZED = (22.1, 10.7, 13.7, 17.9)
+SZEROKOSC_KURIERA = 9.3
+SZEROKOSCI_PO = (12.7, 11.6, 26.3, 19.3, 28.6, 20.9, 25.6, 13.7, 11.7)
 
 
 @bp.route('/zwroty')
@@ -72,9 +86,10 @@ def _filtry():
 @leader_required
 def zwroty_paczek():
     f = _filtry()
-    return render_template('zwroty_paczek.html', naglowki=NAGLOWKI_ZWROTOW,
-                           wiersze=wiersze_zwrotow(**f), brandy=brandy_zwrotow(),
-                           filtry=f, dzis=local_today())
+    kurierzy = kurierzy_raportu(f['od'], f['do'])
+    return render_template('zwroty_paczek.html', naglowki=naglowki_zwrotow(kurierzy),
+                           wiersze=wiersze_zwrotow(**f, kurierzy=kurierzy),
+                           brandy=brandy_zwrotow(), filtry=f, dzis=local_today())
 
 
 @bp.route('/zwroty/paczki/export')
@@ -84,17 +99,19 @@ def zwroty_paczek_export():
     wb = Workbook()
     ws = wb.active
     ws.title = 'Returns'
-    ws.append(list(NAGLOWKI_ZWROTOW))
+    kurierzy = kurierzy_raportu(f['od'], f['do'])
+    ws.append(list(naglowki_zwrotow(kurierzy)))
     for komorka in ws[1]:
         komorka.alignment = Alignment(horizontal='center')
-    for wiersz in wiersze_zwrotow(**f):
+    for wiersz in wiersze_zwrotow(**f, kurierzy=kurierzy):
         ws.append(list(wiersz))
         nr = ws.max_row
         # Paketnummer zaczyna sie od „%” i ma wiodace zera — zawsze tekst.
         ws.cell(nr, 1).number_format = '@'
         if isinstance(ws.cell(nr, 3).value, date):
             ws.cell(nr, 3).number_format = 'DD.MM.YYYY'
-    for i, szer in enumerate(SZEROKOSCI_KOLUMN, start=1):
+    szerokosci = SZEROKOSCI_PRZED + (SZEROKOSC_KURIERA,) * len(kurierzy) + SZEROKOSCI_PO
+    for i, szer in enumerate(szerokosci, start=1):
         ws.column_dimensions[ws.cell(1, i).column_letter].width = szer
     ws.auto_filter.ref = ws.dimensions
     nazwa = (f'Returns_{f["od"]:%Y-%m-%d}.xlsx' if f['od'] == f['do']
@@ -341,6 +358,94 @@ def admin_licencje():
                            uzywane=uzywane, max_nazwy=NAZWA_LICENCJI_MAX)
 
 
+# ── Przyjecie zwrotu (kafelek Magazyn) ───────────────────────────────────────
+
+@bp.route('/zwroty/przyjecie')
+@magazyn_required
+def przyjecie_zwrotu():
+    return render_template('przyjecie_zwrotu.html', etykiety=etykiety_przyjecia(),
+                           listy=listy_przyjecia(), liczniki=LICZNIKI, brak_pos=BRAK_POS,
+                           max_licznik=MAX_LICZNIK)
+
+
+def _z_listy(d, pole, rodzaj, nazwa_pola):
+    wartosc = d.get(pole)
+    if not isinstance(wartosc, str) or wartosc not in opcje_przyjecia(rodzaj):
+        # Admin mogl wlasnie wylaczyc pozycje — ekran pokazuje stara liste.
+        abort(400, f'Nieznana wartość „{nazwa_pola}” — odśwież stronę.')
+    return wartosc
+
+
+@bp.route('/api/zwroty/przyjecie', methods=['POST'])
+@magazyn_required
+def api_przyjecie_zwrotu():
+    """Jeden przyjety zwrot. Date / Monat / Woche ustawia serwer (data
+    przyjecia), nigdy przegladarka. Ten sam `token` drugi raz → 200 bez nowego
+    wiersza (`powtorzony`), zeby podwojny klik nie liczyl sie na fakturze 2×."""
+    d = json_body()
+    token = d.get('token')
+    if not isinstance(token, str) or not 8 <= len(token) <= TOKEN_MAX:
+        abort(400, 'Brak identyfikatora zapisu — odśwież stronę.')
+    paket = d.get('paketnummer')
+    paket = paket.strip() if isinstance(paket, str) else ''
+    if not paket:
+        abort(400, 'Zeskanuj numer paczki.')
+    if len(paket) > PAKETNUMMER_MAX:
+        abort(400, f'Numer paczki może mieć najwyżej {PAKETNUMMER_MAX} znaków.')
+    pos = pos_nummer(d.get('pos_nummer'))
+    if pos is None:
+        abort(400, 'Numer POS: tylko litery, cyfry i - _ / . (albo przycisk „brak numeru”).')
+    dane = {
+        'paketnummer': paket, 'pos_nummer': pos,
+        'brand': _z_listy(d, 'brand', BRAND, 'Brand'),
+        'kurier': _z_listy(d, 'kurier', KURIER, 'kurier'),
+        'verpackungsvorschrift': _z_listy(d, 'verpackungsvorschrift', OPAKOWANIE,
+                                          'Verpackungsvorschrift'),
+    }
+    for pole, naglowek, minimum, _ in LICZNIKI:
+        wartosc = d.get(pole)
+        if isinstance(wartosc, bool) or not isinstance(wartosc, int) \
+                or not minimum <= wartosc < MAX_LICZNIK:
+            abort(400, f'{naglowek}: liczba całkowita od {minimum} do {MAX_LICZNIK - 1}.')
+        dane[pole] = wartosc
+    zwrot, nowy = zapisz_zwrot(dane, token, current_user.id)
+    return jsonify({'ok': True, 'id': zwrot.id, 'powtorzony': not nowy,
+                    'paketnummer': zwrot.paketnummer}), 201 if nowy else 200
+
+
+@bp.route('/admin/zwroty/przyjecie')
+@admin_required
+def admin_przyjecie():
+    lista = LicencjaZwrotow.query.filter(LicencjaZwrotow.rodzaj.in_(RODZAJE_PRZYJECIA))\
+        .order_by(LicencjaZwrotow.kolejnosc, LicencjaZwrotow.id).all()
+    return render_template('admin_przyjecie_zwrotu.html', etykiety=etykiety_przyjecia(),
+                           domyslne=ETYKIETY_DOMYSLNE, kolumny=KOLUMNA_ETYKIETY,
+                           max_etykiety=ETYKIETA_MAX, rodzaje=RODZAJE_PRZYJECIA,
+                           licencje={r: [x for x in lista if x.rodzaj == r] for r in RODZAJE_PRZYJECIA},
+                           uzywane=set(), max_nazwy=NAZWA_LICENCJI_MAX)
+
+
+@bp.route('/api/zwroty/etykiety', methods=['PUT'])
+@admin_required
+def api_etykiety_przyjecia():
+    """{etykiety: {klucz: napis}} — pusty napis = powrot do domyslnego."""
+    etykiety = json_body().get('etykiety')
+    if not isinstance(etykiety, dict):
+        abort(400, 'Pole „etykiety” musi być obiektem {klucz: napis}.')
+    czyste = {}
+    for klucz, napis in etykiety.items():
+        if klucz not in ETYKIETY_DOMYSLNE:
+            abort(400, f'Nieznany ekran: {klucz}.')
+        if napis is not None and not isinstance(napis, str):
+            abort(400, 'Napis musi być tekstem.')
+        napis = ' '.join((napis or '').split())
+        if len(napis) > ETYKIETA_MAX:
+            abort(400, f'Napis może mieć najwyżej {ETYKIETA_MAX} znaków.')
+        czyste[klucz] = napis
+    zapisz_etykiety(czyste)
+    return jsonify({'ok': True, 'etykiety': etykiety_przyjecia()})
+
+
 def _nazwa_licencji(wartosc):
     nazwa = (wartosc or '').strip() if isinstance(wartosc, str) else ''
     if not nazwa:
@@ -363,7 +468,7 @@ def _zapisz_licencje():
 def api_licencja_dodaj():
     d = json_body()
     rodzaj = d.get('rodzaj')
-    if rodzaj not in RODZAJE_LICENCJI:
+    if rodzaj not in RODZAJE_LIST:
         abort(400, 'Nieznana lista.')
     nazwa = _nazwa_licencji(d.get('nazwa'))
     ostatnia = db.session.query(db.func.max(LicencjaZwrotow.kolejnosc))\
@@ -406,6 +511,7 @@ def api_licencja_zmien(lic_id):
 @admin_required
 def api_licencja_usun(lic_id):
     lic = db.get_or_404(LicencjaZwrotow, lic_id)
+    # Przyciski Przyjecia zwrotu mozna usuwac zawsze — zwrot trzyma nazwe jako tekst.
     if SortingDataWpis.query.filter_by(licencja_id=lic.id).first():
         abort(409, 'Pozycja ma wpisane dane w Sorting Data — można ją wyłączyć albo zmienić nazwę, nie usunąć.')
     db.session.delete(lic)

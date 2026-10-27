@@ -8,6 +8,7 @@ import os
 from logistat.config import DEFAULT_ADMIN_PASSWORD
 from logistat.extensions import db
 from logistat.faktura_zwrotow import LICENCJE_DOMYSLNE, ZNACZNIK_LICENCJI
+from logistat.przyjecie_zwrotu import LISTY_DOMYSLNE, ZNACZNIK_LIST
 from logistat.models import (
     Activity, AppSetting, CountryMapping, GeneralStat, ImportedCarton, LicencjaZwrotow,
     USER_OPTION_DEFAULTS, User, UserOption, zaznacz_wszystkich_przeszkolonych)
@@ -109,6 +110,16 @@ def seed_data():
         db.session.add(AppSetting(key=ZNACZNIK_LICENCJI, value='1'))
         db.session.commit()
         log.info('[SEED] Listy Sorting Data (licencje, wysylki) utworzone.')
+
+    # Przyciski Przyjecia zwrotu (2026-10-27): brandy, kurierzy, Verpackungsvorschrift.
+    if db.session.get(AppSetting, ZNACZNIK_LIST) is None:
+        for rodzaj, nazwy in LISTY_DOMYSLNE.items():
+            if LicencjaZwrotow.query.filter_by(rodzaj=rodzaj).count() == 0:
+                for i, nazwa in enumerate(nazwy):
+                    db.session.add(LicencjaZwrotow(rodzaj=rodzaj, nazwa=nazwa, kolejnosc=i))
+        db.session.add(AppSetting(key=ZNACZNIK_LIST, value='1'))
+        db.session.commit()
+        log.info('[SEED] Listy Przyjecia zwrotu (brandy, kurierzy, opakowania) utworzone.')
 
     if CountryMapping.query.count() == 0:
         for country, innenauftrag in DEFAULT_COUNTRY_MAPPINGS:

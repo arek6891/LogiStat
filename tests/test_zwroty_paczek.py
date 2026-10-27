@@ -9,17 +9,19 @@ import openpyxl
 from conftest import login, make_user
 
 from logistat.czas import local_today
-from logistat.zwroty_dane import NAGLOWKI_ZWROTOW
+from logistat.zwroty_dane import kurierzy_raportu, naglowki_zwrotow
 
+# Arkusz operacji + kolumna „Other” (2026-10-27: kurierzy z Ustawien, kazdy osobna kolumna).
 NAGLOWKI_OPERACJI = [
-    'Paketnummer', 'Brand', 'Date', 'POS-Nummer', 'DPD', 'UPS', 'Retoure', 'Defekt',
+    'Paketnummer', 'Brand', 'Date', 'POS-Nummer', 'DPD', 'UPS', 'Other', 'Retoure', 'Defekt',
     'Neuwarenueberschuss', 'Silber_in_Stück', 'Defektes_Silber_in_Stück',
     'Reduzierte_ware', 'Verpackungsvorschrift', 'Monat', 'Woche',
 ]
 
 
-def test_naglowki_jak_w_arkuszu_operacji():
-    assert list(NAGLOWKI_ZWROTOW) == NAGLOWKI_OPERACJI
+def test_naglowki_jak_w_arkuszu_operacji(flask_app):
+    dzis = local_today()
+    assert list(naglowki_zwrotow(kurierzy_raportu(dzis, dzis))) == NAGLOWKI_OPERACJI
 
 
 def test_ekran_ma_naglowki_i_domyslnie_dzis(leader_client):
@@ -64,7 +66,7 @@ def test_excel_ma_naglowki_operacji(leader_client):
 
 
 def test_excel_wiersze_z_tej_samej_funkcji_co_ekran(leader_client, monkeypatch):
-    wiersz = ('%0000000000000000001', 'ACC', date(2026, 9, 2), 'NO', 0, 1, 2, 1,
+    wiersz = ('%0000000000000000001', 'ACC', date(2026, 9, 2), 'NO', 0, 1, 0, 2, 1,
               0, 0, 0, 0, 'Yes', 'wrzesień-2026', '36-2026')
     wywolania = []
 
@@ -81,7 +83,8 @@ def test_excel_wiersze_z_tej_samej_funkcji_co_ekran(leader_client, monkeypatch):
     assert ws['A2'].value == '%0000000000000000001' and ws['A2'].number_format == '@'
     assert ws['C2'].value.date() == date(2026, 9, 2)
     assert wywolania[0] == wywolania[1] == {'od': date(2026, 9, 2), 'do': date(2026, 9, 2),
-                                            'brand': None, 'paketnummer': None}
+                                            'brand': None, 'paketnummer': None,
+                                            'kurierzy': ['DPD', 'UPS', 'Other']}
 
 
 def test_tylko_lider_i_admin(client):
