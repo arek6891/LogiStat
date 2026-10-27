@@ -9,8 +9,11 @@
 - „Przyjęcie zwrotu” (2026-10-27, kafelek Magazyn): pracownik przechodzi ekran
   po ekranie, jeden zapis = jeden wiersz Zwrotow Paczek. Napisy ekranow
   i przyciski (brandy, kurierzy, Verpackungsvorschrift) ustawia admin.
+  Bez osob przydzielonych do stanowiska przyjecie jest zablokowane (409).
+- „Przydział zwrotów” i „Dashboard zwrotów” (2026-10-27): lider przydziela osoby
+  z czynnosci Zwroty do stanowisk / Supportu; statystyki dni miesiaca.
 """
-from datetime import date
+from datetime import date, timedelta
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user
@@ -19,20 +22,26 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from sqlalchemy.exc import IntegrityError
 
-from logistat.czas import local_today
+from logistat.czas import local_today, teraz_utc
 from logistat.extensions import db
 from logistat.faktura_zwrotow import (
     CZYNNOSCI_AUTO, CZYNNOSCI_FAKTURY, KLUCZ_POS, KLUCZE_FAKTURY, MAX_ILOSC_ZWROTOW,
     MIESIACE_EN, NAZWA_LICENCJI_MAX, POLA_SORTING, RODZAJE_LICENCJI)
-from logistat.models import LicencjaZwrotow, SortingDataWpis
+from logistat.models import (
+    LicencjaZwrotow, Shift, SortingDataWpis, User, ZwrotPaczki, get_or_create_shift)
+from logistat.przydzial_zwrotow import (
+    dashboard_zwrotow, obsada_stanowiska, przydziel, stan_przydzialu, stanowiska_zwrotow,
+    zamknij_otwarty, zmiana_edytowalna)
 from logistat.przyjecie_zwrotu import (
     BRAK_POS, BRAND, ETYKIETA_MAX, ETYKIETY_DOMYSLNE, KOLUMNA_ETYKIETY, KURIER, LICZNIKI,
-    MAX_LICZNIK, OPAKOWANIE, PAKETNUMMER_MAX, RODZAJE_PRZYJECIA, TOKEN_MAX, pos_nummer)
+    KOMUNIKAT_BRAK_OBSADY, MAX_GODZIN_PRZYDZIALU, MAX_LICZNIK, MIESIACE_PL, OPAKOWANIE, PAKETNUMMER_MAX, RODZAJE_PRZYJECIA, SUPPORT,
+    TOKEN_MAX, pos_nummer)
 from logistat.web.excel import odpowiedz_xlsx
 from logistat.web.wspolne import (
-    acting_as_admin, admin_required, json_body, leader_required, magazyn_required)
+    acting_as_admin, admin_required, json_body, leader_required, magazyn_required, parse_date,
+    parse_shift_number, require_int)
 from logistat.zwroty_dane import (
-    brandy_zwrotow, ceny_miesiaca, etykiety_przyjecia, invoice_specification,
+    brandy_zwrotow, ceny_miesiaca, etykiety_przyjecia, granice_miesiaca, invoice_specification,
     kurierzy_raportu, listy_przyjecia, naglowki_zwrotow, opcje_przyjecia, sorting_data,
     wiersze_zwrotow, zapisz_ceny, zapisz_etykiety, zapisz_ilosc_miesiaca, zapisz_sorting,
     zapisz_zwrot)
@@ -363,9 +372,21 @@ def admin_licencje():
 @bp.route('/zwroty/przyjecie')
 @magazyn_required
 def przyjecie_zwrotu():
+    obsada = _obsada_nazwy(current_user, teraz_utc())
     return render_template('przyjecie_zwrotu.html', etykiety=etykiety_przyjecia(),
                            listy=listy_przyjecia(), liczniki=LICZNIKI, brak_pos=BRAK_POS,
-                           max_licznik=MAX_LICZNIK)
+                           max_licznik=MAX_LICZNIK, obsada=obsada,
+                           brak_obsady=KOMUNIKAT_BRAK_OBSADY)
+
+
+def _obsada_nazwy(konto, chwila):
+    """Imiona osob na stanowisku tego konta; [] = nikt (albo to nie stanowisko)."""
+    if konto.role != 'stanowisko':
+        return []
+    ids = obsada_stanowiska(konto.id, chwila)
+    if not ids:
+        return []
+    return [u.display_name for u in User.query.filter(User.id.in_(ids)).order_by(User.display_name)]
 
 
 def _z_listy(d, pole, rodzaj, nazwa_pola):
@@ -408,9 +429,95 @@ def api_przyjecie_zwrotu():
                 or not minimum <= wartosc < MAX_LICZNIK:
             abort(400, f'{naglowek}: liczba całkowita od {minimum} do {MAX_LICZNIK - 1}.')
         dane[pole] = wartosc
-    zwrot, nowy = zapisz_zwrot(dane, token, current_user.id)
+    # Kolejnosc: walidacja → ten sam token (ponowienie juz zapisanego zwrotu
+    # przechodzi, nawet gdy lider w miedzyczasie zdjal obsade) → obsada → zapis.
+    juz = ZwrotPaczki.query.filter_by(token=token).first()
+    if juz is not None:
+        return jsonify({'ok': True, 'id': juz.id, 'powtorzony': True,
+                        'paketnummer': juz.paketnummer}), 200
+    teraz = teraz_utc()
+    obsada = _obsada_nazwy(current_user, teraz)
+    if not obsada:
+        return jsonify({'error': KOMUNIKAT_BRAK_OBSADY, 'brak_obsady': True}), 409
+    zwrot, nowy = zapisz_zwrot(dane, token, current_user.id, teraz)
     return jsonify({'ok': True, 'id': zwrot.id, 'powtorzony': not nowy,
-                    'paketnummer': zwrot.paketnummer}), 201 if nowy else 200
+                    'paketnummer': zwrot.paketnummer, 'obsada': obsada}), 201 if nowy else 200
+
+
+# ── Przydzial zwrotow (lider) ────────────────────────────────────────────────
+
+def _zmiana_przydzialu(dzien, numer):
+    """Przydzial dziala „od teraz”, wiec tylko biezace zmiany: dzis albo wczoraj
+    (druga zmiana pracuje po polnocy). Data i godzina z serwera."""
+    if not zmiana_edytowalna(dzien):
+        abort(400, 'Przydział zwrotów działa tylko dla bieżącej zmiany (dziś albo wczoraj).')
+    return get_or_create_shift(dzien, numer)
+
+
+@bp.route('/zwroty/przydzial')
+@leader_required
+def przydzial_zwrotow():
+    dzien = _dzien(request.args.get('date', '')) or local_today()
+    numer = request.args.get('shift', type=int)
+    return render_template('przydzial_zwrotow.html', dzien=dzien,
+                           zmiana=numer if numer in (1, 2) else 1, max_godzin=MAX_GODZIN_PRZYDZIALU)
+
+
+@bp.route('/api/zwroty/przydzial', methods=['GET'])
+@leader_required
+def api_przydzial_zwrotow():
+    dzien = parse_date(request.args.get('date'))
+    numer = parse_shift_number(request.args.get('shift'))
+    shift = get_or_create_shift(dzien, numer)
+    return jsonify(stan_przydzialu(shift))
+
+
+@bp.route('/api/zwroty/przydzial', methods=['PUT'])
+@leader_required
+def api_przydzial_zwrotow_zapisz():
+    """{date, shift, user_id, miejsce: id stanowiska | 'support' | null}.
+    Przeniesienie liczy sie od chwili zapisu; null = zejscie ze stanowiska."""
+    d = json_body()
+    dzien = parse_date(d.get('date'))
+    numer = parse_shift_number(d.get('shift'))
+    user_id = require_int(d.get('user_id'), 'user_id')
+    miejsce = d.get('miejsce')
+    shift = _zmiana_przydzialu(dzien, numer)
+    # Dwoch liderow na jednej zmianie — kolejno, nie na raz.
+    shift = Shift.query.filter_by(id=shift.id).with_for_update().one()
+    teraz = teraz_utc()
+    if miejsce is None:
+        zamknij_otwarty(user_id, teraz)
+    else:
+        stan = stan_przydzialu(shift)
+        if user_id not in {o['user_id'] for o in stan['osoby'] if not o['poza_zwrotami']}:
+            abort(400, f'Ta osoba nie jest przydzielona do czynności „{stan["czynnosc"]}” '
+                       'na tej zmianie — najpierw Przydzielanie.')
+        if miejsce == SUPPORT:
+            przydziel(shift, user_id, None, True, teraz, current_user.id)
+        else:
+            if isinstance(miejsce, bool) or not isinstance(miejsce, int) \
+                    or miejsce not in {s.id for s in stanowiska_zwrotow()}:
+                abort(400, 'Nieznane stanowisko.')
+            przydziel(shift, user_id, miejsce, False, teraz, current_user.id)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        abort(409, 'Ktoś właśnie zmienił przydział tej osoby — odśwież ekran.')
+    return jsonify(stan_przydzialu(shift))
+
+
+# ── Dashboard zwrotow ────────────────────────────────────────────────────────
+
+@bp.route('/zwroty/dashboard')
+@leader_required
+def dashboard_zwrotow_view():
+    rok, miesiac = _okres_z_adresu()
+    od, do = granice_miesiaca(rok, miesiac)
+    dni = [od + timedelta(days=i) for i in range((do - od).days + 1)]
+    return render_template('dashboard_zwrotow.html', d=dashboard_zwrotow(dni, teraz_utc()),
+                           rok=rok, miesiac=miesiac, dzis=local_today(), MIESIACE_PL=MIESIACE_PL)
 
 
 @bp.route('/admin/zwroty/przyjecie')

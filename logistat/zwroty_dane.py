@@ -121,11 +121,12 @@ def listy_przyjecia():
     return {r: opcje_przyjecia(r) for r in RODZAJE_PRZYJECIA}
 
 
-def zapisz_zwrot(dane, token, kto_id):
+def zapisz_zwrot(dane, token, kto_id, teraz):
     """Nowy wiersz zwrotu (dane juz sprawdzone). Ten sam `token` drugi raz
-    (podwojne klikniecie, ponowienie) nie dodaje wiersza → (zwrot, False)."""
+    (podwojne klikniecie, ponowienie) nie dodaje wiersza → (zwrot, False).
+    `teraz` = ta sama chwila, dla ktorej sprawdzono obsade stanowiska."""
     stmt = insert(ZwrotPaczki.__table__).values(
-        **dane, token=token, przyjal_id=kto_id, przyjeto_at=teraz_utc())
+        **dane, token=token, przyjal_id=kto_id, przyjeto_at=teraz)
     nowy_id = db.session.execute(
         stmt.on_conflict_do_nothing(index_elements=['token']).returning(ZwrotPaczki.id)).scalar()
     db.session.commit()

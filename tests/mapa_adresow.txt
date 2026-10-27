@@ -42,6 +42,7 @@ GET /api/user-options
 GET /api/users
 GET /api/worker-times
 GET /api/zwroty/cennik/<int:rok>/<int:miesiac>
+GET /api/zwroty/przydzial
 GET /assignment
 GET /dashboard
 GET /data-entry
@@ -60,10 +61,12 @@ GET /stats
 GET /time-tracking
 GET /worker-times
 GET /zwroty
+GET /zwroty/dashboard
 GET /zwroty/invoice-specification
 GET /zwroty/invoice-specification/export
 GET /zwroty/paczki
 GET /zwroty/paczki/export
+GET /zwroty/przydzial
 GET /zwroty/przyjecie
 GET /zwroty/sorting-data
 GET /zwroty/sorting-data/export
@@ -120,4 +123,5 @@ PUT /api/zwroty/cennik/<int:rok>/<int:miesiac>
 PUT /api/zwroty/etykiety
 PUT /api/zwroty/invoice-specification/ilosc
 PUT /api/zwroty/licencje/<int:lic_id>
+PUT /api/zwroty/przydzial
 PUT /api/zwroty/sorting-data

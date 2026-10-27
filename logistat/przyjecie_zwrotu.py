@@ -7,6 +7,7 @@ zapis = jeden wiersz raportu Zwroty Paczek. Naglowki raportu zostaja niemieckie
 z Ustawien (`etykieta_zwrotu:<klucz>`, pusta = domyslna ponizej).
 """
 import re
+from datetime import timedelta
 
 # Listy z przyciskami (Ustawienia → Przyjęcie zwrotu). Ta sama tabela co listy
 # Sorting Data (`licencja_zwrotow.rodzaj`), osobne rodzaje.
@@ -98,3 +99,45 @@ def pos_nummer(wartosc):
     if not pos or len(pos) > POS_MAX or not WZOR_POS.match(pos):
         return None
     return pos
+
+
+# ── Przydzial osob do stanowisk zwrotow (operacja 2026-10-27) ────────────────
+# Lider przydziela osoby z czynnosci „Zwroty” (Przydzielanie, po NAZWIE — zmiana
+# nazwy czynnosci odcina ten ekran) do stanowisk = kont roli `stanowisko`, albo do
+# Supportu. Osoba liczy sie od chwili przydzialu do przeniesienia / zdjecia,
+# skanu „Koniec pracy” albo MAX_GODZIN_PRZYDZIALU (zmiany nie maja godzin).
+CZYNNOSC_ZWROTOW = 'Zwroty'
+SUPPORT = 'support'
+MAX_GODZIN_PRZYDZIALU = 12
+KOMUNIKAT_BRAK_OBSADY = ('Nie przydzielono nikogo do stanowiska! Skontaktuj się z liderem, '
+                         'aby przydzielił stanowisko do zwrotów.')
+
+
+def efektywne_okresy(wiersze, konce_pracy):
+    """Okresy przydzialu, ktore naprawde licza sie do statystyk.
+
+    `wiersze`: [(user_id, stanowisko_id | None, support, od, do | None)] (naive UTC),
+    `konce_pracy`: {user_id: [czas work_end, …]}. Koniec okresu = najwczesniejsze
+    z: `do`, pierwszy „Koniec pracy” po `od`, `od` + MAX_GODZIN_PRZYDZIALU. Okres
+    jeszcze trwajacy siega w przyszlosc — godziny do statystyk przycina wolajacy
+    (do „teraz”). Zwraca [(user_id, stanowisko_id, support, start, koniec)]."""
+    wynik = []
+    for user_id, stanowisko_id, support, od, do in wiersze:
+        konce = [od + timedelta(hours=MAX_GODZIN_PRZYDZIALU)]
+        if do is not None:
+            konce.append(do)
+        koniec_pracy = min((k for k in konce_pracy.get(user_id, ()) if k > od), default=None)
+        if koniec_pracy is not None:
+            konce.append(koniec_pracy)
+        koniec = min(konce)
+        if koniec > od:
+            wynik.append((user_id, stanowisko_id, support, od, koniec))
+    return wynik
+
+
+def kto_na_stanowisku(okresy, stanowisko_id, chwila):
+    """Osoby (posortowane id) na stanowisku w danej chwili — z `efektywne_okresy()`.
+    Jedyna definicja: blokada przyjecia zwrotu i dashboard licza tak samo.
+    Okres [start, koniec) — przy przeniesieniu o 10:00 paczka z 10:00 idzie na nowe miejsce."""
+    return sorted({u for u, s, sup, start, koniec in okresy
+                   if not sup and s == stanowisko_id and start <= chwila < koniec})

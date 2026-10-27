@@ -26,6 +26,7 @@ const KROKI = [
 ];
 
 let krok = 0;
+let obsada = PRZYJECIE.obsada;
 let dane = {};
 let token = nowyToken();
 let zajete = false;
@@ -191,8 +192,30 @@ function ekranLicznika(ekran, k) {
     nawigacja(ekran, przycisk('przyjecie-dalej', 'Dalej →', zatwierdz));
 }
 
+function pokazObsade() {
+    document.getElementById('przyjecieObsada').textContent =
+        obsada.length ? `Na stanowisku: ${obsada.join(', ')}` : '';
+}
+
+// Nikt nie jest przydzielony do tego stanowiska — paczka nie mialaby do kogo
+// isc w statystykach, wiec przyjecie stoi, az lider przydzieli (operacja 2026-10-27).
+function pokazBlokade(ponow) {
+    pokazObsade();
+    document.getElementById('przyjecieKrok').textContent = '';
+    document.getElementById('przyjecieWybrane').replaceChildren();
+    const ekran = document.getElementById('przyjecieEkran');
+    ekran.replaceChildren(el('div', 'przyjecie-blokada', '⛔ ' + PRZYJECIE.brak_obsady));
+    const nav = el('div', 'przyjecie-nawigacja');
+    nav.append(ponow ? przycisk('przyjecie-wstecz', '← Wstecz', () => { krok = KROKI.length - 1; pokaz(); })
+                     : el('span'));
+    nav.append(przycisk('przyjecie-dalej', ponow ? 'Spróbuj zapisać ponownie' : 'Sprawdź ponownie',
+                        ponow || (() => location.reload())));
+    ekran.append(nav);
+}
+
 function pokaz() {
     const k = KROKI[krok];
+    pokazObsade();
     document.getElementById('przyjecieKrok').textContent = `Krok ${krok + 1} / ${KROKI.length}`;
     pokazWybrane();
     const ekran = document.getElementById('przyjecieEkran');
@@ -206,6 +229,7 @@ async function zapisz() {
     document.querySelectorAll('#przyjecieEkran button').forEach(b => { b.disabled = true; });
     try {
         const wynik = await zapiszJson('/api/zwroty/przyjecie', 'POST', { ...dane, token });
+        if (wynik.obsada) obsada = wynik.obsada;
         const ostatni = document.getElementById('przyjecieOstatni');
         ostatni.textContent = `✓ Przyjęto zwrot ${wynik.paketnummer}`;
         ostatni.hidden = false;
@@ -218,6 +242,11 @@ async function zapisz() {
     } catch (e) {
         // Dane i token zostaja — ponowne klikniecie nie utworzy drugiego wiersza.
         zajete = false;
+        if (e.dane && e.dane.brak_obsady) {
+            obsada = [];
+            pokazBlokade(zapisz);
+            return;
+        }
         showToast(e.message, 'error');
         pokaz();
     }
@@ -227,4 +256,4 @@ window.addEventListener('beforeunload', e => {
     if (krok > 0) { e.preventDefault(); e.returnValue = ''; }
 });
 
-pokaz();
+if (obsada.length) pokaz(); else pokazBlokade(null);

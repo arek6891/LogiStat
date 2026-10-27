@@ -3,17 +3,18 @@ ktory staje sie wierszem Zwrotow Paczek (ekran, Excel, Sorting returns).
 Dane syntetyczne — nigdy wiersze z pliku operacji."""
 import io
 import itertools
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import openpyxl
 import pytest
 
 from conftest import login, make_user, strona_z_js
 
-from logistat.czas import local_today
+from logistat.czas import local_today, teraz_utc
 from logistat.extensions import db
-from logistat.models import LicencjaZwrotow, ZwrotPaczki
-from logistat.przyjecie_zwrotu import ETYKIETY_DOMYSLNE, monat, pos_nummer, woche
+from logistat.models import (
+    Activity, ActivityAssignment, LicencjaZwrotow, PrzydzialZwrotow, ZwrotPaczki, get_or_create_shift)
+from logistat.przyjecie_zwrotu import CZYNNOSC_ZWROTOW, ETYKIETY_DOMYSLNE, monat, pos_nummer, woche
 from logistat.zwroty_dane import wiersze_zwrotow
 
 
@@ -31,12 +32,31 @@ def zwrot(**zmiany):
     return body
 
 
+def obsadz(stanowisko, *osoby, minut_temu=5):
+    """Przydzial jak u lidera: osoby na czynnosci „Zwroty” dzisiejszej zmiany 1
+    i otwarty wiersz na stanowisku (od kilku minut)."""
+    zmiana = get_or_create_shift(local_today(), 1)
+    zwroty = Activity.query.filter_by(name=CZYNNOSC_ZWROTOW).one()
+    for o in osoby:
+        db.session.add(ActivityAssignment(shift_id=zmiana.id, user_id=o.id, activity_id=zwroty.id))
+        db.session.add(PrzydzialZwrotow(shift_id=zmiana.id, user_id=o.id, stanowisko_id=stanowisko.id,
+                                        od=teraz_utc() - timedelta(minutes=minut_temu)))
+    db.session.commit()
+    return zmiana
+
+
 @pytest.fixture
-def stanowisko_client(flask_app):
-    """Osobny klient — admin_client / leader_client dziela jeden `client`."""
+def stanowisko(flask_app):
+    return make_user('stanowisko')
+
+
+@pytest.fixture
+def stanowisko_client(flask_app, stanowisko):
+    """Osobny klient (admin_client / leader_client dziela jeden `client`), stanowisko
+    z jedna osoba przydzielona — bez obsady przyjecie jest zablokowane."""
+    obsadz(stanowisko, make_user('operator'))
     klient = flask_app.test_client()
-    u = make_user('stanowisko')
-    login(klient, u.username)
+    login(klient, stanowisko.username)
     return klient
 
 

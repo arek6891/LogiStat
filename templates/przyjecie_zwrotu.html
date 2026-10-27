@@ -4,13 +4,15 @@
 {# Magazyn → Zwroty → Przyjecie zwrotu (operacja 2026-10-27): jeden ekran na kolumne
    raportu, kazdy z „Wstecz”; duze napisy i przyciski (stanowisko, tablet, skaner).
    Napisy i przyciski z Ustawien; zapis po ostatnim wyborze (Verpackungsvorschrift).
-   Date / Monat / Woche ustawia serwer. Ekrany buduje static/js/przyjecie_zwrotu.js. #}
+   Date / Monat / Woche ustawia serwer. Bez osob przydzielonych do tego stanowiska
+   (Przydzial zwrotow) ekran pokazuje blokade zamiast kreatora, zapis → 409. Ekrany buduje static/js/przyjecie_zwrotu.js. #}
 {% block content %}
 <div class="przyjecie">
     <div class="przyjecie-gora">
         <h1>📥 Przyjęcie zwrotu</h1>
         <span class="przyjecie-krok" id="przyjecieKrok"></span>
     </div>
+    <div class="przyjecie-obsada" id="przyjecieObsada"></div>
     <div class="przyjecie-ostatni" id="przyjecieOstatni" hidden></div>
     <div class="przyjecie-wybrane" id="przyjecieWybrane"></div>
     <div class="card przyjecie-ekran" id="przyjecieEkran"></div>
@@ -19,7 +21,7 @@
 
 {% block scripts %}
 <script>
-const PRZYJECIE = {{ {'etykiety': etykiety, 'listy': listy, 'liczniki': liczniki, 'brak_pos': brak_pos, 'max_licznik': max_licznik}|tojson }};
+const PRZYJECIE = {{ {'etykiety': etykiety, 'listy': listy, 'liczniki': liczniki, 'brak_pos': brak_pos, 'max_licznik': max_licznik, 'obsada': obsada, 'brak_obsady': brak_obsady}|tojson }};
 </script>
 <script src="{{ static_v('js/przyjecie_zwrotu.js') }}"></script>
 {% endblock %}

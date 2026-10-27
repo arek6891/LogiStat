@@ -80,3 +80,24 @@ class ZwrotPaczki(db.Model):
     # Z przegladarki, raz na paczke: podwojny klik / ponowienie po zerwanym
     # polaczeniu nie tworzy drugiego wiersza (Sorting returns idzie na fakture).
     token = db.Column(db.String(64), nullable=False, unique=True)
+
+
+class PrzydzialZwrotow(db.Model):
+    """Osoba na stanowisku zwrotow (konto roli `stanowisko`) albo na Supporcie
+    (`stanowisko_id` NULL, `support`) — od `od` do `do` (NULL = trwa). Przeniesienie
+    = zamkniecie + nowy wiersz w tej samej chwili; historii sie nie poprawia.
+    Najwyzej jeden otwarty wiersz na osobe (indeks czesciowy)."""
+    __tablename__ = 'przydzial_zwrotow'
+    id = db.Column(db.Integer, primary_key=True)
+    shift_id = db.Column(db.Integer, db.ForeignKey('shift.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    stanowisko_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    support = db.Column(db.Boolean, nullable=False, default=False)
+    od = db.Column(db.DateTime, nullable=False, default=teraz_utc, index=True)
+    do = db.Column(db.DateTime, nullable=True)
+    przydzielil_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+    __table_args__ = (
+        db.Index('uq_przydzial_zwrotow_otwarty', 'user_id', unique=True,
+                 postgresql_where=db.text('"do" IS NULL')),
+    )

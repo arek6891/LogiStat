@@ -35,7 +35,7 @@ OBSZARY = {
     },
     ZWROTY: {
         'nazwa': 'Zwroty', 'ikona': '↩️', 'start': 'zwroty.zwroty_paczek',
-        'opis': 'Zwroty Paczek — tabela zwrotów, eksport do Excela',
+        'opis': 'Zwroty Paczek, dashboard i przydział zwrotów, Invoice specification, Sorting Data',
     },
     USTAWIENIA: {
         'nazwa': 'Ustawienia', 'ikona': '🛡️', 'start': 'admin.admin_panel',
@@ -103,6 +103,9 @@ _ENDPOINTY = {
         'admin.admin_users', 'admin.api_users', 'admin.api_user_create',
         'admin.api_user_update', 'admin.api_user_delete',
         'admin.api_user_options', 'admin.api_activities',
+        # Przydzielanie → kolumna „Zwroty” → stanowiska (2026-10-27; tez w kafelku Zwroty)
+        'zwroty.przydzial_zwrotow', 'zwroty.api_przydzial_zwrotow',
+        'zwroty.api_przydzial_zwrotow_zapisz',
     },
     DISPLAYS: {
         'displays.displays',
@@ -113,6 +116,9 @@ _ENDPOINTY = {
         'zwroty.invoice_specification_view', 'zwroty.invoice_specification_export',
         'zwroty.api_invoice_ilosc',
         'zwroty.sorting_data_view', 'zwroty.sorting_data_export', 'zwroty.api_sorting_data',
+        # Przydzial osob do stanowisk zwrotow i dashboard (2026-10-27)
+        'zwroty.przydzial_zwrotow', 'zwroty.api_przydzial_zwrotow',
+        'zwroty.api_przydzial_zwrotow_zapisz', 'zwroty.dashboard_zwrotow_view',
     },
     USTAWIENIA: {
         'admin.admin_panel', 'admin.admin_activities', 'admin.admin_country_mapping',

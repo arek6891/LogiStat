@@ -1731,3 +1731,33 @@ h1, h2, h3, .page-title, .sidebar-logo h1, .login-card h1 {
     .przyjecie-plusminus { width: 90px; height: 90px; }
     .przyjecie-liczba { width: 140px; }
 }
+
+/* ── Przydział zwrotów i Dashboard zwrotów (2026-10-27) ─────────────────── */
+.przydzial-zwrotow { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.przydzial-stanowisko { padding: 14px 16px; margin: 0; }
+.przydzial-stanowisko h4 { margin: 0 0 4px; font-size: 1.05rem; }
+.przydzial-stanowisko ul { margin: 6px 0 0 18px; padding: 0; font-size: .9rem; }
+.przydzial-stanowisko.pusta { border-color: var(--warning); background: var(--warning-bg); }
+.przydzial-liczba { font-size: 1.6rem; font-weight: 800; color: var(--accent); }
+.przydzial-uwaga { color: var(--warning); }
+.przydzial-komunikat {
+    margin-bottom: 12px; padding: 10px 14px; border-radius: var(--radius-sm);
+    background: var(--warning-bg); color: var(--warning); font-weight: 600;
+}
+.przydzial-komunikat.info { background: var(--info-bg); color: var(--info); }
+.przyjecie-blokada {
+    padding: 36px 28px; text-align: center; border: 3px solid var(--danger);
+    background: var(--danger-bg); color: var(--danger); font-size: 1.8rem; font-weight: 800;
+}
+.przyjecie-obsada { font-size: 1.15rem; color: var(--text-muted); }
+.dashboard-zwrotow-przewijanie { overflow-x: auto; }
+.dashboard-zwrotow table { font-size: .85rem; white-space: nowrap; }
+.dashboard-zwrotow th, .dashboard-zwrotow td { text-align: right; padding: 6px 8px; }
+.dashboard-zwrotow th:first-child, .dashboard-zwrotow td:first-child {
+    text-align: left; position: sticky; left: 0; background: var(--bg-card-solid);
+}
+.dashboard-zwrotow .weekend { background: rgb(var(--border-rgb) / .35); }
+.dashboard-zwrotow .dzis { box-shadow: inset 0 -3px 0 var(--accent); }
+.dashboard-zwrotow .suma { font-weight: 800; }
+.dashboard-zwrotow .pusto { color: var(--text-muted); }
+.dashboard-zwrotow .uwaga { color: var(--danger); font-weight: 700; }

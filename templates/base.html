@@ -113,9 +113,17 @@
 
                 {% if 'zwroty' in menu_obszary %}
                 <li class="nav-section">↩️ Zwroty</li>
+                <li><a href="{{ url_for('zwroty.dashboard_zwrotow_view') }}"
+                        class="{% if request.endpoint == 'zwroty.dashboard_zwrotow_view' %}active{% endif %}">
+                        <span class="icon">📊</span> Dashboard zwrotów
+                    </a></li>
                 <li><a href="{{ url_for('zwroty.invoice_specification_view') }}"
                         class="{% if request.endpoint == 'zwroty.invoice_specification_view' %}active{% endif %}">
                         <span class="icon">🧾</span> Invoice specification
+                    </a></li>
+                <li><a href="{{ url_for('zwroty.przydzial_zwrotow') }}"
+                        class="{% if request.endpoint == 'zwroty.przydzial_zwrotow' %}active{% endif %}">
+                        <span class="icon">🧩</span> Przydział zwrotów
                     </a></li>
                 <li><a href="{{ url_for('zwroty.sorting_data_view') }}"
                         class="{% if request.endpoint == 'zwroty.sorting_data_view' %}active{% endif %}">

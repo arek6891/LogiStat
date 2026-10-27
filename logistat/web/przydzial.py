@@ -14,6 +14,8 @@ from logistat.models import (
 from logistat.przydzial import (
     CZYNNOSC_SKANOW_PACZEK, do_zrobienia_dnia, grupy_wydajnosci, osob_pp_na_zmianie,
     sugestie_przydzialu, wersja_przydzialu, wydajnosc_czynnosci)
+from logistat.przydzial_zwrotow import zamknij_poza_zwrotami
+from logistat.przyjecie_zwrotu import CZYNNOSC_ZWROTOW
 from logistat.web.wspolne import (
     json_body, leader_required, parse_date, parse_shift_number, require_int)
 
@@ -26,7 +28,7 @@ def assignment():
     activities = Activity.query.filter_by(is_active=True)\
         .order_by(Activity.sort_order).all()
     return render_template('assignment.html', activities=activities,
-                           czynnosc_pp=CZYNNOSC_SKANOW_PACZEK)
+                           czynnosc_pp=CZYNNOSC_SKANOW_PACZEK, czynnosc_zwrotow=CZYNNOSC_ZWROTOW)
 
 
 @bp.route('/data-entry')
@@ -250,6 +252,10 @@ def api_assignment_save():
             is_suggestion=is_suggestion,
             assigned_by=current_user.id
         ))
+    db.session.flush()
+    # Zdjety z czynnosci „Zwroty” schodzi tez ze stanowiska zwrotow — inaczej
+    # dalej dostawalby paczki stanowiska (2026-10-27). Blokada zmiany trzymana wyzej.
+    zamknij_poza_zwrotami(shift, teraz_utc())
 
     db.session.commit()
     return jsonify({

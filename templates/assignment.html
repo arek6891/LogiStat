@@ -56,6 +56,11 @@
                     {# Ilosc do zrobienia na dzien vs obie zmiany (static/js/assignment.js) #}
                     <div class="do-zrobienia" id="doZrobieniaPP"></div>
                     {% endif %}
+                    {% if activity.name == czynnosc_zwrotow %}
+                    {# Osoby z tej kolumny → stanowiska zwrotow i Support (2026-10-27) #}
+                    <button type="button" class="btn btn-ghost btn-sm js-stanowiska-zwrotow"
+                            title="Przydziel osoby z tej kolumny do stanowisk zwrotów">🧩 Stanowiska</button>
+                    {% endif %}
                 </div>
                 <span class="count" data-count-for="{{ activity.id }}">0</span>
             </div>

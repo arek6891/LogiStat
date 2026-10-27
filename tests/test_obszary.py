@@ -207,6 +207,7 @@ def test_pusta_pozycja_zwroty_przekierowuje_i_nie_ma_jej_w_menu(client):
 
 @pytest.mark.parametrize('obszar,adres', [(MAGAZYN, '/scan-paczki'),
                                           (POST_PROCESS, '/dashboard'),
+                                          (ZWROTY, '/zwroty/paczki'),
                                           (USTAWIENIA, '/admin/panel')])
 def test_menu_kafelka_alfabetycznie(client, obszar, adres):
     """Operacja 2026-10-24: pozycje menu po lewej od A (gora) do Z (dol) — w obrebie
@@ -267,9 +268,11 @@ def test_konto_stanowiska_zaklada_tylko_admin(client):
 STRONY = {
     MAGAZYN: ['/scanner/1', '/time-tracking', '/scan-paczki', '/scan-package', '/zwroty/przyjecie'],
     POST_PROCESS: ['/dashboard', '/forecast', '/assignment', '/data-entry', '/stats', '/paczki',
-                   '/worker-times', '/import-csv', '/general-stats', '/admin/users'],
+                   '/worker-times', '/import-csv', '/general-stats', '/admin/users',
+                   '/zwroty/przydzial'],
     DISPLAYS: ['/displays'],
-    ZWROTY: ['/zwroty/paczki', '/zwroty/invoice-specification', '/zwroty/sorting-data'],
+    ZWROTY: ['/zwroty/paczki', '/zwroty/invoice-specification', '/zwroty/sorting-data',
+             '/zwroty/przydzial', '/zwroty/dashboard'],
     USTAWIENIA: ['/admin/panel', '/admin/activities', '/admin/country-mapping',
                  '/admin/user-options', '/admin/category-labels', '/admin/settings',
                  '/admin/cost-mapping', '/admin/zwroty/licencje', '/admin/zwroty/cennik',

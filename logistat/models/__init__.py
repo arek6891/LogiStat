@@ -70,4 +70,5 @@ from logistat.models.zwroty import (  # noqa: F401
     IloscMiesiacaZwrotow,
     CenaZwrotow,
     ZwrotPaczki,
+    PrzydzialZwrotow,
 )
