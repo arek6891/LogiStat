@@ -59,6 +59,13 @@ def kurierzy_raportu(od, do):
     return kurierzy + [k for k in w_danych if k not in kurierzy]
 
 
+class WierszZwrotu(tuple):
+    """Krotka wartosci kolumn raportu (Excel / ekran iteruja po niej) plus `id`
+    i `edycja` (surowe pola) dla poprawki lidera na ekranie."""
+    id = None
+    edycja = None
+
+
 def wiersze_zwrotow(od, do, brand=None, paketnummer=None, kurierzy=None):
     """Wiersze tabeli z dni [od, do] (daty lokalne, wlacznie) — kazdy jako krotka
     wartosci w kolejnosci `naglowki_zwrotow(kurierzy)`. `brand` = dokladna
@@ -74,12 +81,20 @@ def wiersze_zwrotow(od, do, brand=None, paketnummer=None, kurierzy=None):
     wiersze = []
     for z in q.order_by(ZwrotPaczki.przyjeto_at, ZwrotPaczki.id):
         dzien = utc_to_local(z.przyjeto_at).date()
-        wiersze.append((
+        wiersz = WierszZwrotu((
             z.paketnummer, z.brand, dzien, z.pos_nummer,
             *(1 if z.kurier == k else 0 for k in kurierzy),
             *(getattr(z, pole) for pole, _, _, _ in LICZNIKI),
             z.verpackungsvorschrift, monat(dzien), woche(dzien),
         ))
+        wiersz.id = z.id
+        wiersz.edycja = {
+            'id': z.id, 'paketnummer': z.paketnummer, 'brand': z.brand,
+            'pos_nummer': z.pos_nummer, 'kurier': z.kurier,
+            'verpackungsvorschrift': z.verpackungsvorschrift,
+            **{pole: getattr(z, pole) for pole, _, _, _ in LICZNIKI},
+        }
+        wiersze.append(wiersz)
     return wiersze
 
 

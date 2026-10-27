@@ -1,5 +1,35 @@
 {% extends 'base.html' %}
-{% block title %}Zwroty Paczek — {{ NAZWA_APLIKACJI }}{% endblock %}
+{% block title %}Zwroty Paczek — {{ NAZWA_APLIKACJI }}
+{# Poprawka lidera (2026-10-27): te same pola co ekran przyjecia; data i stanowisko zostaja. #}
+<div class="modal-overlay" id="zwrotModal" style="display:none;" data-modal-guard>
+    <div class="modal" style="background:var(--bg-card-solid);max-width:560px;">
+        <h3>✎ Popraw zwrot</h3>
+        <form id="zwrotForm">
+            <div class="form-group"><label>Paketnummer</label><input name="paketnummer" class="form-control" maxlength="100" required></div>
+            <div class="form-group"><label>Brand</label><select name="brand" class="form-control" data-lista="brand"></select></div>
+            <div class="form-group"><label>POS-Nummer</label><input name="pos_nummer" class="form-control przyjecie-duze-litery" maxlength="50" required></div>
+            <div class="form-group"><label>Kurier</label><select name="kurier" class="form-control" data-lista="kurier"></select></div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+                {% for pole, naglowek, minimum, _ in liczniki %}
+                <div class="form-group"><label>{{ naglowek }}</label><input name="{{ pole }}" type="number" min="{{ minimum }}" step="1" class="form-control" required></div>
+                {% endfor %}
+            </div>
+            <div class="form-group"><label>Verpackungsvorschrift</label><select name="verpackungsvorschrift" class="form-control" data-lista="opakowanie"></select></div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" id="zwrotAnuluj">Anuluj</button>
+                <button type="submit" class="btn btn-primary">Zapisz</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const LISTY_ZWROTOW = {{ listy|tojson }};
+</script>
+<script src="{{ static_v('js/zwroty_paczek.js') }}"></script>
+{% endblock %}
 
 {# Zwroty Paczek (2026-10-26): naglowki 1:1 z arkusza operacji (NAGLOWKI_ZWROTOW),
    ekran i Excel z tej samej funkcji wiersze_zwrotow(). Domyslnie dzisiejszy dzien. #}
@@ -35,13 +65,17 @@
 <div class="card" style="padding:0;overflow-x:auto;">
     <table class="data-table">
         <thead>
-            <tr>{% for n in naglowki %}<th>{{ n }}</th>{% endfor %}</tr>
+            <tr>{% for n in naglowki %}<th>{{ n }}</th>{% endfor %}<th class="akcje"></th></tr>
         </thead>
         <tbody>
             {% for w in wiersze %}
-            <tr>{% for v in w %}<td>{% if v is not none and v.strftime is defined %}{{ v.strftime('%d.%m.%Y') }}{% elif v is not none %}{{ v }}{% endif %}</td>{% endfor %}</tr>
+            <tr>{% for v in w %}<td>{% if v is not none and v.strftime is defined %}{{ v.strftime('%d.%m.%Y') }}{% elif v is not none %}{{ v }}{% endif %}</td>{% endfor %}
+                <td style="white-space:nowrap;">{% if w.id %}
+                    <button type="button" class="btn btn-ghost btn-sm js-popraw" data-zwrot='{{ w.edycja|tojson }}' title="Popraw zwrot">✎</button>
+                    <button type="button" class="btn btn-danger btn-sm js-usun" data-id="{{ w.id }}" data-paket="{{ w[0] }}" title="Usuń zwrot">✕</button>
+                {% endif %}</td></tr>
             {% else %}
-            <tr><td colspan="{{ naglowki|length }}">
+            <tr><td colspan="{{ naglowki|length + 1 }}">
                 <div class="empty-state"><div class="icon">📭</div><p>Brak zwrotów w wybranym zakresie.</p></div>
             </td></tr>
             {% endfor %}

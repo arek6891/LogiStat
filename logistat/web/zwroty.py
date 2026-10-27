@@ -13,6 +13,7 @@
 - „Przydział zwrotów” i „Dashboard zwrotów” (2026-10-27): lider przydziela osoby
   z czynnosci Zwroty do stanowisk / Supportu; statystyki dni miesiaca.
 """
+import logging
 from datetime import date, timedelta
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
@@ -50,6 +51,7 @@ from logistat.zwroty_dane import (
 RODZAJE_LIST = {**RODZAJE_LICENCJI, **RODZAJE_PRZYJECIA}
 
 bp = Blueprint('zwroty', __name__)
+log = logging.getLogger(__name__)
 
 # Szerokosci kolumn z arkusza operacji (Return_September_2026): przed
 # kurierami, kolumna kuriera (jak DPD / UPS), po kurierach.
@@ -98,7 +100,8 @@ def zwroty_paczek():
     kurierzy = kurierzy_raportu(f['od'], f['do'])
     return render_template('zwroty_paczek.html', naglowki=naglowki_zwrotow(kurierzy),
                            wiersze=wiersze_zwrotow(**f, kurierzy=kurierzy),
-                           brandy=brandy_zwrotow(), filtry=f, dzis=local_today())
+                           brandy=brandy_zwrotow(), filtry=f, dzis=local_today(),
+                           listy=listy_przyjecia(), liczniki=LICZNIKI)
 
 
 @bp.route('/zwroty/paczki/export')
@@ -389,12 +392,43 @@ def _obsada_nazwy(konto, chwila):
     return [u.display_name for u in User.query.filter(User.id.in_(ids)).order_by(User.display_name)]
 
 
-def _z_listy(d, pole, rodzaj, nazwa_pola):
+def _z_listy(d, pole, rodzaj, nazwa_pola, obecna=None):
+    """Wartosc z listy przyciskow: aktywna pozycja albo — przy poprawce — ta,
+    ktora zwrot juz ma (wylaczony brand nie blokuje poprawienia reszty)."""
     wartosc = d.get(pole)
-    if not isinstance(wartosc, str) or wartosc not in opcje_przyjecia(rodzaj):
+    if not isinstance(wartosc, str) or (wartosc not in opcje_przyjecia(rodzaj) and wartosc != obecna):
         # Admin mogl wlasnie wylaczyc pozycje — ekran pokazuje stara liste.
         abort(400, f'Nieznana wartość „{nazwa_pola}” — odśwież stronę.')
     return wartosc
+
+
+def _dane_zwrotu(d, obecny=None):
+    """Pola zwrotu z body (przyjecie na stanowisku i poprawka lidera — te same
+    zasady). Date / Monat / Woche nie przychodza nigdy: to data przyjecia."""
+    paket = d.get('paketnummer')
+    paket = paket.strip() if isinstance(paket, str) else ''
+    if not paket:
+        abort(400, 'Zeskanuj numer paczki.')
+    if len(paket) > PAKETNUMMER_MAX:
+        abort(400, f'Numer paczki może mieć najwyżej {PAKETNUMMER_MAX} znaków.')
+    pos = pos_nummer(d.get('pos_nummer'))
+    if pos is None:
+        abort(400, 'Numer POS: tylko litery, cyfry i - _ / . (albo przycisk „brak numeru”).')
+    dane = {
+        'paketnummer': paket, 'pos_nummer': pos,
+        'brand': _z_listy(d, 'brand', BRAND, 'Brand', obecny and obecny.brand),
+        'kurier': _z_listy(d, 'kurier', KURIER, 'kurier', obecny and obecny.kurier),
+        'verpackungsvorschrift': _z_listy(d, 'verpackungsvorschrift', OPAKOWANIE,
+                                          'Verpackungsvorschrift',
+                                          obecny and obecny.verpackungsvorschrift),
+    }
+    for pole, naglowek, minimum, _ in LICZNIKI:
+        wartosc = d.get(pole)
+        if isinstance(wartosc, bool) or not isinstance(wartosc, int) \
+                or not minimum <= wartosc < MAX_LICZNIK:
+            abort(400, f'{naglowek}: liczba całkowita od {minimum} do {MAX_LICZNIK - 1}.')
+        dane[pole] = wartosc
+    return dane
 
 
 @bp.route('/api/zwroty/przyjecie', methods=['POST'])
@@ -407,28 +441,7 @@ def api_przyjecie_zwrotu():
     token = d.get('token')
     if not isinstance(token, str) or not 8 <= len(token) <= TOKEN_MAX:
         abort(400, 'Brak identyfikatora zapisu — odśwież stronę.')
-    paket = d.get('paketnummer')
-    paket = paket.strip() if isinstance(paket, str) else ''
-    if not paket:
-        abort(400, 'Zeskanuj numer paczki.')
-    if len(paket) > PAKETNUMMER_MAX:
-        abort(400, f'Numer paczki może mieć najwyżej {PAKETNUMMER_MAX} znaków.')
-    pos = pos_nummer(d.get('pos_nummer'))
-    if pos is None:
-        abort(400, 'Numer POS: tylko litery, cyfry i - _ / . (albo przycisk „brak numeru”).')
-    dane = {
-        'paketnummer': paket, 'pos_nummer': pos,
-        'brand': _z_listy(d, 'brand', BRAND, 'Brand'),
-        'kurier': _z_listy(d, 'kurier', KURIER, 'kurier'),
-        'verpackungsvorschrift': _z_listy(d, 'verpackungsvorschrift', OPAKOWANIE,
-                                          'Verpackungsvorschrift'),
-    }
-    for pole, naglowek, minimum, _ in LICZNIKI:
-        wartosc = d.get(pole)
-        if isinstance(wartosc, bool) or not isinstance(wartosc, int) \
-                or not minimum <= wartosc < MAX_LICZNIK:
-            abort(400, f'{naglowek}: liczba całkowita od {minimum} do {MAX_LICZNIK - 1}.')
-        dane[pole] = wartosc
+    dane = _dane_zwrotu(d)
     # Kolejnosc: walidacja → ten sam token (ponowienie juz zapisanego zwrotu
     # przechodzi, nawet gdy lider w miedzyczasie zdjal obsade) → obsada → zapis.
     juz = ZwrotPaczki.query.filter_by(token=token).first()
@@ -442,6 +455,33 @@ def api_przyjecie_zwrotu():
     zwrot, nowy = zapisz_zwrot(dane, token, current_user.id, teraz)
     return jsonify({'ok': True, 'id': zwrot.id, 'powtorzony': not nowy,
                     'paketnummer': zwrot.paketnummer, 'obsada': obsada}), 201 if nowy else 200
+
+
+@bp.route('/api/zwroty/przyjecie/<int:zwrot_id>', methods=['PUT'])
+@leader_required
+def api_zwrot_popraw(zwrot_id):
+    """Poprawka lidera (2026-10-27, operacja): te same pola co przy przyjeciu.
+    Data przyjecia i stanowisko zostaja — od nich zalezy podzial na osoby."""
+    zwrot = db.get_or_404(ZwrotPaczki, zwrot_id)
+    for pole, wartosc in _dane_zwrotu(json_body(), zwrot).items():
+        setattr(zwrot, pole, wartosc)
+    zwrot.zmienil_id = current_user.id
+    zwrot.zmieniono_at = teraz_utc()
+    db.session.commit()
+    return jsonify({'ok': True, 'id': zwrot.id})
+
+
+@bp.route('/api/zwroty/przyjecie/<int:zwrot_id>', methods=['DELETE'])
+@leader_required
+def api_zwrot_usun(zwrot_id):
+    """Usuniecie blednie przyjetego zwrotu (np. paczka zeskanowana dwa razy) —
+    znika z raportu, Sorting returns i dashboardu."""
+    zwrot = db.get_or_404(ZwrotPaczki, zwrot_id)
+    log.info('Zwrot %s (%s, przyjety %s) usuniety przez %s', zwrot.id, zwrot.paketnummer,
+             zwrot.przyjeto_at, current_user.username)
+    db.session.delete(zwrot)
+    db.session.commit()
+    return jsonify({'ok': True})
 
 
 # ── Przydzial zwrotow (lider) ────────────────────────────────────────────────

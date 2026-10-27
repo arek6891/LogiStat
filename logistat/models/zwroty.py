@@ -80,6 +80,9 @@ class ZwrotPaczki(db.Model):
     # Z przegladarki, raz na paczke: podwojny klik / ponowienie po zerwanym
     # polaczeniu nie tworzy drugiego wiersza (Sorting returns idzie na fakture).
     token = db.Column(db.String(64), nullable=False, unique=True)
+    # Poprawka lidera w Zwrotach Paczek (2026-10-27).
+    zmienil_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    zmieniono_at = db.Column(db.DateTime, nullable=True)
 
 
 class PrzydzialZwrotow(db.Model):

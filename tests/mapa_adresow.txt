@@ -5,6 +5,7 @@ DELETE /api/user-options/<int:option_id>
 DELETE /api/users/<int:user_id>
 DELETE /api/worker-times/event/<int:event_id>
 DELETE /api/zwroty/licencje/<int:lic_id>
+DELETE /api/zwroty/przyjecie/<int:zwrot_id>
 GET /
 GET /admin/activities
 GET /admin/category-labels
@@ -124,4 +125,5 @@ PUT /api/zwroty/etykiety
 PUT /api/zwroty/invoice-specification/ilosc
 PUT /api/zwroty/licencje/<int:lic_id>
 PUT /api/zwroty/przydzial
+PUT /api/zwroty/przyjecie/<int:zwrot_id>
 PUT /api/zwroty/sorting-data

@@ -215,3 +215,50 @@ def test_granica_doby_po_czasie_lokalnym(flask_app):
 def test_admin_widzi_strone_ustawien(admin_client):
     html = admin_client.get('/admin/zwroty/przyjecie').get_data(as_text=True)
     assert 'Napisy na ekranach' in html and 'Kurierzy' in html and 'Verpackungsvorschrift' in html
+
+
+# ── poprawka i usuniecie przez lidera (operacja 2026-10-27) ─────────────────
+
+def test_lider_poprawia_zwrot(stanowisko_client, leader_client):
+    stanowisko_client.post('/api/zwroty/przyjecie', json=zwrot())
+    z = ZwrotPaczki.query.one()
+    przyjety = z.przyjeto_at
+    r = leader_client.put(f'/api/zwroty/przyjecie/{z.id}', json=zwrot(
+        paketnummer='%POPRAWIONY', brand='SIX', pos_nummer='xy9', retoure=3, kurier='DPD'))
+
+    assert r.status_code == 200, r.get_json()
+    db.session.expire_all()
+    z = ZwrotPaczki.query.one()
+    assert (z.paketnummer, z.brand, z.pos_nummer, z.retoure, z.kurier) == ('%POPRAWIONY', 'SIX', 'XY9', 3, 'DPD')
+    assert z.przyjeto_at == przyjety, 'data przyjecia sie nie zmienia'
+    assert z.zmienil_id is not None and z.zmieniono_at is not None
+
+
+def test_poprawka_z_wylaczonym_brandem_przechodzi(stanowisko_client, leader_client):
+    stanowisko_client.post('/api/zwroty/przyjecie', json=zwrot())
+    z = ZwrotPaczki.query.one()
+    LicencjaZwrotow.query.filter_by(rodzaj='brand', nazwa='ACC').one().aktywna = False
+    db.session.commit()
+    assert leader_client.put(f'/api/zwroty/przyjecie/{z.id}', json=zwrot(retoure=2)).status_code == 200
+    assert leader_client.put(f'/api/zwroty/przyjecie/{z.id}',
+                             json=zwrot(brand='XXX')).status_code == 400
+    assert leader_client.put(f'/api/zwroty/przyjecie/{z.id}',
+                             json=zwrot(retoure=0)).status_code == 400
+
+
+def test_lider_usuwa_zwrot(stanowisko_client, leader_client):
+    stanowisko_client.post('/api/zwroty/przyjecie', json=zwrot())
+    z = ZwrotPaczki.query.one()
+    html = leader_client.get('/zwroty/paczki').get_data(as_text=True)
+    assert f'data-id="{z.id}"' in html and 'js-popraw' in html
+
+    assert leader_client.delete(f'/api/zwroty/przyjecie/{z.id}').status_code == 200
+    assert ZwrotPaczki.query.count() == 0
+    assert leader_client.delete(f'/api/zwroty/przyjecie/{z.id}').status_code == 404
+
+
+def test_stanowisko_nie_poprawia_ani_nie_usuwa(stanowisko_client):
+    stanowisko_client.post('/api/zwroty/przyjecie', json=zwrot())
+    z = ZwrotPaczki.query.one()
+    assert stanowisko_client.put(f'/api/zwroty/przyjecie/{z.id}', json=zwrot()).status_code == 403
+    assert stanowisko_client.delete(f'/api/zwroty/przyjecie/{z.id}').status_code == 403

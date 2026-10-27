@@ -119,6 +119,8 @@ _ENDPOINTY = {
         # Przydzial osob do stanowisk zwrotow i dashboard (2026-10-27)
         'zwroty.przydzial_zwrotow', 'zwroty.api_przydzial_zwrotow',
         'zwroty.api_przydzial_zwrotow_zapisz', 'zwroty.dashboard_zwrotow_view',
+        # Poprawka / usuniecie przyjetego zwrotu z ekranu Zwroty Paczek
+        'zwroty.api_zwrot_popraw', 'zwroty.api_zwrot_usun',
     },
     USTAWIENIA: {
         'admin.admin_panel', 'admin.admin_activities', 'admin.admin_country_mapping',
