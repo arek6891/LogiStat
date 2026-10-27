@@ -207,6 +207,7 @@ def test_pusta_pozycja_zwroty_przekierowuje_i_nie_ma_jej_w_menu(client):
 
 @pytest.mark.parametrize('obszar,adres', [(MAGAZYN, '/scan-paczki'),
                                           (POST_PROCESS, '/dashboard'),
+                                          (ZWROTY, '/zwroty/paczki'),
                                           (USTAWIENIA, '/admin/panel')])
 def test_menu_kafelka_alfabetycznie(client, obszar, adres):
     """Operacja 2026-10-24: pozycje menu po lewej od A (gora) do Z (dol) — w obrebie
@@ -233,10 +234,12 @@ def test_magazyn_skaner_zmian_w_belce_zmiany_na_gorze(client):
     menu = html[html.index('class="sidebar-nav"'):html.index('class="sidebar-footer"')]
     belki = menu.split('class="nav-section"')[1:]
 
-    assert [b[1:b.index('</li>')] for b in belki] == ['🔁 Zmiany', '👷 Post-Processing']
+    assert [b[1:b.index('</li>')] for b in belki] == ['🔁 Zmiany', '👷 Post-Processing', '📥 Zwroty']
     assert 'Skaner zmian' in belki[0] and 'Czas pracy' not in belki[0]
     assert 'Skaner zmian' not in belki[1]
     assert all(n in belki[1] for n in ('Czas pracy', 'Czasy paczek', 'Paczki inspektor'))
+    # Operacja 2026-10-27: trzecia belka „Zwroty” z Przyjęciem zwrotu.
+    assert 'Przyjęcie zwrotu' in belki[2] and 'Przyjęcie zwrotu' not in belki[1]
 
 
 # ── zakladanie kont stanowisk ────────────────────────────────────────────────
@@ -263,14 +266,17 @@ def test_konto_stanowiska_zaklada_tylko_admin(client):
 # ── strony kafelka siegaja tylko po API ze swojego kafelka ───────────────────
 
 STRONY = {
-    MAGAZYN: ['/scanner/1', '/time-tracking', '/scan-paczki', '/scan-package'],
+    MAGAZYN: ['/scanner/1', '/time-tracking', '/scan-paczki', '/scan-package', '/zwroty/przyjecie'],
     POST_PROCESS: ['/dashboard', '/forecast', '/assignment', '/data-entry', '/stats', '/paczki',
-                   '/worker-times', '/import-csv', '/general-stats', '/admin/users'],
+                   '/worker-times', '/import-csv', '/general-stats', '/admin/users',
+                   '/zwroty/przydzial'],
     DISPLAYS: ['/displays'],
-    ZWROTY: ['/zwroty/paczki', '/zwroty/invoice-specification', '/zwroty/sorting-data'],
+    ZWROTY: ['/zwroty/paczki', '/zwroty/invoice-specification', '/zwroty/sorting-data',
+             '/zwroty/przydzial', '/zwroty/dashboard'],
     USTAWIENIA: ['/admin/panel', '/admin/activities', '/admin/country-mapping',
                  '/admin/user-options', '/admin/category-labels', '/admin/settings',
-                 '/admin/cost-mapping', '/admin/zwroty/licencje', '/admin/zwroty/cennik'],
+                 '/admin/cost-mapping', '/admin/zwroty/licencje', '/admin/zwroty/cennik',
+                 '/admin/zwroty/przyjecie'],
 }
 
 

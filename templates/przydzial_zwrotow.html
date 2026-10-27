@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block title %}{{ NAZWA_APLIKACJI }} — Przydział zwrotów{% endblock %}
+
+{# Przydzial osob do stanowisk zwrotow (operacja 2026-10-27). Pula = osoby z czynnosci
+   „Zwroty” w Przydzielaniu na tej zmianie. Kazda zmiana zapisuje sie od razu i liczy
+   OD CHWILI ZAPISU (paczki stanowiska dziela sie po rowno na jego obsade).
+   Ekran rysuje static/js/przydzial_zwrotow.js. #}
+{% block content %}
+<div class="page-header">
+    <h2>🧩 Przydział zwrotów</h2>
+    <p class="subtitle">Osoby z czynności „Zwroty” na stanowiskach zwrotów i na Supporcie. Zmiana liczy się od chwili zapisu —
+        paczki przyjęte na stanowisku dzielą się po równo na osoby, które na nim są.</p>
+</div>
+
+<form method="GET" class="assignment-controls" id="przydzialFiltr">
+    <div class="form-group" style="margin-bottom:0;">
+        <label>Data</label>
+        <input type="date" name="date" value="{{ dzien.isoformat() }}" class="form-control" style="width:180px;">
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+        <label>Zmiana</label>
+        <div class="shift-tabs" style="margin-bottom:0;">
+            {% for n in (1, 2) %}
+            <button type="submit" name="shift" value="{{ n }}" class="shift-tab {% if zmiana == n %}active{% endif %}" data-shift="{{ n }}">Zmiana {{ n }}</button>
+            {% endfor %}
+        </div>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:10px;align-self:flex-end;align-items:center;">
+        <a href="{{ url_for('przydzial.assignment') }}" class="btn btn-ghost">← Przydzielanie</a>
+        <span class="autozapis-status" id="autoZapisStatus"></span>
+    </div>
+</form>
+
+<div class="shift-frame" data-shift="{{ zmiana }}" style="padding:16px;">
+    <div id="przydzialUwagi"></div>
+    <div class="przydzial-zwrotow" id="przydzialStanowiska"></div>
+    <div class="card" style="margin-top:16px;">
+        <h3 style="margin-top:0;">Osoby na zwrotach</h3>
+        <table class="data-table">
+            <thead><tr><th>Osoba</th><th style="width:320px;">Gdzie</th><th style="width:140px;">Od</th></tr></thead>
+            <tbody id="przydzialOsoby"></tbody>
+        </table>
+    </div>
+    <div class="card" style="margin-top:16px;" id="przydzialInneBox" hidden>
+        <h3 style="margin-top:0;">⚠ Wciąż na stanowiskach z innej zmiany</h3>
+        <p style="color:var(--text-muted);margin-top:0;">Bez „Koniec pracy” przydział wygasa sam po {{ max_godzin }} h. Zakończ, jeśli te osoby już nie pracują przy zwrotach.</p>
+        <table class="data-table"><tbody id="przydzialInne"></tbody></table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PRZYDZIAL = {{ {'date': dzien.isoformat(), 'shift': zmiana}|tojson }};
+</script>
+<script src="{{ static_v('js/przydzial_zwrotow.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}{{ NAZWA_APLIKACJI }} — Przyjęcie zwrotu (ustawienia){% endblock %}
+
+{# Ustawienia ekranow Magazyn → Przyjecie zwrotu (2026-10-27): napisy widziane przez
+   pracownika zamiast niemieckich naglowkow raportu + listy przyciskow. #}
+{% block content %}
+<div class="page-header">
+    <h2>📥 Przyjęcie zwrotu</h2>
+    <p class="subtitle">Pracownik magazynu nie widzi nazw kolumn raportu — widzi napisy poniżej.
+        Raport Zwroty Paczek i Excel zostają z nagłówkami z arkusza.</p>
+</div>
+
+<div class="card" style="margin-bottom:24px;">
+    <h3 style="margin-top:0;">Napisy na ekranach</h3>
+    <p style="color:var(--text-muted);margin-top:0;">Zapisuje się samo po wpisaniu. Puste pole = napis domyślny.</p>
+    <table>
+        <thead><tr><th style="width:32%;">Kolumna raportu</th><th>Napis na ekranie przyjęcia</th></tr></thead>
+        <tbody>
+            {% for klucz, kolumna in kolumny.items() %}
+            <tr>
+                <td><code>{{ kolumna }}</code></td>
+                <td><input type="text" class="form-control js-etykieta" data-klucz="{{ klucz }}"
+                           value="{{ etykiety[klucz] if etykiety[klucz] != domyslne[klucz] else '' }}"
+                           placeholder="{{ domyslne[klucz] }}" maxlength="{{ max_etykiety }}"></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <span class="autozapis-status" id="autoZapisStatus"></span>
+</div>
+
+<p style="color:var(--text-muted);">Przyciski na ekranach przyjęcia. Kolejność tutaj = kolejność przycisków.
+    Każdy kurier to osobna kolumna w raporcie (1 = ten kurier, 0 = inny). Wyłączona pozycja znika z ekranu;
+    zwroty już przyjęte zachowują swoją nazwę.</p>
+{% include '_listy_zwrotow.html' %}
+
+<div style="margin-top:16px; text-align:center;">
+    <a href="{{ url_for('admin.admin_panel') }}" class="btn btn-ghost btn-sm">← Powrót do Panelu Admina</a>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ static_v('js/admin_licencje_zwrotow.js') }}"></script>
+<script src="{{ static_v('js/admin_przyjecie_zwrotu.js') }}"></script>
+{% endblock %}

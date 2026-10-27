@@ -1678,3 +1678,86 @@ h1, h2, h3, .page-title, .sidebar-logo h1, .login-card h1 {
 .arkusz-sorting .suma td { background: rgb(var(--text-secondary-rgb) / .16); font-weight: 700; }
 .arkusz-sorting .liczba { width: 58px; }
 .arkusz-sorting .odstep td { border-left: none; border-right: none; height: 8px; padding: 0; }
+
+/* ── Magazyn → Przyjęcie zwrotu (2026-10-27) ───────────────────────────────
+   Stanowisko przy tablecie / skanerze: wszystko duze. Jak panel ilosci na
+   „Czasach paczek” — „Dalej” PELNY zielony po prawej, „Wstecz” po lewej. */
+.przyjecie { max-width: 980px; margin: 0 auto; font-size: 1.25rem; }
+.przyjecie-gora { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.przyjecie-gora h1 { font-size: 2rem; margin: 0; }
+.przyjecie-krok { font-size: 1.3rem; font-weight: 700; color: var(--text-muted); }
+.przyjecie-ostatni {
+    margin: 14px 0 0; padding: 12px 18px; border-radius: var(--radius);
+    background: var(--success-bg); color: var(--success); font-size: 1.35rem; font-weight: 700;
+    word-break: break-all;
+}
+.przyjecie-wybrane { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; min-height: 8px; }
+.przyjecie-chip {
+    padding: 6px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+    background: var(--bg-card-solid); font-size: 1rem; word-break: break-all;
+}
+.przyjecie-chip small { color: var(--text-muted); }
+.przyjecie-ekran { padding: 28px; }
+.przyjecie-pytanie { font-size: 2.3rem; margin: 0 0 24px; }
+.przyjecie-pole { font-size: 2rem; height: 84px; padding: 0 20px; }
+.przyjecie-duze-litery { text-transform: uppercase; }
+.przyjecie-uwaga { color: var(--warning); font-weight: 700; }
+.przyjecie-opcje { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
+.przyjecie-opcja {
+    min-height: 110px; padding: 14px 20px; font-size: 1.9rem; font-weight: 800;
+    justify-content: center; white-space: normal; word-break: break-word;
+    border: 3px solid var(--accent); color: var(--accent); background: var(--bg-card-solid);
+    border-radius: var(--radius); touch-action: manipulation;
+}
+.przyjecie-opcja.wybrana { background: rgb(var(--accent-rgb) / .14); }
+.przyjecie-brak-pos { margin-top: 18px; width: 100%; min-height: 84px; font-size: 1.6rem; }
+.przyjecie-licznik { display: flex; justify-content: center; align-items: center; gap: 24px; }
+.przyjecie-plusminus {
+    width: 120px; height: 120px; font-size: 3.4rem; font-weight: 800; justify-content: center;
+    border: 3px solid var(--accent); color: var(--accent); background: var(--bg-card-solid);
+    border-radius: var(--radius); touch-action: manipulation;
+}
+.przyjecie-liczba { width: 200px; height: 120px; font-size: 3.4rem; font-weight: 800; text-align: center; }
+.przyjecie-nawigacja { display: flex; justify-content: space-between; align-items: center; gap: 48px; margin-top: 30px; }
+.przyjecie-wstecz, .przyjecie-dalej {
+    min-height: 76px; min-width: 220px; padding: 14px 28px; font-size: 1.5rem; font-weight: 800;
+    justify-content: center; border-radius: var(--radius); touch-action: manipulation;
+}
+.przyjecie-wstecz { border: 2px solid var(--text-muted); color: var(--text-primary); background: var(--bg-card-solid); }
+.przyjecie-dalej { border: 2px solid var(--success); background: var(--success); color: var(--on-accent); }
+.przyjecie-dalej:hover { background: var(--success); color: var(--on-accent); filter: brightness(1.08); }
+@media (max-width: 640px) {
+    .przyjecie-wstecz, .przyjecie-dalej { min-width: 0; flex: 1; }
+    .przyjecie-plusminus { width: 90px; height: 90px; }
+    .przyjecie-liczba { width: 140px; }
+}
+
+/* ── Przydział zwrotów i Dashboard zwrotów (2026-10-27) ─────────────────── */
+.przydzial-zwrotow { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.przydzial-stanowisko { padding: 14px 16px; margin: 0; }
+.przydzial-stanowisko h4 { margin: 0 0 4px; font-size: 1.05rem; }
+.przydzial-stanowisko ul { margin: 6px 0 0 18px; padding: 0; font-size: .9rem; }
+.przydzial-stanowisko.pusta { border-color: var(--warning); background: var(--warning-bg); }
+.przydzial-liczba { font-size: 1.6rem; font-weight: 800; color: var(--accent); }
+.przydzial-uwaga { color: var(--warning); }
+.przydzial-komunikat {
+    margin-bottom: 12px; padding: 10px 14px; border-radius: var(--radius-sm);
+    background: var(--warning-bg); color: var(--warning); font-weight: 600;
+}
+.przydzial-komunikat.info { background: var(--info-bg); color: var(--info); }
+.przyjecie-blokada {
+    padding: 36px 28px; text-align: center; border: 3px solid var(--danger);
+    background: var(--danger-bg); color: var(--danger); font-size: 1.8rem; font-weight: 800;
+}
+.przyjecie-obsada { font-size: 1.15rem; color: var(--text-muted); }
+.dashboard-zwrotow-przewijanie { overflow-x: auto; }
+.dashboard-zwrotow table { font-size: .85rem; white-space: nowrap; }
+.dashboard-zwrotow th, .dashboard-zwrotow td { text-align: right; padding: 6px 8px; }
+.dashboard-zwrotow th:first-child, .dashboard-zwrotow td:first-child {
+    text-align: left; position: sticky; left: 0; background: var(--bg-card-solid);
+}
+.dashboard-zwrotow .weekend { background: rgb(var(--border-rgb) / .35); }
+.dashboard-zwrotow .dzis { box-shadow: inset 0 -3px 0 var(--accent); }
+.dashboard-zwrotow .suma { font-weight: 800; }
+.dashboard-zwrotow .pusto { color: var(--text-muted); }
+.dashboard-zwrotow .uwaga { color: var(--danger); font-weight: 700; }

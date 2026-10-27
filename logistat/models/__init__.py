@@ -69,4 +69,6 @@ from logistat.models.zwroty import (  # noqa: F401
     SortingDataWpis,
     IloscMiesiacaZwrotow,
     CenaZwrotow,
+    ZwrotPaczki,
+    PrzydzialZwrotow,
 )

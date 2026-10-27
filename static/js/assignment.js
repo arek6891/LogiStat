@@ -414,3 +414,12 @@ function saveAssignments() {
         }
     });
 }
+
+// Kolumna „Zwroty”: osoby z niej przydziela sie do stanowisk zwrotow na osobnym
+// ekranie (2026-10-27). Najpierw wypchnij czekajacy autozapis, potem przejdz —
+// z WCZYTANA data i zmiana (nie z pola daty, ktore moglo sie juz zmienic).
+document.querySelectorAll('.js-stanowiska-zwrotow').forEach(b => b.addEventListener('click', async e => {
+    e.stopPropagation();
+    if (!await autoZapis.przedOpuszczeniem()) return;
+    location.href = `/zwroty/przydzial?date=${encodeURIComponent(loadedDate)}&shift=${currentShift}`;
+}));

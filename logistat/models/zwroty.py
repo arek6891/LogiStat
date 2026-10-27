@@ -55,3 +55,52 @@ class CenaZwrotow(db.Model):
     cena = db.Column(db.Float, nullable=False)
     zmienil_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     zmieniono_at = db.Column(db.DateTime, nullable=True, default=teraz_utc)
+
+
+class ZwrotPaczki(db.Model):
+    """Jeden przyjety zwrot (Magazyn → Przyjęcie zwrotu, 2026-10-27) = jeden
+    wiersz raportu Zwroty Paczek. Brand / kurier / Verpackungsvorschrift jako
+    TEKST z chwili przyjecia — zmiana nazwy w Ustawieniach nie przepisuje
+    historii raportu klienta. Date / Monat / Woche liczone z `przyjeto_at`."""
+    __tablename__ = 'zwrot_paczki'
+    id = db.Column(db.Integer, primary_key=True)
+    paketnummer = db.Column(db.String(100), nullable=False, index=True)
+    brand = db.Column(db.String(100), nullable=False)
+    pos_nummer = db.Column(db.String(50), nullable=False)
+    kurier = db.Column(db.String(100), nullable=False)
+    retoure = db.Column(db.Integer, nullable=False)
+    defekt = db.Column(db.Integer, nullable=False, default=0)
+    neuwarenueberschuss = db.Column(db.Integer, nullable=False, default=0)
+    silber = db.Column(db.Integer, nullable=False, default=0)
+    defektes_silber = db.Column(db.Integer, nullable=False, default=0)
+    reduzierte_ware = db.Column(db.Integer, nullable=False, default=0)
+    verpackungsvorschrift = db.Column(db.String(100), nullable=False)
+    przyjeto_at = db.Column(db.DateTime, nullable=False, default=teraz_utc, index=True)
+    przyjal_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    # Z przegladarki, raz na paczke: podwojny klik / ponowienie po zerwanym
+    # polaczeniu nie tworzy drugiego wiersza (Sorting returns idzie na fakture).
+    token = db.Column(db.String(64), nullable=False, unique=True)
+    # Poprawka lidera w Zwrotach Paczek (2026-10-27).
+    zmienil_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    zmieniono_at = db.Column(db.DateTime, nullable=True)
+
+
+class PrzydzialZwrotow(db.Model):
+    """Osoba na stanowisku zwrotow (konto roli `stanowisko`) albo na Supporcie
+    (`stanowisko_id` NULL, `support`) — od `od` do `do` (NULL = trwa). Przeniesienie
+    = zamkniecie + nowy wiersz w tej samej chwili; historii sie nie poprawia.
+    Najwyzej jeden otwarty wiersz na osobe (indeks czesciowy)."""
+    __tablename__ = 'przydzial_zwrotow'
+    id = db.Column(db.Integer, primary_key=True)
+    shift_id = db.Column(db.Integer, db.ForeignKey('shift.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    stanowisko_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    support = db.Column(db.Boolean, nullable=False, default=False)
+    od = db.Column(db.DateTime, nullable=False, default=teraz_utc, index=True)
+    do = db.Column(db.DateTime, nullable=True)
+    przydzielil_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+    __table_args__ = (
+        db.Index('uq_przydzial_zwrotow_otwarty', 'user_id', unique=True,
+                 postgresql_where=db.text('"do" IS NULL')),
+    )

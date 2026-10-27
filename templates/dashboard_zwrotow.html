@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+{% block title %}{{ NAZWA_APLIKACJI }} — Dashboard zwrotów{% endblock %}
+
+{# Dashboard zwrotow (operacja 2026-10-27): wszystkie dni miesiaca od razu (kolumny).
+   Per stanowisko (przyjete paczki), per osoba (paczka po rowno na obsade stanowiska
+   w chwili przyjecia; godziny = czas na stanowisku z przerwami), obsada + Support.
+   Dane: dashboard_zwrotow() w logistat/przydzial_zwrotow.py. #}
+{% macro liczba(x, miejsc=1) %}{{ ('%.' ~ miejsc ~ 'f')|format(x)|replace('.', ',') }}{% endmacro %}
+{% set DNI_TYG = ['pn', 'wt', 'śr', 'cz', 'pt', 'so', 'nd'] %}
+{% macro naglowek_dni() %}
+    {% for dz in d.dni %}<th class="{% if dz.weekday() >= 5 %}weekend{% endif %} {% if dz == dzis %}dzis{% endif %}">{{ dz.day }}<br><small>{{ DNI_TYG[dz.weekday()] }}</small></th>{% endfor %}
+{% endmacro %}
+{% macro klasa(dz) %}{% if dz.weekday() >= 5 %}weekend{% endif %} {% if dz == dzis %}dzis{% endif %}{% endmacro %}
+
+{% block content %}
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:1rem;">
+    <div>
+        <h2>📊 Dashboard zwrotów</h2>
+        <p class="subtitle">{{ MIESIACE_PL[miesiac - 1]|capitalize }} {{ rok }} · paczki przyjęte w „Przyjęcie zwrotu”.
+            Paczka dzieli się po równo na osoby przydzielone do stanowiska w chwili przyjęcia.</p>
+    </div>
+    <form method="GET" style="display:flex;gap:.5rem;align-items:center;">
+        <select name="miesiac" class="form-control" style="width:150px;">
+            {% for m in MIESIACE_PL %}<option value="{{ loop.index }}" {% if loop.index == miesiac %}selected{% endif %}>{{ m|capitalize }}</option>{% endfor %}
+        </select>
+        <input type="number" name="rok" value="{{ rok }}" min="2000" max="2100" class="form-control" style="width:100px;">
+        <button type="submit" class="btn btn-primary">Pokaż</button>
+    </form>
+</div>
+
+<div class="card dashboard-zwrotow">
+    <h3 style="margin-top:0;">🖥️ Per stanowisko <small style="color:var(--text-muted);font-weight:400;">— przyjęte paczki</small></h3>
+    <div class="dashboard-zwrotow-przewijanie"><table class="data-table">
+        <thead><tr><th>Stanowisko</th>{{ naglowek_dni() }}<th class="suma">Suma</th></tr></thead>
+        <tbody>
+            {% for s in d.stanowiska %}
+            <tr><td>{{ s.nazwa }}</td>
+                {% for dz in d.dni %}<td class="{{ klasa(dz) }} {% if not s.dni.get(dz) %}pusto{% endif %}">{{ s.dni.get(dz, 0) or '·' }}</td>{% endfor %}
+                <td class="suma">{{ s.suma }}</td></tr>
+            {% else %}
+            <tr><td colspan="{{ d.dni|length + 2 }}" class="pusto">Brak kont stanowisk.</td></tr>
+            {% endfor %}
+            {% if d.nieprzypisane %}
+            <tr><td class="uwaga" title="Paczki bez osób na stanowisku — nie liczą się nikomu">⚠ Bez obsady</td>
+                {% for dz in d.dni %}<td class="{{ klasa(dz) }} {% if d.nieprzypisane.get(dz) %}uwaga{% else %}pusto{% endif %}">{{ d.nieprzypisane.get(dz, 0) or '·' }}</td>{% endfor %}
+                <td class="suma uwaga">{{ d.nieprzypisane.values()|sum }}</td></tr>
+            {% endif %}
+        </tbody>
+        <tfoot><tr><td class="suma">Razem</td>
+            {% for dz in d.dni %}<td class="suma {{ klasa(dz) }}">{{ d.suma_dni[dz] or '·' }}</td>{% endfor %}
+            <td class="suma">{{ d.suma_dni.values()|sum }}</td></tr></tfoot>
+    </table></div>
+</div>
+
+<div class="card dashboard-zwrotow" style="margin-top:16px;">
+    <h3 style="margin-top:0;">👤 Per osoba <small style="color:var(--text-muted);font-weight:400;">— paczki (godziny na stanowisku, z przerwami)</small></h3>
+    <div class="dashboard-zwrotow-przewijanie"><table class="data-table">
+        <thead><tr><th>Osoba</th>{{ naglowek_dni() }}<th class="suma">Paczki</th><th class="suma">Godz.</th><th class="suma">Paczki/h</th></tr></thead>
+        <tbody>
+            {% for o in d.osoby %}
+            <tr><td><a href="{{ url_for('normy.stats', user=o.id) }}" class="link-normy">{{ o.nazwa }}</a>{% if not o.aktywny %} <small class="pusto">nieaktywna</small>{% endif %}</td>
+                {% for dz in d.dni %}{% set c = o.dni.get(dz) %}
+                <td class="{{ klasa(dz) }} {% if not c %}pusto{% endif %}">{% if c %}{{ liczba(c.paczki) }}<br><small class="pusto">{{ liczba(c.godziny) }} h</small>{% else %}·{% endif %}</td>
+                {% endfor %}
+                <td class="suma">{{ liczba(o.paczki) }}</td>
+                <td class="suma">{{ liczba(o.godziny) }}</td>
+                <td class="suma">{% if o.na_godzine is not none %}{{ liczba(o.na_godzine) }}{% else %}—{% endif %}</td></tr>
+            {% else %}
+            <tr><td colspan="{{ d.dni|length + 4 }}" class="pusto">Nikt nie był przydzielony do stanowisk zwrotów w tym miesiącu.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table></div>
+</div>
+
+<div class="card dashboard-zwrotow" style="margin-top:16px;">
+    <h3 style="margin-top:0;">🧩 Obsada <small style="color:var(--text-muted);font-weight:400;">— liczba osób w dniu; Support: godziny (statystyki Supportu do uzgodnienia)</small></h3>
+    <div class="dashboard-zwrotow-przewijanie"><table class="data-table">
+        <thead><tr><th></th>{{ naglowek_dni() }}<th class="suma">Godz.</th></tr></thead>
+        <tbody>
+            <tr><td>Osoby na stanowiskach</td>
+                {% for dz in d.dni %}<td class="{{ klasa(dz) }} {% if not d.obsada[dz].osoby %}pusto{% endif %}">{{ d.obsada[dz].osoby or '·' }}</td>{% endfor %}
+                <td></td></tr>
+            <tr><td>🤝 Support</td>
+                {% for dz in d.dni %}<td class="{{ klasa(dz) }} {% if not d.obsada[dz].support %}pusto{% endif %}">{{ d.obsada[dz].support or '·' }}</td>{% endfor %}
+                <td></td></tr>
+            {% for s in d.support %}
+            <tr><td style="padding-left:24px;">{{ s.nazwa }}</td>
+                {% for dz in d.dni %}<td class="{{ klasa(dz) }} {% if not s.dni.get(dz) %}pusto{% endif %}">{% if s.dni.get(dz) %}{{ liczba(s.dni[dz]) }} h{% else %}·{% endif %}</td>{% endfor %}
+                <td class="suma">{{ liczba(s.godziny) }}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table></div>
+</div>
+{% endblock %}

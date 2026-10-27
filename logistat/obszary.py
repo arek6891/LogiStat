@@ -22,7 +22,7 @@ USTAWIENIA = 'ustawienia'
 OBSZARY = {
     MAGAZYN: {
         'nazwa': 'Magazyn', 'ikona': '👷', 'start': 'stanowisko.scan_paczki',
-        'opis': 'Stanowiska: skaner zmian, czas pracy, czasy paczek, inspektor paczek',
+        'opis': 'Stanowiska: skaner zmian, czas pracy, czasy paczek, inspektor paczek, przyjęcie zwrotu',
     },
     POST_PROCESS: {
         'nazwa': 'Post-Process', 'ikona': '📦', 'start': 'dashboard.dashboard',
@@ -35,7 +35,7 @@ OBSZARY = {
     },
     ZWROTY: {
         'nazwa': 'Zwroty', 'ikona': '↩️', 'start': 'zwroty.zwroty_paczek',
-        'opis': 'Zwroty Paczek — tabela zwrotów, eksport do Excela',
+        'opis': 'Zwroty Paczek, dashboard i przydział zwrotów, Invoice specification, Sorting Data',
     },
     USTAWIENIA: {
         'nazwa': 'Ustawienia', 'ikona': '🛡️', 'start': 'admin.admin_panel',
@@ -71,6 +71,8 @@ _ENDPOINTY = {
         'stanowisko.api_package_time_przekaz', 'stanowisko.api_package_time_dolacz',
         # Paczki inspektor
         'stanowisko.scan_package', 'stanowisko.api_package_lookup',
+        # Przyjecie zwrotu (2026-10-27) — wiersze raportu Zwroty Paczek
+        'zwroty.przyjecie_zwrotu', 'zwroty.api_przyjecie_zwrotu',
     },
     POST_PROCESS: {
         'dashboard.dashboard', 'dashboard.api_dashboard', 'dashboard.api_dashboard_plik',
@@ -101,6 +103,9 @@ _ENDPOINTY = {
         'admin.admin_users', 'admin.api_users', 'admin.api_user_create',
         'admin.api_user_update', 'admin.api_user_delete',
         'admin.api_user_options', 'admin.api_activities',
+        # Przydzielanie → kolumna „Zwroty” → stanowiska (2026-10-27; tez w kafelku Zwroty)
+        'zwroty.przydzial_zwrotow', 'zwroty.api_przydzial_zwrotow',
+        'zwroty.api_przydzial_zwrotow_zapisz',
     },
     DISPLAYS: {
         'displays.displays',
@@ -111,6 +116,11 @@ _ENDPOINTY = {
         'zwroty.invoice_specification_view', 'zwroty.invoice_specification_export',
         'zwroty.api_invoice_ilosc',
         'zwroty.sorting_data_view', 'zwroty.sorting_data_export', 'zwroty.api_sorting_data',
+        # Przydzial osob do stanowisk zwrotow i dashboard (2026-10-27)
+        'zwroty.przydzial_zwrotow', 'zwroty.api_przydzial_zwrotow',
+        'zwroty.api_przydzial_zwrotow_zapisz', 'zwroty.dashboard_zwrotow_view',
+        # Poprawka / usuniecie przyjetego zwrotu z ekranu Zwroty Paczek
+        'zwroty.api_zwrot_popraw', 'zwroty.api_zwrot_usun',
     },
     USTAWIENIA: {
         'admin.admin_panel', 'admin.admin_activities', 'admin.admin_country_mapping',
@@ -120,6 +130,7 @@ _ENDPOINTY = {
         'zwroty.admin_licencje', 'zwroty.api_licencja_dodaj', 'zwroty.api_licencja_zmien',
         'zwroty.api_licencja_usun', 'zwroty.admin_cennik', 'zwroty.api_cennik',
         'zwroty.api_cennik_zapisz',
+        'zwroty.admin_przyjecie', 'zwroty.api_etykiety_przyjecia',
         'admin.api_activities', 'admin.api_activity_create', 'admin.api_activity_update',
         'admin.api_activity_delete', 'admin.api_activities_reorder',
         'admin.api_country_mappings', 'admin.api_country_mapping_create',
