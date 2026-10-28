@@ -294,7 +294,8 @@ def test_magazyn_skaner_zmian_w_belce_zmiany_na_gorze(client):
     menu = html[html.index('class="sidebar-nav"'):html.index('class="sidebar-footer"')]
     belki = menu.split('class="nav-section"')[1:]
 
-    assert [b[1:b.index('</li>')] for b in belki] == ['🔁 Zmiany', '👷 Post-Processing', '📥 Zwroty']
+    assert [b[1:b.index('</li>')] for b in belki] == ['🔁 Zmiany', '👷 Post-Processing', '📥 Zwroty', '💍 Dekoracje']
+    assert 'Skan stojaków' in belki[3]
     assert 'Skaner zmian' in belki[0] and 'Czas pracy' not in belki[0]
     assert 'Skaner zmian' not in belki[1]
     assert all(n in belki[1] for n in ('Czas pracy', 'Czasy paczek', 'Paczki inspektor'))
@@ -326,11 +327,12 @@ def test_konto_stanowiska_zaklada_tylko_admin(client):
 # ── strony kafelka siegaja tylko po API ze swojego kafelka ───────────────────
 
 STRONY = {
-    MAGAZYN: ['/scanner/1', '/time-tracking', '/scan-paczki', '/scan-package', '/zwroty/przyjecie'],
+    MAGAZYN: ['/scanner/1', '/time-tracking', '/scan-paczki', '/scan-package', '/zwroty/przyjecie',
+              '/dekoracje/skan'],
     POST_PROCESS: ['/dashboard', '/forecast', '/assignment', '/data-entry', '/stats', '/paczki',
                    '/worker-times', '/import-csv', '/general-stats', '/admin/users',
                    '/zwroty/przydzial'],
-    DISPLAYS: ['/displays', '/displays/historia', '/displays/pos'],
+    DISPLAYS: ['/displays', '/displays/historia', '/displays/pos', '/displays/stock'],
     ZWROTY: ['/zwroty/paczki', '/zwroty/invoice-specification', '/zwroty/sorting-data',
              '/zwroty/przydzial', '/zwroty/dashboard'],
     USTAWIENIA: ['/admin/panel', '/admin/activities', '/admin/country-mapping',

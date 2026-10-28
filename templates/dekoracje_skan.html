@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}Skan stojaków — {{ NAZWA_APLIKACJI }}{% endblock %}
+
+{# Operacje magazynowe → Dekoracje → Skan stojakow (operacja 2026-10-28): krok 1 skan
+   nosnika (nieznany = nowy stojak), krok 2 skan etykiety strefy → zapis + ruch.
+   Duze pola jak Przyjecie zwrotu (stanowisko, skaner). Skrypt: static/js/dekoracje_skan.js. #}
+{% block content %}
+<div class="przyjecie">
+    <div class="przyjecie-gora">
+        <h1>📍 Skan stojaków</h1>
+        <span class="przyjecie-krok" id="skanKrok"></span>
+    </div>
+    <div class="przyjecie-ostatni" id="skanOstatni" hidden></div>
+    {% if not strefy %}
+    <div class="card przyjecie-ekran"><p class="przyjecie-blokada">Nie ma jeszcze stref. Admin zakłada je w Supervisor → Listy Dekoracji → Strefy.</p></div>
+    {% else %}
+    <div class="card przyjecie-ekran">
+        <p class="przyjecie-pytanie" id="skanPytanie"></p>
+        <div class="dekoracje-skan-info" id="skanInfo" hidden></div>
+        <input type="text" class="form-control przyjecie-pole przyjecie-duze-litery" id="skanPole" autocomplete="off" autofocus>
+        <div class="przyjecie-nawigacja">
+            <button type="button" class="btn przyjecie-wstecz" id="skanWstecz" hidden>← Inny nośnik</button>
+            <span></span>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const SKAN = {{ {'strefy': strefy}|tojson }};
+</script>
+<script src="{{ static_v('js/dekoracje_skan.js') }}"></script>
+{% endblock %}

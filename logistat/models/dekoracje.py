@@ -78,3 +78,42 @@ class PosDekoracji(db.Model):
     import_at = db.Column(db.DateTime, nullable=True, index=True)
     zmienil_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     zmieniono_at = db.Column(db.DateTime, nullable=True)
+
+
+class StojakDekoracji(db.Model):
+    """Gotowy stojak / display w stocku = nosnik (Dekoracje, 2026-10-28). Zaklada
+    go pierwszy skan nosnika na stanowisku; POS (z listy Etykiet POS) i akcje
+    przypisuje lider. Strefa = gdzie stoi teraz; ruchy w `ruch_stojaka`."""
+    __tablename__ = 'stojak_dekoracji'
+    id = db.Column(db.Integer, primary_key=True)
+    nosnik = db.Column(db.String(50), nullable=False, unique=True)
+    pos_id = db.Column(db.Integer, db.ForeignKey('pos_dekoracji.id'), nullable=True, index=True)
+    akcja_id = db.Column(db.Integer, db.ForeignKey('akcja_dekoracji.id'), nullable=True, index=True)
+    strefa_id = db.Column(db.Integer, db.ForeignKey('slownik_dekoracji.id'), nullable=True, index=True)
+    utworzono_at = db.Column(db.DateTime, nullable=False, default=teraz_utc)
+    utworzyl_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    zmienil_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    zmieniono_at = db.Column(db.DateTime, nullable=True)
+
+    pos = db.relationship('PosDekoracji')
+    akcja = db.relationship('AkcjaDekoracji')
+    strefa = db.relationship('SlownikDekoracji')
+    ruchy = db.relationship('RuchStojaka', backref='stojak', cascade='all, delete-orphan',
+                            order_by='(RuchStojaka.kiedy.desc(), RuchStojaka.id.desc())')
+
+
+class RuchStojaka(db.Model):
+    """Zmiana strefy stojaka: skan na stanowisku albo poprawka lidera w tabeli
+    (`recznie`). `z_strefy_id` NULL = pierwsze odlozenie."""
+    __tablename__ = 'ruch_stojaka'
+    id = db.Column(db.Integer, primary_key=True)
+    stojak_id = db.Column(db.Integer, db.ForeignKey('stojak_dekoracji.id'), nullable=False, index=True)
+    z_strefy_id = db.Column(db.Integer, db.ForeignKey('slownik_dekoracji.id'), nullable=True)
+    do_strefy_id = db.Column(db.Integer, db.ForeignKey('slownik_dekoracji.id'), nullable=False)
+    kiedy = db.Column(db.DateTime, nullable=False, default=teraz_utc)
+    kto_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    recznie = db.Column(db.Boolean, nullable=False, default=False)
+
+    z_strefy = db.relationship('SlownikDekoracji', foreign_keys=[z_strefy_id])
+    do_strefy = db.relationship('SlownikDekoracji', foreign_keys=[do_strefy_id])
+    kto = db.relationship('User')

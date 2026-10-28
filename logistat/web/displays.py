@@ -4,6 +4,8 @@ Akcje na wykresie Gantta (`/displays`), ekran akcji z indexami (autozapis),
 historia zakonczonych akcji i listy typow / modeli stojakow (Supervisor).
 Akcja zakonczona jest tylko do odczytu — zmienia ja dopiero „Przywróć”.
 Etykiety POS: lista numerow z Excela → arkusz kodow kreskowych (PDF).
+Stock stojakow: skan nosnik → strefa na stanowisku (Operacje magazynowe),
+tabela stocku z POS / akcja / strefa i historia ruchow (lider).
 """
 import io
 import logging
@@ -17,15 +19,18 @@ from sqlalchemy.exc import IntegrityError
 from logistat.czas import local_today, teraz_utc
 from logistat.dekoracje import (
     ETYKIET_MAX, KOPIE_MAX, LICZBA_MAX, NAGLOWEK_EKSPORTU_POS, NAZWA_MAX, NAZWA_SLOWNIKA_MAX,
-    POLA_LICZB, POLA_PRODUKTYWNOSCI, POLA_SLOWNIKA, RODZAJE_SLOWNIKA, data_z_tekstu, wiersze_pos)
+    POLA_LICZB, POLA_PRODUKTYWNOSCI, POLA_SLOWNIKA, RODZAJE_SLOWNIKA, STREFA, data_z_tekstu,
+    kod_nosnika, kod_strefy, wiersze_pos)
 from logistat.dekoracje_dane import (
     akcja_dict, akcje_gantt, akcje_historia, importuj_pos, index_dict, listy_dla_akcji,
-    ostatni_import_pos, pos_dict, pos_lista, slownik, uzyte_pozycje_slownika)
+    ostatni_import_pos, ostatnie_ruchy, pos_dict, pos_lista, pos_w_stocku, przenies_stojak,
+    ruch_dict, slownik, stock_stojakow, stojak_dict, strefa_po_kodzie, uzyte_pozycje_slownika)
 from logistat.extensions import db
-from logistat.models import AkcjaDekoracji, IndexDekoracji, PosDekoracji, SlownikDekoracji
+from logistat.models import AkcjaDekoracji, IndexDekoracji, PosDekoracji, SlownikDekoracji, StojakDekoracji
 from logistat.pdf_etykiet import NA_STRONIE, pdf_etykiet
+from logistat.przyjecie_zwrotu import pos_nummer
 from logistat.web.excel import odpowiedz_xlsx, styl_naglowka
-from logistat.web.wspolne import admin_required, json_body, leader_required
+from logistat.web.wspolne import admin_required, json_body, leader_required, magazyn_required
 
 bp = Blueprint('displays', __name__)
 logger = logging.getLogger(__name__)
@@ -219,6 +224,17 @@ def admin_slownik():
                            uzywane=uzyte_pozycje_slownika(), max_nazwy=NAZWA_SLOWNIKA_MAX)
 
 
+def _nazwa_slownika(rodzaj, wartosc):
+    nazwa = _nazwa(wartosc, NAZWA_SLOWNIKA_MAX)
+    if rodzaj != STREFA:
+        return nazwa
+    kod = kod_strefy(nazwa)
+    if kod is None:
+        abort(400, 'Nazwa strefy to kod na jej etykiecie: litery A–Z, cyfry i - _ / . '
+                   '(bez spacji i polskich liter), najwyżej kilkanaście znaków.')
+    return kod
+
+
 def _zapisz_slownik():
     try:
         db.session.commit()
@@ -234,7 +250,7 @@ def api_slownik_dodaj():
     rodzaj = d.get('rodzaj')
     if rodzaj not in RODZAJE_SLOWNIKA:
         abort(400, 'Nieznana lista.')
-    nazwa = _nazwa(d.get('nazwa'), NAZWA_SLOWNIKA_MAX)
+    nazwa = _nazwa_slownika(rodzaj, d.get('nazwa'))
     ostatnia = db.session.query(db.func.max(SlownikDekoracji.kolejnosc))\
         .filter(SlownikDekoracji.rodzaj == rodzaj).scalar()
     p = SlownikDekoracji(rodzaj=rodzaj, nazwa=nazwa, kolejnosc=(ostatnia or 0) + 1)
@@ -250,7 +266,7 @@ def api_slownik_zmien(poz_id):
     p = db.get_or_404(SlownikDekoracji, poz_id)
     d = json_body()
     if 'nazwa' in d:
-        p.nazwa = _nazwa(d.get('nazwa'), NAZWA_SLOWNIKA_MAX)
+        p.nazwa = _nazwa_slownika(p.rodzaj, d.get('nazwa'))
     if 'aktywna' in d:
         if not isinstance(d['aktywna'], bool):
             abort(400, 'Pole „aktywna” musi być true/false.')
@@ -329,6 +345,8 @@ def api_pos_import():
 @leader_required
 def api_pos_usun(pos_id):
     p = db.get_or_404(PosDekoracji, pos_id)
+    if p.id in pos_w_stocku():
+        abort(409, f'POS {p.numer} jest przypisany do stojaka w stocku — najpierw zmień POS stojaka.')
     db.session.delete(p)
     db.session.commit()
     return jsonify({'ok': True})
@@ -387,3 +405,152 @@ def pos_export():
     ws.column_dimensions['B'].width = 18
     ws.auto_filter.ref = ws.dimensions
     return odpowiedz_xlsx(wb, f'POS_{local_today():%Y-%m-%d}.xlsx')
+
+
+# ── Stock stojakow: stanowisko (Operacje magazynowe) ─────────────────────────
+
+def _nosnik(wartosc):
+    kod = kod_nosnika(wartosc)
+    if kod is None:
+        abort(400, 'Nieprawidłowy numer nośnika — zeskanuj etykietę nośnika.')
+    if strefa_po_kodzie(kod, tylko_aktywne=False) is not None:
+        abort(400, f'„{kod}” to kod strefy — najpierw zeskanuj nośnik.')
+    return kod
+
+
+def _stojak_z_ruchem(s):
+    return stojak_dict(s, ostatnie_ruchy([s.id]).get(s.id))
+
+
+@bp.route('/dekoracje/skan')
+@magazyn_required
+def skan_stojakow():
+    strefy = [p.nazwa for p in slownik(STREFA) if p.aktywna]
+    return render_template('dekoracje_skan.html', strefy=strefy)
+
+
+@bp.route('/api/dekoracje/nosnik')
+@magazyn_required
+def api_nosnik():
+    """Krok 1 stanowiska: co wiadomo o nosniku (nowy = zalozy go zapis)."""
+    kod = _nosnik(request.args.get('kod'))
+    s = StojakDekoracji.query.filter_by(nosnik=kod).first()
+    return jsonify({'nowy': s is None, 'nosnik': kod, 'stojak': _stojak_z_ruchem(s) if s else None})
+
+
+@bp.route('/api/dekoracje/skan', methods=['POST'])
+@magazyn_required
+def api_skan():
+    """{nosnik, strefa} — nosnik odlozony w strefie. Nieznany nosnik zaklada
+    stojak; zmiana strefy zapisuje ruch (ta sama strefa → bez ruchu)."""
+    d = json_body()
+    kod = _nosnik(d.get('nosnik'))
+    kod_s = kod_strefy(d.get('strefa')) if isinstance(d.get('strefa'), str) else None
+    strefa = strefa_po_kodzie(kod_s) if kod_s else None
+    if strefa is None:
+        abort(400, 'Nieznana strefa — zeskanuj etykietę strefy (lista: Supervisor → Listy Dekoracji).')
+    teraz = teraz_utc()
+    nowy = False
+    s = StojakDekoracji.query.filter_by(nosnik=kod).with_for_update().first()
+    if s is None:
+        s = StojakDekoracji(nosnik=kod, utworzyl_id=current_user.id, utworzono_at=teraz)
+        db.session.add(s)
+        try:
+            db.session.flush()
+            nowy = True
+        except IntegrityError:
+            # Drugie stanowisko zalozylo ten nosnik w tej samej chwili.
+            db.session.rollback()
+            s = StojakDekoracji.query.filter_by(nosnik=kod).with_for_update().one()
+    przeniesiono = przenies_stojak(s, strefa.id, current_user.id, recznie=False, teraz=teraz)
+    db.session.commit()
+    return jsonify({'nowy': nowy, 'przeniesiono': przeniesiono, 'stojak': _stojak_z_ruchem(s)})
+
+
+# ── Stock stojakow: tabela lidera ────────────────────────────────────────────
+
+@bp.route('/displays/stock')
+@leader_required
+def stock():
+    stojaki = stock_stojakow()
+    uzyte_akcje = {s['akcja_id'] for s in stojaki if s['akcja_id']}
+    akcje = AkcjaDekoracji.query.filter(db.or_(AkcjaDekoracji.zakonczona_at.is_(None),
+                                               AkcjaDekoracji.id.in_(uzyte_akcje or [0])))\
+        .order_by(AkcjaDekoracji.data_od, AkcjaDekoracji.id).all()
+    uzyte_strefy = {s['strefa_id'] for s in stojaki if s['strefa_id']}
+    return render_template('displays_stock.html', stojaki=stojaki,
+                           akcje=[{'id': a.id, 'nazwa': a.nazwa, 'zakonczona': a.zakonczona_at is not None}
+                                  for a in akcje],
+                           strefy=[{'id': p.id, 'nazwa': p.nazwa, 'aktywna': p.aktywna}
+                                   for p in slownik(STREFA) if p.aktywna or p.id in uzyte_strefy],
+                           pos=[p.numer for p in pos_lista()])
+
+
+@bp.route('/api/dekoracje/stojaki/<int:stojak_id>', methods=['PUT'])
+@leader_required
+def api_stojak_zmien(stojak_id):
+    """Czesciowy zapis: {pos: numer | ''} (tylko z listy Etykiet POS),
+    {akcja_id: id | null} (niezakonczona albo obecna), {strefa_id} (ruch „recznie”)."""
+    s = db.get_or_404(StojakDekoracji, stojak_id)
+    d = json_body()
+    if 'pos' in d:
+        if d['pos'] in (None, ''):
+            s.pos_id = None
+        else:
+            numer = pos_nummer(d['pos']) if isinstance(d['pos'], str) else None
+            p = PosDekoracji.query.filter_by(numer=numer).first() if numer else None
+            if p is None:
+                abort(400, 'Tego numeru nie ma na liście Etykiet POS — najpierw wczytaj go do listy.')
+            s.pos_id = p.id
+    if 'akcja_id' in d:
+        akcja_id = d['akcja_id']
+        if akcja_id is None:
+            s.akcja_id = None
+        else:
+            a = db.session.get(AkcjaDekoracji, akcja_id) \
+                if isinstance(akcja_id, int) and not isinstance(akcja_id, bool) else None
+            if a is None or (a.zakonczona_at is not None and a.id != s.akcja_id):
+                abort(400, 'Nieznana albo zakończona akcja — odśwież stronę.')
+            s.akcja_id = a.id
+    if 'strefa_id' in d:
+        strefa_id = d['strefa_id']
+        p = db.session.get(SlownikDekoracji, strefa_id) \
+            if isinstance(strefa_id, int) and not isinstance(strefa_id, bool) else None
+        if p is None or p.rodzaj != STREFA or (not p.aktywna and p.id != s.strefa_id):
+            abort(400, 'Nieznana albo wyłączona strefa — odśwież stronę.')
+        przenies_stojak(s, p.id, current_user.id, recznie=True)
+    _zmieniono(s)
+    db.session.commit()
+    return jsonify(_stojak_z_ruchem(s))
+
+
+@bp.route('/api/dekoracje/stojaki/<int:stojak_id>', methods=['DELETE'])
+@leader_required
+def api_stojak_usun(stojak_id):
+    """Pomylkowy skan — stojak znika razem z historia ruchow."""
+    s = db.get_or_404(StojakDekoracji, stojak_id)
+    logger.info('Usuniety stojak %s (nosnik %s) przez %s', s.id, s.nosnik, current_user.id)
+    db.session.delete(s)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/dekoracje/stojaki/<int:stojak_id>/ruchy')
+@leader_required
+def api_stojak_ruchy(stojak_id):
+    s = db.get_or_404(StojakDekoracji, stojak_id)
+    return jsonify([ruch_dict(r) for r in s.ruchy])
+
+
+@bp.route('/admin/dekoracje/strefy/etykiety', methods=['POST'])
+@admin_required
+def strefy_etykiety():
+    """Etykiety aktywnych stref (do powieszenia w hali) — ten sam arkusz co POS."""
+    strefy = [p.nazwa for p in slownik(STREFA) if p.aktywna]
+    if not strefy:
+        flash('Brak aktywnych stref — dodaj je w liście „Strefy”.', 'error')
+        return redirect(url_for('displays.admin_slownik'))
+    odpowiedz = make_response(pdf_etykiet(strefy))
+    odpowiedz.headers['Content-Type'] = 'application/pdf'
+    odpowiedz.headers['Content-Disposition'] = 'inline; filename="etykiety-stref.pdf"'
+    return odpowiedz

@@ -15,9 +15,11 @@ from logistat.przyjecie_zwrotu import pos_nummer
 # Listy z panelu admina (Supervisor → Listy Dekoracji).
 TYP_STOJAKA = 'typ_stojaka'
 MODEL_STOJAKA = 'model_stojaka'
+STREFA = 'strefa'       # strefy magazynu dla stocku stojakow — nazwa = kod na etykiecie
 RODZAJE_SLOWNIKA = {
     TYP_STOJAKA: 'Typ stojaka',
     MODEL_STOJAKA: 'Model stojaka',
+    STREFA: 'Strefy (stock stojaków)',
 }
 SLOWNIK_DOMYSLNY = {
     TYP_STOJAKA: ('Twin', 'Solo'),
@@ -167,3 +169,29 @@ def wiersze_pos(wiersze):
             continue
         pozycje[numer] = pp
     return pozycje, kol_pp is not None, bledy
+
+
+# ── Stock gotowych stojakow (operacja 2026-10-28) ────────────────────────────
+# Stojak = nosnik (numer z etykiety nosnika). Wiersz zaklada pierwszy skan nosnika
+# na stanowisku (Operacje magazynowe → Skan stojaków), potem skan strefy; kazda
+# zmiana strefy to ruch (kto, kiedy, skad, dokad). POS (tylko z listy Etykiet POS)
+# i akcje przypisuje lider w tabeli stocku.
+NOSNIK_MAX = 50
+
+
+def kod_nosnika(wartosc):
+    """Zeskanowany numer nosnika: bez bialych znakow, wielkie litery, drukowalne
+    ASCII. None = bledny (pusty, za dlugi, inne znaki)."""
+    if not isinstance(wartosc, str):
+        return None
+    kod = ''.join(wartosc.split()).upper()
+    if not kod or len(kod) > NOSNIK_MAX or any(not 33 <= ord(z) <= 126 for z in kod):
+        return None
+    return kod
+
+
+def kod_strefy(wartosc):
+    """Nazwa strefy = kod na jej etykiecie (skanowany): regula numeru POS
+    (A–Z, 0–9, - _ / .) i musi zmiescic sie na etykiecie. None = bledna."""
+    kod = pos_nummer(wartosc)
+    return kod if kod is not None and miesci_sie(kod) else None

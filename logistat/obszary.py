@@ -94,6 +94,8 @@ _ENDPOINTY = {
         'stanowisko.scan_package', 'stanowisko.api_package_lookup',
         # Przyjecie zwrotu (2026-10-27) — wiersze raportu Zwroty Paczek
         'zwroty.przyjecie_zwrotu', 'zwroty.api_przyjecie_zwrotu',
+        # Dekoracje: skan stojakow nosnik → strefa (2026-10-28)
+        'displays.skan_stojakow', 'displays.api_nosnik', 'displays.api_skan',
     },
     POST_PROCESS: {
         'dashboard.dashboard', 'dashboard.api_dashboard', 'dashboard.api_dashboard_plik',
@@ -136,6 +138,9 @@ _ENDPOINTY = {
         # Etykiety POS: lista z Excela → PDF z kodami (2026-10-28)
         'displays.pos', 'displays.api_pos_import', 'displays.api_pos_usun',
         'displays.pos_etykiety', 'displays.pos_export',
+        # Stock stojakow: tabela, POS / akcja / strefa, historia ruchow (2026-10-28)
+        'displays.stock', 'displays.api_stojak_zmien', 'displays.api_stojak_usun',
+        'displays.api_stojak_ruchy',
     },
     ZWROTY: {
         'zwroty.zwroty', 'zwroty.zwroty_paczek', 'zwroty.zwroty_paczek_export',
@@ -168,7 +173,7 @@ _ENDPOINTY = {
         'admin.api_cost_mapping_get', 'admin.api_cost_mapping_save',
         # Dekoracje (2026-10-28): typy i modele stojakow
         'displays.admin_slownik', 'displays.api_slownik_dodaj', 'displays.api_slownik_zmien',
-        'displays.api_slownik_usun',
+        'displays.api_slownik_usun', 'displays.strefy_etykiety',
     },
 }
 

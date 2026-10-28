@@ -1,17 +1,22 @@
 {% extends 'base.html' %}
 {% block title %}{{ NAZWA_APLIKACJI }} — Listy Dekoracji{% endblock %}
 
-{# Listy rozwijane indexu akcji Dekoracji (2026-10-28): typy i modele stojakow.
-   Pozycja uzyta w indexie: tylko zmiana nazwy / wylaczenie. #}
+{# Listy Dekoracji (2026-10-28): typy i modele stojakow (index akcji) oraz strefy
+   stocku stojakow (nazwa = kod na etykiecie strefy). Pozycja uzyta: tylko zmiana
+   nazwy / wylaczenie. #}
 {% block content %}
 <div class="page-header">
     <h2>💍 Listy Dekoracji</h2>
-    <p class="subtitle">Listy rozwijane indexów akcji w kafelku Dekoracje. Kolejność tutaj = kolejność na liście.
-        Pozycji użytej w indexie nie da się usunąć — można ją wyłączyć (zniknie z nowych wyborów) albo zmienić nazwę.</p>
+    <p class="subtitle">Listy rozwijane indexów akcji i strefy stocku stojaków w kafelku Dekoracje. Kolejność tutaj = kolejność na liście.
+        Pozycji użytej w indexie albo w stocku nie da się usunąć — można ją wyłączyć (zniknie z nowych wyborów) albo zmienić nazwę.</p>
+    <p class="subtitle">Nazwa strefy to kod na jej etykiecie (litery A–Z, cyfry, - _ / .). Po zmianie nazwy wydrukuj etykietę strefy jeszcze raz.</p>
+    <form method="POST" action="{{ url_for('displays.strefy_etykiety') }}" target="_blank">
+        <button type="submit" class="btn">🖨 Etykiety stref (aktywne)</button>
+    </form>
 </div>
 
 {% set api_listy = url_for('displays.api_slownik_dodaj') %}
-{% set opis_uzytej = 'Użyta w indexie akcji — można tylko wyłączyć' %}
+{% set opis_uzytej = 'Użyta w indexie akcji albo w stocku — można tylko wyłączyć' %}
 {% include '_listy_zwrotow.html' %}
 
 <div style="margin-top:16px; text-align:center;">
