@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% block title %}{{ NAZWA_APLIKACJI }} — {{ akcja.nazwa }}{% endblock %}
+
+{# Ekran akcji Dekoracji (2026-10-28): naglowek (nazwa, start, koniec) i indexy
+   („+ Index”) z autozapisem — kazde pole osobno (czesciowy PUT). Akcja zakonczona
+   = tylko odczyt (serwer tez odmawia, 409), „Przywróć” wraca ja na Gantt.
+   Skrypt: static/js/displays_akcja.js. #}
+{% set ro = akcja.zakonczona %}
+{% macro suma(klucz, etykieta) %}{% set s = akcja.sumy[klucz] %}
+<div class="dekoracje-suma"><span>{{ etykieta }}</span>
+    <strong data-suma="{{ klucz }}">{{ s.suma }}</strong>{% if not s.pelna %}<small class="dekoracje-niepelna" data-niepelna="{{ klucz }}" title="Któryś index ma puste pole — suma tylko z wpisanych"> niepełna</small>{% endif %}</div>
+{% endmacro %}
+{% block content %}
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:1rem;">
+    <div>
+        <h2>💍 {{ akcja.nazwa }}</h2>
+        <p class="subtitle">
+            {% if ro %}<span class="badge">Zakończona {{ akcja.zakonczona_lokalnie }}{% if akcja.zakonczyl %} · {{ akcja.zakonczyl }}{% endif %}</span> — tylko do odczytu.
+            {% elif akcja.po_terminie %}<span class="dekoracje-po-terminie">⚠ Po terminie — akcja nie jest zakończona.</span>
+            {% else %}Akcja w toku / zaplanowana.{% endif %}
+        </p>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;">
+        {% if not ro %}<span class="autozapis-status" id="autoZapisStatus"></span>{% endif %}
+        <a href="{{ url_for('displays.historia') if ro else url_for('displays.displays') }}" class="btn btn-ghost js-wyjdz">⬅ {{ 'Historia akcji' if ro else 'Wykres akcji' }}</a>
+        {% if ro %}<button type="button" class="btn btn-primary" id="przywroc">↩ Przywróć</button>
+        {% else %}<button type="button" class="btn btn-danger" id="zakoncz">✔ Zakończ akcję</button>{% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="dekoracje-naglowek">
+        <div class="form-group"><label>Nazwa akcji</label>
+            <input id="akcjaNazwa" class="form-control" value="{{ akcja.nazwa }}" maxlength="{{ max_nazwy }}" {% if ro %}disabled{% endif %}></div>
+        <div class="form-group"><label>Start</label>
+            <input id="akcjaOd" type="date" class="form-control" value="{{ akcja.od }}" {% if ro %}disabled{% endif %}></div>
+        <div class="form-group"><label>Koniec</label>
+            <input id="akcjaDo" type="date" class="form-control" value="{{ akcja.do }}" {% if ro %}disabled{% endif %}></div>
+    </div>
+    <div class="dekoracje-sumy">
+        <div class="dekoracje-suma"><span>Indexów</span><strong>{{ akcja.liczba_indexow }}</strong></div>
+        {{ suma('ilosc_stojakow', 'Stojaków') }}
+        {{ suma('haki', 'Haków łącznie') }}
+        {{ suma('rgd', 'RGD') }}
+        {{ suma('displays', 'DISPLAYS') }}
+        {{ suma('akcesoria', 'Akcesoria') }}
+        {{ suma('pos', 'POS') }}
+    </div>
+</div>
+
+<div class="dekoracje-indexy">
+    {% for ix in akcja.indexy %}
+    <div class="card dekoracje-index" data-id="{{ ix.id }}">
+        <div class="dekoracje-index-gora">
+            <input class="form-control dekoracje-index-nazwa" data-pole="nazwa" value="{{ ix.nazwa }}" maxlength="{{ max_nazwy }}"
+                   title="Index — szablon / zestaw displaya" {% if ro %}disabled{% endif %}>
+            {% if not ro %}<button type="button" class="btn btn-danger btn-sm js-usun-index" title="Usuń index">✕</button>{% endif %}
+        </div>
+        <div class="dekoracje-pola">
+            {% for pole, etykieta in pola_liczb %}
+            <div class="form-group"><label{% if pole in ('rgd', 'displays', 'akcesoria') %} title="Sztuki łącznie dla indexu"{% endif %}>{{ etykieta }}</label>
+                <input type="number" min="0" max="{{ max_liczby - 1 }}" step="1" inputmode="numeric" class="form-control"
+                       data-pole="{{ pole }}" data-liczba="int" value="{{ ix[pole] if ix[pole] is not none else '' }}" {% if ro %}disabled{% endif %}></div>
+            {% if pole == 'ilosc_stojakow' %}
+            {% for pole_listy, rodzaj, etykieta_listy in (('typ_id', 'typ_stojaka', 'Typ stojaka'), ('model_id', 'model_stojaka', 'Model stojaka')) %}
+            <div class="form-group"><label>{{ etykieta_listy }}</label>
+                <select class="form-control" data-pole="{{ pole_listy }}" {% if ro %}disabled{% endif %}>
+                    <option value="">—</option>
+                    {% for p in listy[rodzaj] %}<option value="{{ p.id }}" {% if ix[pole_listy] == p.id %}selected{% endif %}>{{ p.nazwa }}{% if not p.aktywna %} (wyłączony){% endif %}</option>{% endfor %}
+                </select></div>
+            {% endfor %}
+            {% endif %}
+            {% if pole == 'haki_na_stojak' %}
+            <div class="form-group"><label>Haków łącznie</label>
+                <div class="dekoracje-wyliczone" data-haki title="Ilość stojaków × haków na stojak">{{ ix.haki if ix.haki is not none else '—' }}</div></div>
+            {% endif %}
+            {% endfor %}
+        </div>
+        <div class="dekoracje-produktywnosc">
+            <strong>Założona produktywność <small>(sztuki na osobogodzinę)</small></strong>
+            {% for pole, etykieta in pola_prod %}
+            <div class="form-group"><label>{{ etykieta }}</label>
+                <input type="number" min="0" step="0.1" inputmode="decimal" class="form-control" data-pole="{{ pole }}" data-liczba="float"
+                       value="{{ '%g'|format(ix[pole]) if ix[pole] is not none else '' }}" placeholder="brak" {% if ro %}disabled{% endif %}></div>
+            {% endfor %}
+        </div>
+    </div>
+    {% else %}
+    <div class="card" style="color:var(--text-muted);">Akcja nie ma jeszcze indexów.{% if not ro %} Dodaj pierwszy przyciskiem „➕ Index”.{% endif %}</div>
+    {% endfor %}
+</div>
+{% if not ro %}
+<button type="button" class="btn btn-primary" id="dodajIndex" style="margin-top:16px;">➕ Index</button>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const AKCJA = {{ {'id': akcja.id, 'zakonczona': akcja.zakonczona}|tojson }};
+</script>
+<script src="{{ static_v('js/displays_akcja.js') }}"></script>
+{% endblock %}

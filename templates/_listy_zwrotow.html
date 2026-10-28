@@ -1,7 +1,9 @@
 {# Listy z Ustawien (2026-10-26/27): wiersze Sorting Data i przyciski Przyjecia
    zwrotu. Wymaga: rodzaje {rodzaj: tytul}, licencje {rodzaj: [..]}, uzywane, max_nazwy.
+   Opcjonalnie (2026-10-28, listy Dekoracji): api_listy (adres API), opis_uzytej (🔒).
    Skrypt: static/js/admin_licencje_zwrotow.js. #}
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:24px;">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:24px;"
+     data-api="{{ api_listy|default('/api/zwroty/licencje') }}">
     {% for rodzaj, tytul in rodzaje.items() %}
     <div class="card">
         <h3 style="margin-top:0;">{{ tytul }}</h3>
@@ -17,7 +19,7 @@
                     <td><input type="text" class="form-control js-nazwa" value="{{ lic.nazwa }}" maxlength="{{ max_nazwy }}"
                                data-oryginal="{{ lic.nazwa }}" title="Zmiana nazwy zapisuje się po wyjściu z pola"></td>
                     <td style="text-align:center;"><input type="checkbox" class="js-aktywna" {% if lic.aktywna %}checked{% endif %}></td>
-                    <td>{% if lic.id in uzywane %}<span title="Ma dane w Sorting Data — można tylko wyłączyć">🔒</span>
+                    <td>{% if lic.id in uzywane %}<span title="{{ opis_uzytej|default('Ma dane w Sorting Data — można tylko wyłączyć') }}">🔒</span>
                         {% else %}<button class="btn btn-danger btn-sm js-usun" title="Usuń">✕</button>{% endif %}</td>
                 </tr>
                 {% else %}

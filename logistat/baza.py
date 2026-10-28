@@ -7,10 +7,11 @@ import os
 
 from logistat.config import DEFAULT_ADMIN_PASSWORD
 from logistat.extensions import db
+from logistat.dekoracje import SLOWNIK_DOMYSLNY, ZNACZNIK_SLOWNIKA
 from logistat.faktura_zwrotow import LICENCJE_DOMYSLNE, ZNACZNIK_LICENCJI
 from logistat.przyjecie_zwrotu import LISTY_DOMYSLNE, ZNACZNIK_LIST
 from logistat.models import (
-    Activity, AppSetting, CountryMapping, GeneralStat, ImportedCarton, LicencjaZwrotow,
+    Activity, AppSetting, CountryMapping, GeneralStat, ImportedCarton, LicencjaZwrotow, SlownikDekoracji,
     USER_OPTION_DEFAULTS, User, UserOption, zaznacz_wszystkich_przeszkolonych)
 from logistat.normy_dane import zasiej_historie_celu
 from logistat.rozliczenie import _odsun_linie, przenies_linie, recompute_general_stat
@@ -120,6 +121,16 @@ def seed_data():
         db.session.add(AppSetting(key=ZNACZNIK_LIST, value='1'))
         db.session.commit()
         log.info('[SEED] Listy Przyjecia zwrotu (brandy, kurierzy, opakowania) utworzone.')
+
+    # Dekoracje (2026-10-28): typy i modele stojakow — raz, jak listy wyzej.
+    if db.session.get(AppSetting, ZNACZNIK_SLOWNIKA) is None:
+        for rodzaj, nazwy in SLOWNIK_DOMYSLNY.items():
+            if SlownikDekoracji.query.filter_by(rodzaj=rodzaj).count() == 0:
+                for i, nazwa in enumerate(nazwy):
+                    db.session.add(SlownikDekoracji(rodzaj=rodzaj, nazwa=nazwa, kolejnosc=i))
+        db.session.add(AppSetting(key=ZNACZNIK_SLOWNIKA, value='1'))
+        db.session.commit()
+        log.info('[SEED] Listy Dekoracji (typy i modele stojakow) utworzone.')
 
     if CountryMapping.query.count() == 0:
         for country, innenauftrag in DEFAULT_COUNTRY_MAPPINGS:

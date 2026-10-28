@@ -72,3 +72,8 @@ from logistat.models.zwroty import (  # noqa: F401
     ZwrotPaczki,
     PrzydzialZwrotow,
 )
+from logistat.models.dekoracje import (  # noqa: F401
+    SlownikDekoracji,
+    AkcjaDekoracji,
+    IndexDekoracji,
+)
