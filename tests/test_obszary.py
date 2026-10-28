@@ -1,8 +1,11 @@
-"""Kafelki po zalogowaniu: Magazyn / Post-Process / Akcje - Displays / Zwroty / Ustawienia
-(operacja 2026-10-24).
+"""Kafelki po zalogowaniu: Magazyn / Post-Process / Dekoracje / Zwroty / Ustawienia
+(operacja 2026-10-24), od 2026-10-28 w grupach na ekranie startowym: Operacje
+magazynowe (Magazyn) / Dzial etykietowania (Post-Process, Dekoracje, Zwroty) /
+Supervisor (Ustawienia).
 
-- rola → kafelki: stanowisko = Magazyn, lider = Magazyn + Post-Process + Akcje - Displays
+- rola → kafelki: stanowisko = Magazyn, lider = Magazyn + Post-Process + Dekoracje
   + Zwroty, admin = wszystkie piec; konto stanowiska po zalogowaniu od razu w Magazynie,
+- ekran startowy: lider 2 grupy, admin 3; Dzial etykietowania pokazuje swoje kafelki,
 - kafelek wybiera tylko MENU (wersja lagodna, operacja 2026-10-24): ekran z innego
   kafelka roli otwiera sie i przelacza menu; API kafelka nie zmienia,
 - konto stanowiska nie wejdzie na zaden ekran ani API Post-Process / Ustawien,
@@ -100,19 +103,69 @@ def test_operator_dalej_sie_nie_loguje(client):
 
 # ── lider / admin ────────────────────────────────────────────────────────────
 
-def test_lider_widzi_cztery_kafelki_admin_piec(client):
+def test_lider_widzi_dwie_grupy_admin_trzy(client):
+    """Operacja 2026-10-28: na starcie grupy, nie kafelki."""
     zaloguj(client, 'leader')
     html = client.get('/start').get_data(as_text=True)
-    assert 'data-obszar="magazyn"' in html and 'data-obszar="post_process"' in html
-    assert 'data-obszar="displays"' in html and 'Akcje - Displays' in html
-    assert 'data-obszar="zwroty"' in html
-    assert 'data-obszar="ustawienia"' not in html
+    assert 'data-grupa="magazynowe"' in html and 'Operacje magazynowe' in html
+    assert 'data-grupa="etykietowanie"' in html and 'Dział etykietowania' in html
+    assert 'data-grupa="supervisor"' not in html and 'data-obszar=' not in html
     assert wybierz(client, USTAWIENIA).status_code == 403
 
     client.post('/logout')
     zaloguj(client, 'admin')
     html = client.get('/start').get_data(as_text=True)
-    assert html.count('data-obszar=') == 5
+    assert html.count('data-grupa=') == 3 and 'Supervisor' in html
+
+
+def test_dzial_etykietowania_pokazuje_swoje_kafelki(client):
+    zaloguj(client, 'leader')
+    html = client.get('/start?grupa=etykietowanie').get_data(as_text=True)
+
+    assert html.count('data-obszar=') == 3
+    for obszar, nazwa in ((POST_PROCESS, 'Post-Process'), (DISPLAYS, 'Dekoracje'), (ZWROTY, 'Zwroty')):
+        assert f'data-obszar="{obszar}"' in html and nazwa in html
+    assert '⬅ Wszystkie kafelki' in html
+    assert 'Akcje - Displays' not in html
+
+
+def test_grupa_z_jednym_kafelkiem_prowadzi_od_razu_do_niego(client):
+    zaloguj(client, 'admin')
+    r = client.get('/start?grupa=magazynowe')
+    assert r.status_code == 302 and r.headers['Location'].endswith('/scan-paczki')
+    r = client.get('/start?grupa=supervisor')
+    assert r.status_code == 302 and r.headers['Location'].endswith('/admin/panel')
+    with client.session_transaction() as s:
+        assert s['obszar'] == USTAWIENIA
+    # Na ekranie glownym grupa z jednym kafelkiem to od razu POST do kafelka.
+    html = client.get('/start').get_data(as_text=True)
+    assert 'action="/start/magazyn"' in html and 'action="/start/ustawienia"' in html
+
+
+def test_grupa_spoza_roli_albo_nieznana_pokazuje_ekran_glowny(client):
+    zaloguj(client, 'leader')
+    for grupa in ('supervisor', 'nie-ma-takiej'):
+        r = client.get(f'/start?grupa={grupa}')
+        html = r.get_data(as_text=True)
+        assert r.status_code == 200 and 'data-grupa="etykietowanie"' in html, grupa
+        assert '/admin/panel' not in html
+    with client.session_transaction() as s:
+        assert 'obszar' not in s
+
+
+def test_powrot_z_menu_do_grupy(client):
+    """„⬅ Kafelki” z kafelka Dzialu etykietowania wraca do ekranu tej grupy;
+    z Operacji magazynowych / Supervisor — na ekran glowny."""
+    zaloguj(client, 'admin')
+    wybierz(client, ZWROTY)
+    html = client.get('/zwroty/paczki').get_data(as_text=True)
+    assert 'href="/start?grupa=etykietowanie"' in html
+    assert 'Dział etykietowania › <strong>Zwroty</strong>' in html
+
+    wybierz(client, USTAWIENIA)
+    html = client.get('/admin/panel').get_data(as_text=True)
+    assert 'href="/start"' in html and '› <strong>' not in html
+    assert '⬅ Kafelki · <strong>Supervisor</strong>' in html
 
 
 def test_kafelek_wybiera_tylko_menu(client):
@@ -173,9 +226,9 @@ def test_logowanie_zeruje_wybrany_kafelek(client):
         assert not s.permanent, 'tylko stanowisko ma stala sesje'
 
 
-# ── Akcje - Displays i Zwroty (nowe moduly, na razie puste) ──────────────────
+# ── Dekoracje (nowy modul, na razie pusty) ──────────────────
 
-@pytest.mark.parametrize('obszar,adres,naglowek', [(DISPLAYS, '/displays', '💍 Akcje - Displays')])
+@pytest.mark.parametrize('obszar,adres,naglowek', [(DISPLAYS, '/displays', '💍 Dekoracje')])
 def test_nowy_modul_dla_lidera_i_admina_nie_dla_stanowiska(client, obszar, adres, naglowek):
     for rola in ('leader', 'admin'):
         zaloguj(client, rola)

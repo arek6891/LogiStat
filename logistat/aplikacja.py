@@ -13,7 +13,7 @@ from logistat.config import (
     resolve_secret_key)
 from logistat.czas import utc_to_local
 from logistat.extensions import db, login_manager
-from logistat.obszary import OBSZARY, obszary_roli
+from logistat.obszary import GRUPY, OBSZARY, grupa_obszaru, obszary_roli
 
 # Katalog projektu (templates/, static/) — pakiet lezy w nim, nie odwrotnie.
 KATALOG_PROJEKTU = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -100,7 +100,14 @@ def _szablony(app):
         """Menu w base.html: kafelki roli i wybrany kafelek (sekcje menu)."""
         role_obszary = obszary_roli(current_user.role) if current_user.is_authenticated else ()
         wybrany = session.get('obszar')
-        return {'OBSZARY': OBSZARY, 'obszary_roli': role_obszary,
+        # „⬅ Kafelki” (2026-10-28): kafelek z grupy kilku kafelkow roli wraca do
+        # ekranu tej grupy i pokazuje „Grupa › kafelek”.
+        powrot_grupa = None
+        if wybrany in role_obszary:
+            klucz = grupa_obszaru(wybrany)
+            if sum(o in role_obszary for o in GRUPY[klucz]['obszary']) > 1:
+                powrot_grupa = (klucz, GRUPY[klucz]['nazwa'])
+        return {'OBSZARY': OBSZARY, 'obszary_roli': role_obszary, 'powrot_grupa': powrot_grupa,
                 # Bez wybranego kafelka (np. tuz po logowaniu) — wszystkie sekcje roli.
                 'menu_obszary': (wybrany,) if wybrany in role_obszary else role_obszary}
 

@@ -9,7 +9,7 @@
     <div>
         <h1>🧾 Invoice specification</h1>
         <p style="color:var(--text-muted);">Raport miesięczny — ilości zapisują się same chwilę po wpisaniu.
-            {% if pokaz_ceny %}Ceny: <a href="{{ url_for('zwroty.admin_cennik') }}">Ustawienia → Cennik zwrotów</a>.{% endif %}</p>
+            {% if pokaz_ceny %}Ceny: <a href="{{ url_for('zwroty.admin_cennik') }}">Supervisor → Cennik zwrotów</a>.{% endif %}</p>
     </div>
     <form method="GET" id="okresFaktury" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
         <input type="number" name="rok" value="{{ dane.rok }}" min="2000" max="2100" class="form-control" style="width:100px;" title="Year">

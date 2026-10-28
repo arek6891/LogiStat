@@ -24,8 +24,8 @@
             {# Kafelki (2026-10-24): menu pokazuje tylko sekcje wybranego kafelka, pozycje A→Z;
                bez wybranego — wszystkie sekcje roli. Powrot do kafelkow, gdy rola ma ich kilka. #}
             {% if obszary_roli|length > 1 %}
-            <a href="{{ url_for('auth.kafelki') }}" class="kafelki-powrot">
-                ⬅ Kafelki{% if menu_obszary|length == 1 %} · <strong>{{ OBSZARY[menu_obszary[0]].nazwa }}</strong>{% endif %}
+            <a href="{{ url_for('auth.kafelki', grupa=powrot_grupa[0]) if powrot_grupa else url_for('auth.kafelki') }}" class="kafelki-powrot">
+                ⬅ Kafelki{% if menu_obszary|length == 1 %} · {% if powrot_grupa %}{{ powrot_grupa[1] }} › {% endif %}<strong>{{ OBSZARY[menu_obszary[0]].nazwa }}</strong>{% endif %}
             </a>
             {% endif %}
             <ul class="sidebar-nav">
@@ -104,10 +104,10 @@
                 {% endif %}
 
                 {% if 'displays' in menu_obszary %}
-                <li class="nav-section">💍 Akcje - Displays</li>
+                <li class="nav-section">💍 Dekoracje</li>
                 <li><a href="{{ url_for('displays.displays') }}"
                         class="{% if request.endpoint == 'displays.displays' %}active{% endif %}">
-                        <span class="icon">💍</span> Displays
+                        <span class="icon">💍</span> Dekoracje
                     </a></li>
                 {% endif %}
 
@@ -136,7 +136,7 @@
                 {% endif %}
 
                 {% if 'ustawienia' in menu_obszary %}
-                <li class="nav-section">🛡️ Ustawienia</li>
+                <li class="nav-section">🛡️ Supervisor</li>
                 <li><a href="{{ url_for('admin.admin_activities') }}"
                         class="{% if request.endpoint == 'admin.admin_activities' %}active{% endif %}">
                         <span class="icon">⚙️</span> Czynności

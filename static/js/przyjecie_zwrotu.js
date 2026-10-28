@@ -135,7 +135,7 @@ function ekranPos(ekran, k) {
 function ekranWyboru(ekran, k) {
     const opcje = LISTY[k.lista] || [];
     if (!opcje.length) {
-        ekran.append(el('p', 'przyjecie-uwaga', 'Lista jest pusta — admin musi dodać pozycje w Ustawieniach.'));
+        ekran.append(el('p', 'przyjecie-uwaga', 'Lista jest pusta — admin musi dodać pozycje w Supervisor → Przyjęcie zwrotu.'));
     }
     const siatka = el('div', 'przyjecie-opcje');
     opcje.forEach(nazwa => {
