@@ -1,28 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Zwroty Paczek — {{ NAZWA_APLIKACJI }}
-{# Poprawka lidera (2026-10-27): te same pola co ekran przyjecia; data i stanowisko zostaja. #}
-<div class="modal-overlay" id="zwrotModal" style="display:none;" data-modal-guard>
-    <div class="modal" style="background:var(--bg-card-solid);max-width:560px;">
-        <h3>✎ Popraw zwrot</h3>
-        <form id="zwrotForm">
-            <div class="form-group"><label>Paketnummer</label><input name="paketnummer" class="form-control" maxlength="100" required></div>
-            <div class="form-group"><label>Brand</label><select name="brand" class="form-control" data-lista="brand"></select></div>
-            <div class="form-group"><label>POS-Nummer</label><input name="pos_nummer" class="form-control przyjecie-duze-litery" maxlength="50" required></div>
-            <div class="form-group"><label>Kurier</label><select name="kurier" class="form-control" data-lista="kurier"></select></div>
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
-                {% for pole, naglowek, minimum, _ in liczniki %}
-                <div class="form-group"><label>{{ naglowek }}</label><input name="{{ pole }}" type="number" min="{{ minimum }}" step="1" class="form-control" required></div>
-                {% endfor %}
-            </div>
-            <div class="form-group"><label>Verpackungsvorschrift</label><select name="verpackungsvorschrift" class="form-control" data-lista="opakowanie"></select></div>
-            <div class="modal-actions">
-                <button type="button" class="btn btn-ghost" id="zwrotAnuluj">Anuluj</button>
-                <button type="submit" class="btn btn-primary">Zapisz</button>
-            </div>
-        </form>
-    </div>
-</div>
-{% endblock %}
+{% block title %}Zwroty Paczek — {{ NAZWA_APLIKACJI }}{% endblock %}
 
 {% block scripts %}
 <script>
@@ -81,5 +58,28 @@ const LISTY_ZWROTOW = {{ listy|tojson }};
             {% endfor %}
         </tbody>
     </table>
+</div>
+
+{# Poprawka lidera (2026-10-27): te same pola co ekran przyjecia; data i stanowisko zostaja. #}
+<div class="modal-overlay" id="zwrotModal" style="display:none;" data-modal-guard>
+    <div class="modal" style="background:var(--bg-card-solid);max-width:560px;">
+        <h3>✎ Popraw zwrot</h3>
+        <form id="zwrotForm">
+            <div class="form-group"><label>Paketnummer</label><input name="paketnummer" class="form-control" maxlength="100" required></div>
+            <div class="form-group"><label>Brand</label><select name="brand" class="form-control" data-lista="brand"></select></div>
+            <div class="form-group"><label>POS-Nummer</label><input name="pos_nummer" class="form-control przyjecie-duze-litery" maxlength="50" required></div>
+            <div class="form-group"><label>Kurier</label><select name="kurier" class="form-control" data-lista="kurier"></select></div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+                {% for pole, naglowek, minimum, _ in liczniki %}
+                <div class="form-group"><label>{{ naglowek }}</label><input name="{{ pole }}" type="number" min="{{ minimum }}" step="1" class="form-control" required></div>
+                {% endfor %}
+            </div>
+            <div class="form-group"><label>Verpackungsvorschrift</label><select name="verpackungsvorschrift" class="form-control" data-lista="opakowanie"></select></div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" id="zwrotAnuluj">Anuluj</button>
+                <button type="submit" class="btn btn-primary">Zapisz</button>
+            </div>
+        </form>
+    </div>
 </div>
 {% endblock %}

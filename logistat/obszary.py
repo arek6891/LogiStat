@@ -1,5 +1,8 @@
-"""Kafelki po zalogowaniu (operacja 2026-10-24): Magazyn / Post-Process /
-Akcje - Displays / Zwroty / Ustawienia.
+"""Kafelki po zalogowaniu (operacja 2026-10-24, grupy 2026-10-28): na ekranie
+startowym trzy kafelki-GRUPY — Operacje magazynowe / Dzial etykietowania /
+Supervisor; Dzial etykietowania po kliknieciu pokazuje swoje kafelki
+(Post-Process, Dekoracje, Zwroty). Grupa to tylko ekran wyboru — dostep, menu
+i `session['obszar']` dzialaja dalej na kafelkach (obszarach) ponizej.
 
 Kazdy endpoint nalezy do jednego lub kilku obszarow (kafelkow), albo do
 `WSPOLNE` (logowanie, profil, ekran kafelkow). Rola decyduje, ktore kafelki
@@ -21,16 +24,16 @@ USTAWIENIA = 'ustawienia'
 # Kolejnosc = kolejnosc kafelkow. `start` = pierwszy ekran po wyborze kafelka.
 OBSZARY = {
     MAGAZYN: {
-        'nazwa': 'Magazyn', 'ikona': '👷', 'start': 'stanowisko.scan_paczki',
+        'nazwa': 'Operacje magazynowe', 'ikona': '👷', 'start': 'stanowisko.scan_paczki',
         'opis': 'Stanowiska: skaner zmian, czas pracy, czasy paczek, inspektor paczek, przyjęcie zwrotu',
     },
     POST_PROCESS: {
         'nazwa': 'Post-Process', 'ikona': '📦', 'start': 'dashboard.dashboard',
         'opis': 'Lider: dashboard, przydzielanie, normy, paczki, import, statystyki, użytkownicy',
     },
-    # Nowe moduly (2026-10-24) — na razie puste ekrany startowe.
+    # Nowy modul (2026-10-24, do 2026-10-28 „Akcje - Displays”) — na razie pusty ekran.
     DISPLAYS: {
-        'nazwa': 'Akcje - Displays', 'ikona': '💍', 'start': 'displays.displays',
+        'nazwa': 'Dekoracje', 'ikona': '💍', 'start': 'displays.displays',
         'opis': 'Nowy moduł — w przygotowaniu',
     },
     ZWROTY: {
@@ -38,8 +41,26 @@ OBSZARY = {
         'opis': 'Zwroty Paczek, dashboard i przydział zwrotów, Invoice specification, Sorting Data',
     },
     USTAWIENIA: {
-        'nazwa': 'Ustawienia', 'ikona': '🛡️', 'start': 'admin.admin_panel',
-        'opis': 'Admin: czynności, stawki, kraje, nazwy kategorii, progi',
+        'nazwa': 'Supervisor', 'ikona': '🛡️', 'start': 'admin.admin_panel',
+        'opis': 'Wszystkie ustawienia: czynności, stawki, kraje, nazwy kategorii, progi, zwroty',
+    },
+}
+
+# Kafelki na ekranie startowym (operacja 2026-10-28). Grupa z jednym kafelkiem
+# roli prowadzi od razu do niego; z kilkoma — pokazuje je (`/start?grupa=…`).
+# Kolejnosc = kolejnosc na ekranie; kazdy obszar w dokladnie jednej grupie.
+GRUPY = {
+    'magazynowe': {
+        'nazwa': 'Operacje magazynowe', 'ikona': '🏭', 'obszary': (MAGAZYN,),
+        'opis': 'Wszystkie moduły magazynu: skaner zmian, czas pracy, czasy paczek, przyjęcie zwrotu',
+    },
+    'etykietowanie': {
+        'nazwa': 'Dział etykietowania', 'ikona': '🏷️', 'obszary': (POST_PROCESS, DISPLAYS, ZWROTY),
+        'opis': 'Post-Process, Dekoracje, Zwroty',
+    },
+    'supervisor': {
+        'nazwa': 'Supervisor', 'ikona': '🛡️', 'obszary': (USTAWIENIA,),
+        'opis': 'Wszystkie ustawienia',
     },
 }
 
@@ -151,6 +172,23 @@ def obszary_endpointu(endpoint):
 def obszary_roli(rola):
     """Kafelki roli w kolejnosci wyswietlania; brak roli z logowaniem → ()."""
     return ROLE_OBSZARY.get(rola, ())
+
+
+def grupy_roli(rola):
+    """Grupy widoczne dla roli: [(klucz, grupa, obszary roli w tej grupie)] —
+    tylko grupy z co najmniej jednym kafelkiem roli."""
+    role = obszary_roli(rola)
+    wynik = []
+    for klucz, g in GRUPY.items():
+        obszary = tuple(o for o in g['obszary'] if o in role)
+        if obszary:
+            wynik.append((klucz, g, obszary))
+    return wynik
+
+
+def grupa_obszaru(obszar):
+    """Klucz grupy, do ktorej nalezy kafelek (None = nieznany)."""
+    return next((k for k, g in GRUPY.items() if obszar in g['obszary']), None)
 
 
 def wszystkie_przypisane():

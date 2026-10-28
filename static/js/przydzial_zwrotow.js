@@ -103,7 +103,7 @@ function rysuj(dane) {
     const uwagi = document.getElementById('przydzialUwagi');
     uwagi.replaceChildren();
     if (stan.brak_czynnosci) {
-        uwagi.append(el('div', 'przydzial-komunikat', `Brak czynności „${stan.czynnosc}” — admin musi ją mieć w Ustawieniach → Czynności (nazwa musi się zgadzać).`));
+        uwagi.append(el('div', 'przydzial-komunikat', `Brak czynności „${stan.czynnosc}” — admin musi ją mieć w Supervisor → Czynności (nazwa musi się zgadzać).`));
     }
     if (!stan.stanowiska.length) {
         uwagi.append(el('div', 'przydzial-komunikat', 'Brak kont stanowisk — admin zakłada je w Użytkownicy (rola Stanowisko).'));

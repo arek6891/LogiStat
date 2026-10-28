@@ -15,7 +15,7 @@
     <div>
         <h1>📦 Sorting Data</h1>
         <p style="color:var(--text-muted);">Cały rok, wartości wpisywane ręcznie — każde pole zapisuje się samo chwilę po wpisaniu.
-            {% if current_user.role == 'admin' %}Wiersze: <a href="{{ url_for('zwroty.admin_licencje') }}">Ustawienia → Listy Sorting Data</a>.{% endif %}</p>
+            {% if current_user.role == 'admin' %}Wiersze: <a href="{{ url_for('zwroty.admin_licencje') }}">Supervisor → Listy Sorting Data</a>.{% endif %}</p>
     </div>
     <form method="GET" id="okresSorting" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
         <input type="number" name="rok" value="{{ dane.rok }}" min="2000" max="2100" class="form-control" style="width:100px;" title="Rok">
@@ -35,13 +35,13 @@
         </thead>
         <tbody>
             {% for w in dane.licencje %}
-            <tr><td>{{ w.nazwa }}{% if not w.aktywna %} <span class="z-systemu" title="Wyłączona w Ustawieniach — widać ją, bo ma dane w tym roku">(wyłączona)</span>{% endif %}</td>
+            <tr><td>{{ w.nazwa }}{% if not w.aktywna %} <span class="z-systemu" title="Wyłączona w Supervisor — widać ją, bo ma dane w tym roku">(wyłączona)</span>{% endif %}</td>
                 {% for m in range(1, 13) %}{{ komorka(w.id, m, 'cartons', w.mies[m].cartons, (m - 1) % 2) }}{{ komorka(w.id, m, 'pallets', w.mies[m].pallets, (m - 1) % 2) }}{% endfor %}</tr>
             {% endfor %}
             <tr class="suma"><td>Total boxes built</td>
                 {% for m in range(1, 13) %}<td class="srodek" data-suma="{{ m }}-cartons">{{ dane.suma[m].cartons }}</td><td class="srodek" data-suma="{{ m }}-pallets">{{ dane.suma[m].pallets }}</td>{% endfor %}</tr>
             {% for w in dane.wysylki %}
-            <tr><td>{{ w.nazwa }}{% if not w.aktywna %} <span class="z-systemu" title="Wyłączona w Ustawieniach — widać ją, bo ma dane w tym roku">(wyłączona)</span>{% endif %}</td>
+            <tr><td>{{ w.nazwa }}{% if not w.aktywna %} <span class="z-systemu" title="Wyłączona w Supervisor — widać ją, bo ma dane w tym roku">(wyłączona)</span>{% endif %}</td>
                 {% for m in range(1, 13) %}{{ komorka(w.id, m, 'cartons', w.mies[m].cartons, (m - 1) % 2) }}{{ komorka(w.id, m, 'pallets', w.mies[m].pallets, (m - 1) % 2) }}{% endfor %}</tr>
             {% endfor %}
             <tr><td>POS processed</td>

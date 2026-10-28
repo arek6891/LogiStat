@@ -1,5 +1,5 @@
 """Logowanie, wylogowanie, profil (zmiana hasla), wymuszona zmiana domyslnego hasla,
-kafelki po zalogowaniu (Magazyn / Post-Process / Ustawienia) i blokada obszaru."""
+kafelki po zalogowaniu (grupy: Operacje magazynowe / Dzial etykietowania / Supervisor) i blokada obszaru."""
 from datetime import timedelta
 
 from flask import (Blueprint, abort, flash, jsonify, redirect, render_template, request, session,
@@ -10,7 +10,7 @@ from logistat.config import DEFAULT_ADMIN_PASSWORD
 from logistat.czas import teraz_utc
 from logistat.extensions import db
 from logistat.models import ProbaLogowania, ROLE_Z_LOGOWANIEM, User
-from logistat.obszary import OBSZARY, WSPOLNE, obszary_endpointu, obszary_roli
+from logistat.obszary import OBSZARY, WSPOLNE, grupy_roli, obszary_endpointu, obszary_roli
 from logistat.web.wspolne import bezpieczny_next
 
 bp = Blueprint('auth', __name__)
@@ -51,7 +51,10 @@ def index():
 # ── Kafelki (operacja 2026-10-24) ─────────────────────────────────────────────
 # Po zalogowaniu wybiera sie kafelek; menu pokazuje tylko jego moduly. Rola
 # decyduje, ktore kafelki widac (`ROLE_OBSZARY`) i do czego jest dostep; kafelek
-# niczego nie blokuje. Jeden kafelek (stanowisko) — od razu do niego.
+# niczego nie blokuje. Od 2026-10-28 ekran startowy pokazuje GRUPY kafelkow
+# (`GRUPY`): Dzial etykietowania rozwija sie w swoje kafelki, grupa z jednym
+# kafelkiem prowadzi od razu do niego; jedna grupa z jednym kafelkiem (stanowisko)
+# — od razu do niego.
 
 def _wejdz_do_obszaru(obszar):
     session['obszar'] = obszar
@@ -61,12 +64,26 @@ def _wejdz_do_obszaru(obszar):
 @bp.route('/start')
 @login_required
 def kafelki():
-    dozwolone = obszary_roli(current_user.role)
-    if len(dozwolone) == 1:
-        return _wejdz_do_obszaru(dozwolone[0])
-    return render_template('kafelki.html', bez_menu=True,
-                           kafelki=[(o, OBSZARY[o]) for o in dozwolone],
-                           wybrany=session.get('obszar'))
+    """Ekran startowy: kafelki-grupy roli (operacja 2026-10-28), a z `?grupa=`
+    kafelki tej grupy. Grupa z jednym kafelkiem roli = od razu do niego, wiec
+    jedna grupa z jednym kafelkiem (stanowisko) = od razu do Magazynu. Nieznana
+    grupa albo spoza roli → ekran glowny."""
+    grupy = grupy_roli(current_user.role)
+    if len(grupy) == 1:
+        klucz = grupy[0][0]
+    else:
+        klucz = request.args.get('grupa')
+    wybrana = next((g for g in grupy if g[0] == klucz), None)
+    if wybrana:
+        _, grupa, obszary = wybrana
+        if len(obszary) == 1:
+            return _wejdz_do_obszaru(obszary[0])
+        return render_template('kafelki.html', bez_menu=True, grupa=grupa, wiele_grup=len(grupy) > 1,
+                               kafelki=[(o, OBSZARY[o]) for o in obszary],
+                               wybrany=session.get('obszar'))
+    wybrany = session.get('obszar')
+    return render_template('kafelki.html', bez_menu=True, grupy=grupy,
+                           aktywna=next((k for k, _, o in grupy if wybrany in o), None))
 
 
 @bp.route('/start/<obszar>', methods=['POST'])
