@@ -155,8 +155,9 @@ def api_index_dodaj(akcja_id):
     """„+ Index” — pusty index z nazwa „Index N” (nazwe i reszte wpisuje sie potem)."""
     a = db.get_or_404(AkcjaDekoracji, akcja_id)
     _edytowalna(a)
-    nr = max((ix.kolejnosc for ix in a.indexy), default=0) + 1
-    ix = IndexDekoracji(akcja=a, nazwa=f'Index {nr}', kolejnosc=nr)
+    nr = (db.session.query(db.func.max(IndexDekoracji.kolejnosc))
+          .filter(IndexDekoracji.akcja_id == a.id).scalar() or 0) + 1
+    ix = IndexDekoracji(akcja_id=a.id, nazwa=f'Index {nr}', kolejnosc=nr)
     _zmieniono(ix)
     db.session.add(ix)
     db.session.commit()
