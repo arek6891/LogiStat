@@ -14,8 +14,8 @@ Supervisor (Ustawienia).
 import pytest
 from conftest import PASSWORD, login, make_user
 
-from logistat.obszary import DISPLAYS, MAGAZYN, POST_PROCESS, USTAWIENIA, ZWROTY, obszary_endpointu, \
-    wszystkie_przypisane
+from logistat.obszary import DISPLAYS, GRUPY, MAGAZYN, OBSZARY, POST_PROCESS, USTAWIENIA, ZWROTY, \
+    obszary_endpointu, wszystkie_przypisane
 
 
 def zaloguj(client, rola):
@@ -102,6 +102,12 @@ def test_operator_dalej_sie_nie_loguje(client):
 
 
 # ── lider / admin ────────────────────────────────────────────────────────────
+
+def test_kazdy_kafelek_w_dokladnie_jednej_grupie():
+    """Kafelek bez grupy nie pojawilby sie na /start, a menu (powrot do grupy)
+    padaloby na KeyError."""
+    assert sorted(o for g in GRUPY.values() for o in g['obszary']) == sorted(OBSZARY)
+
 
 def test_lider_widzi_dwie_grupy_admin_trzy(client):
     """Operacja 2026-10-28: na starcie grupy, nie kafelki."""
