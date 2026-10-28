@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}{{ NAZWA_APLIKACJI }} — Historia akcji{% endblock %}
+
+{# Dekoracje (2026-10-28): akcje zakonczone — nie ma ich na Gantcie, tu zostaja
+   do wgladu (i do „Przywróć” na ekranie akcji). #}
+{% macro suma(s) %}{{ s.suma }}{% if not s.pelna %} <span class="dekoracje-niepelna" title="Któryś index ma puste pole — suma tylko z wpisanych">*</span>{% endif %}{% endmacro %}
+{% block content %}
+<div class="page-header">
+    <h2>🗄️ Historia akcji</h2>
+    <p class="subtitle">Akcje zakończone przyciskiem „Zakończ akcję”. Wróć do <a href="{{ url_for('displays.displays') }}">wykresu akcji</a>.</p>
+</div>
+
+<div class="card">
+    <table class="data-table">
+        <thead><tr><th>Akcja</th><th>Start</th><th>Koniec</th><th>Indexów</th><th>Stojaków</th><th>Haków</th><th>Zakończona</th></tr></thead>
+        <tbody>
+            {% for a in akcje %}
+            <tr>
+                <td><a href="{{ url_for('displays.akcja', akcja_id=a.id) }}">{{ a.nazwa }}</a></td>
+                <td>{{ a.od[8:10] }}.{{ a.od[5:7] }}.{{ a.od[:4] }}</td>
+                <td>{{ a.do[8:10] }}.{{ a.do[5:7] }}.{{ a.do[:4] }}</td>
+                <td>{{ a.liczba_indexow }}</td>
+                <td>{{ suma(a.sumy.ilosc_stojakow) }}</td>
+                <td>{{ suma(a.sumy.haki) }}</td>
+                <td>{{ a.zakonczona_lokalnie }}{% if a.zakonczyl %} · {{ a.zakonczyl }}{% endif %}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" style="color:var(--text-muted);">Brak zakończonych akcji.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

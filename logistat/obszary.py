@@ -31,10 +31,10 @@ OBSZARY = {
         'nazwa': 'Post-Process', 'ikona': '📦', 'start': 'dashboard.dashboard',
         'opis': 'Lider: dashboard, przydzielanie, normy, paczki, import, statystyki, użytkownicy',
     },
-    # Nowy modul (2026-10-24, do 2026-10-28 „Akcje - Displays”) — na razie pusty ekran.
+    # Do 2026-10-28 „Akcje - Displays”; od 2026-10-28 akcje na wykresie Gantta.
     DISPLAYS: {
         'nazwa': 'Dekoracje', 'ikona': '💍', 'start': 'displays.displays',
-        'opis': 'Nowy moduł — w przygotowaniu',
+        'opis': 'Akcje na wykresie Gantta, indexy displayi, historia akcji',
     },
     ZWROTY: {
         'nazwa': 'Zwroty', 'ikona': '↩️', 'start': 'zwroty.zwroty_paczek',
@@ -129,7 +129,10 @@ _ENDPOINTY = {
         'zwroty.api_przydzial_zwrotow_zapisz',
     },
     DISPLAYS: {
-        'displays.displays',
+        # Akcje na Gantcie, ekran akcji z indexami, historia (2026-10-28)
+        'displays.displays', 'displays.historia', 'displays.akcja',
+        'displays.api_akcja_dodaj', 'displays.api_akcja_zmien', 'displays.api_akcja_status',
+        'displays.api_index_dodaj', 'displays.api_index_zmien', 'displays.api_index_usun',
     },
     ZWROTY: {
         'zwroty.zwroty', 'zwroty.zwroty_paczek', 'zwroty.zwroty_paczek_export',
@@ -160,6 +163,9 @@ _ENDPOINTY = {
         'admin.api_user_option_update', 'admin.api_user_option_delete',
         'admin.api_category_labels_update', 'admin.api_settings_update',
         'admin.api_cost_mapping_get', 'admin.api_cost_mapping_save',
+        # Dekoracje (2026-10-28): typy i modele stojakow
+        'displays.admin_slownik', 'displays.api_slownik_dodaj', 'displays.api_slownik_zmien',
+        'displays.api_slownik_usun',
     },
 }
 

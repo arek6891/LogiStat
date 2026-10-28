@@ -1,5 +1,7 @@
 DELETE /api/activities/<int:activity_id>
 DELETE /api/country-mappings/<int:mapping_id>
+DELETE /api/dekoracje/indexy/<int:index_id>
+DELETE /api/dekoracje/slownik/<int:poz_id>
 DELETE /api/scan/<int:attendance_id>
 DELETE /api/user-options/<int:option_id>
 DELETE /api/users/<int:user_id>
@@ -11,6 +13,7 @@ GET /admin/activities
 GET /admin/category-labels
 GET /admin/cost-mapping
 GET /admin/country-mapping
+GET /admin/dekoracje
 GET /admin/panel
 GET /admin/settings
 GET /admin/user-options
@@ -48,6 +51,8 @@ GET /assignment
 GET /dashboard
 GET /data-entry
 GET /displays
+GET /displays/akcje/<int:akcja_id>
+GET /displays/historia
 GET /favicon.ico
 GET /forecast
 GET /general-stats
@@ -78,6 +83,9 @@ POST /api/activities/reorder
 POST /api/assignment/save
 POST /api/country-mappings
 POST /api/daily-stats
+POST /api/dekoracje/akcje
+POST /api/dekoracje/akcje/<int:akcja_id>/indexy
+POST /api/dekoracje/slownik
 POST /api/forecast/save
 POST /api/general-stats/<int:stat_id>/use-scan
 POST /api/import-csv
@@ -108,6 +116,10 @@ PUT /api/activities/<int:activity_id>
 PUT /api/category-labels
 PUT /api/country-mappings/<int:mapping_id>
 PUT /api/daily-stats/<int:stat_id>
+PUT /api/dekoracje/akcje/<int:akcja_id>
+PUT /api/dekoracje/akcje/<int:akcja_id>/status
+PUT /api/dekoracje/indexy/<int:index_id>
+PUT /api/dekoracje/slownik/<int:poz_id>
 PUT /api/general-stats/<int:stat_id>
 PUT /api/packages/<int:carton_id>
 PUT /api/packages/<int:carton_id>/assign

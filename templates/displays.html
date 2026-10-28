@@ -1,17 +1,45 @@
 {% extends 'base.html' %}
 {% block title %}{{ NAZWA_APLIKACJI }} — Dekoracje{% endblock %}
 
-{# Kafelek „Dekoracje” (2026-10-24, do 2026-10-28 „Akcje - Displays”) — modul w przygotowaniu. #}
+{# Dekoracje (2026-10-28): wykres Gantta akcji niezakonczonych (takze po terminie —
+   z ostrzezeniem). Klik w akcje → jej ekran. Zakonczone: Historia akcji.
+   Wykres rysuje static/js/displays.js. #}
 {% block content %}
-<div class="page-header">
-    <h2>💍 Dekoracje</h2>
-    <p class="subtitle">Nowy moduł</p>
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:1rem;">
+    <div>
+        <h2>💍 Dekoracje — akcje</h2>
+        <p class="subtitle">Akcje w toku i zaplanowane. Kliknij akcję, żeby wpisać indexy. Zakończone akcje są w
+            <a href="{{ url_for('displays.historia') }}">Historii akcji</a>.</p>
+    </div>
+    <button type="button" class="btn btn-primary" id="nowaAkcja">➕ Nowa akcja</button>
 </div>
 
 <div class="card">
-    <div class="empty-state">
-        <div class="icon">🚧</div>
-        <p>Moduł w przygotowaniu.</p>
+    <div class="gantt" id="gantt"></div>
+</div>
+
+<div class="modal-overlay" id="akcjaModal" style="display:none;" data-modal-guard>
+    <div class="modal" style="background:var(--bg-card-solid);max-width:480px;">
+        <h3>➕ Nowa akcja</h3>
+        <form id="akcjaForm">
+            <div class="form-group"><label>Nazwa akcji</label>
+                <input name="nazwa" class="form-control" maxlength="150" required></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div class="form-group"><label>Start</label><input name="od" type="date" class="form-control" required></div>
+                <div class="form-group"><label>Koniec</label><input name="do" type="date" class="form-control" required></div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" id="akcjaAnuluj">Anuluj</button>
+                <button type="submit" class="btn btn-primary">Utwórz i otwórz</button>
+            </div>
+        </form>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const GANTT = {{ {'akcje': akcje, 'dzis': dzis.isoformat()}|tojson }};
+</script>
+<script src="{{ static_v('js/displays.js') }}"></script>
 {% endblock %}

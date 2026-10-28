@@ -232,15 +232,15 @@ def test_logowanie_zeruje_wybrany_kafelek(client):
         assert not s.permanent, 'tylko stanowisko ma stala sesje'
 
 
-# ── Dekoracje (nowy modul, na razie pusty) ──────────────────
+# ── Dekoracje (akcje na Gantcie od 2026-10-28) ──────────────────
 
-@pytest.mark.parametrize('obszar,adres,naglowek', [(DISPLAYS, '/displays', '💍 Dekoracje')])
+@pytest.mark.parametrize('obszar,adres,naglowek', [(DISPLAYS, '/displays', '💍 Dekoracje — akcje')])
 def test_nowy_modul_dla_lidera_i_admina_nie_dla_stanowiska(client, obszar, adres, naglowek):
     for rola in ('leader', 'admin'):
         zaloguj(client, rola)
         wybierz(client, obszar)
         html = client.get(adres).get_data(as_text=True)
-        assert 'w przygotowaniu' in html and naglowek in html, rola
+        assert 'Nowa akcja' in html and naglowek in html, rola
         assert 'Przydzielanie' not in html, 'menu tylko wybranego kafelka'
         client.post('/logout')
 
@@ -266,6 +266,7 @@ def test_pusta_pozycja_zwroty_przekierowuje_i_nie_ma_jej_w_menu(client):
 
 @pytest.mark.parametrize('obszar,adres', [(MAGAZYN, '/scan-paczki'),
                                           (POST_PROCESS, '/dashboard'),
+                                          (DISPLAYS, '/displays'),
                                           (ZWROTY, '/zwroty/paczki'),
                                           (USTAWIENIA, '/admin/panel')])
 def test_menu_kafelka_alfabetycznie(client, obszar, adres):
@@ -329,13 +330,13 @@ STRONY = {
     POST_PROCESS: ['/dashboard', '/forecast', '/assignment', '/data-entry', '/stats', '/paczki',
                    '/worker-times', '/import-csv', '/general-stats', '/admin/users',
                    '/zwroty/przydzial'],
-    DISPLAYS: ['/displays'],
+    DISPLAYS: ['/displays', '/displays/historia'],
     ZWROTY: ['/zwroty/paczki', '/zwroty/invoice-specification', '/zwroty/sorting-data',
              '/zwroty/przydzial', '/zwroty/dashboard'],
     USTAWIENIA: ['/admin/panel', '/admin/activities', '/admin/country-mapping',
                  '/admin/user-options', '/admin/category-labels', '/admin/settings',
                  '/admin/cost-mapping', '/admin/zwroty/licencje', '/admin/zwroty/cennik',
-                 '/admin/zwroty/przyjecie'],
+                 '/admin/zwroty/przyjecie', '/admin/dekoracje'],
 }
 
 

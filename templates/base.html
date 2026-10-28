@@ -106,8 +106,12 @@
                 {% if 'displays' in menu_obszary %}
                 <li class="nav-section">💍 Dekoracje</li>
                 <li><a href="{{ url_for('displays.displays') }}"
-                        class="{% if request.endpoint == 'displays.displays' %}active{% endif %}">
-                        <span class="icon">💍</span> Dekoracje
+                        class="{% if request.endpoint in ('displays.displays', 'displays.akcja') %}active{% endif %}">
+                        <span class="icon">📅</span> Akcje
+                    </a></li>
+                <li><a href="{{ url_for('displays.historia') }}"
+                        class="{% if request.endpoint == 'displays.historia' %}active{% endif %}">
+                        <span class="icon">🗄️</span> Historia akcji
                     </a></li>
                 {% endif %}
 
@@ -142,7 +146,7 @@
                         <span class="icon">⚙️</span> Czynności
                     </a></li>
                 <li><a href="{{ url_for('admin.admin_panel') }}"
-                        class="{% if request.endpoint in ('admin.admin_panel', 'admin.admin_country_mapping', 'admin.admin_user_options', 'admin.admin_category_labels', 'admin.admin_settings', 'admin.admin_cost_mapping', 'zwroty.admin_licencje', 'zwroty.admin_cennik', 'zwroty.admin_przyjecie') %}active{% endif %}">
+                        class="{% if request.endpoint in ('admin.admin_panel', 'admin.admin_country_mapping', 'admin.admin_user_options', 'admin.admin_category_labels', 'admin.admin_settings', 'admin.admin_cost_mapping', 'zwroty.admin_licencje', 'zwroty.admin_cennik', 'zwroty.admin_przyjecie', 'displays.admin_slownik') %}active{% endif %}">
                         <span class="icon">🛡️</span> Panel Admina
                     </a></li>
                 {% endif %}
