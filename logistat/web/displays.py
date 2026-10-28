@@ -26,7 +26,8 @@ from logistat.dekoracje_dane import (
     ostatni_import_pos, ostatnie_ruchy, pos_dict, pos_lista, pos_w_stocku, przenies_stojak,
     ruch_dict, slownik, stock_stojakow, stojak_dict, strefa_po_kodzie, uzyte_pozycje_slownika)
 from logistat.extensions import db
-from logistat.models import AkcjaDekoracji, IndexDekoracji, PosDekoracji, SlownikDekoracji, StojakDekoracji
+from logistat.models import (
+    AkcjaDekoracji, IndexDekoracji, PosDekoracji, RuchStojaka, SlownikDekoracji, StojakDekoracji)
 from logistat.pdf_etykiet import NA_STRONIE, pdf_etykiet
 from logistat.przyjecie_zwrotu import pos_nummer
 from logistat.web.excel import odpowiedz_xlsx, styl_naglowka
@@ -539,7 +540,9 @@ def api_stojak_usun(stojak_id):
 @leader_required
 def api_stojak_ruchy(stojak_id):
     s = db.get_or_404(StojakDekoracji, stojak_id)
-    return jsonify([ruch_dict(r) for r in s.ruchy])
+    ruchy = RuchStojaka.query.filter_by(stojak_id=s.id)\
+        .order_by(RuchStojaka.kiedy.desc(), RuchStojaka.id.desc()).all()
+    return jsonify([ruch_dict(r) for r in ruchy])
 
 
 @bp.route('/admin/dekoracje/strefy/etykiety', methods=['POST'])
