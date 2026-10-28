@@ -62,3 +62,19 @@ class IndexDekoracji(db.Model):
     prod_dekorowania = db.Column(db.Float, nullable=True)
     zmienil_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     zmieniono_at = db.Column(db.DateTime, nullable=True)
+
+
+class PosDekoracji(db.Model):
+    """Numer POS z listy do etykiet (Dekoracje → Etykiety POS, 2026-10-28).
+    Import z Excela dodaje nowe i aktualizuje istniejace po `numer`;
+    `import_at` = ostatni import, ktory ten wiersz zawieral (druk „z ostatniego
+    importu”). `post_processing` NULL = nie ustalono."""
+    __tablename__ = 'pos_dekoracji'
+    id = db.Column(db.Integer, primary_key=True)
+    numer = db.Column(db.String(50), nullable=False, unique=True)
+    post_processing = db.Column(db.Boolean, nullable=True)
+    utworzono_at = db.Column(db.DateTime, nullable=False, default=teraz_utc)
+    utworzyl_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    import_at = db.Column(db.DateTime, nullable=True, index=True)
+    zmienil_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    zmieniono_at = db.Column(db.DateTime, nullable=True)

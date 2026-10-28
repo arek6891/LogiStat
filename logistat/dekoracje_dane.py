@@ -2,11 +2,11 @@
 akcji. Bez requestu; zapis i walidacja w `logistat/web/displays.py`."""
 from sqlalchemy.orm import selectinload
 
-from logistat.czas import iso_z, utc_to_local
+from logistat.czas import iso_z, teraz_utc, utc_to_local
 from logistat.dekoracje import (
     POLA_LICZB, POLA_PRODUKTYWNOSCI, RODZAJE_SLOWNIKA, haki_razem, po_terminie, podsumowanie)
 from logistat.extensions import db
-from logistat.models import AkcjaDekoracji, IndexDekoracji, SlownikDekoracji
+from logistat.models import AkcjaDekoracji, IndexDekoracji, PosDekoracji, SlownikDekoracji
 
 
 def index_dict(ix):
@@ -73,3 +73,47 @@ def uzyte_pozycje_slownika():
     typy = db.session.query(IndexDekoracji.typ_id).filter(IndexDekoracji.typ_id.isnot(None))
     modele = db.session.query(IndexDekoracji.model_id).filter(IndexDekoracji.model_id.isnot(None))
     return {i for (i,) in typy.union(modele)}
+
+
+# ── Etykiety POS ─────────────────────────────────────────────────────────────
+
+def pos_dict(p):
+    return {'id': p.id, 'numer': p.numer, 'post_processing': p.post_processing,
+            'dodano': utc_to_local(p.utworzono_at).strftime('%d.%m.%Y %H:%M'),
+            'import_at': iso_z(p.import_at) if p.import_at else None}
+
+
+def pos_lista():
+    return PosDekoracji.query.order_by(PosDekoracji.numer).all()
+
+
+def ostatni_import_pos():
+    """Wiersze ostatniego importu (druk „z ostatniego importu”)."""
+    ostatni = db.session.query(db.func.max(PosDekoracji.import_at)).scalar()
+    if ostatni is None:
+        return []
+    return PosDekoracji.query.filter(PosDekoracji.import_at == ostatni)\
+        .order_by(PosDekoracji.numer).all()
+
+
+def importuj_pos(pozycje, ma_pp, actor_id):
+    """Zapis listy z `wiersze_pos()`: nowy numer → wiersz, istniejacy → nowa flaga
+    Post Processing (tylko gdy plik ma te kolumne). Wszystkie wiersze pliku
+    dostaja ten sam `import_at`. Zwraca liczniki; commit robi wolajacy."""
+    teraz = teraz_utc()
+    istniejace = {p.numer: p for p in PosDekoracji.query.filter(PosDekoracji.numer.in_(list(pozycje)))} \
+        if pozycje else {}
+    dodane = zmienione = 0
+    for numer, pp in pozycje.items():
+        p = istniejace.get(numer)
+        if p is None:
+            db.session.add(PosDekoracji(numer=numer, post_processing=pp if ma_pp else None,
+                                        utworzyl_id=actor_id, utworzono_at=teraz, import_at=teraz))
+            dodane += 1
+            continue
+        p.import_at = teraz
+        if ma_pp and p.post_processing != pp:
+            p.post_processing = pp
+            p.zmienil_id, p.zmieniono_at = actor_id, teraz
+            zmienione += 1
+    return {'dodane': dodane, 'zmienione': zmienione, 'bez_zmian': len(pozycje) - dodane - zmienione}

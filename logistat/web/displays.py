@@ -3,23 +3,32 @@
 Akcje na wykresie Gantta (`/displays`), ekran akcji z indexami (autozapis),
 historia zakonczonych akcji i listy typow / modeli stojakow (Supervisor).
 Akcja zakonczona jest tylko do odczytu — zmienia ja dopiero „Przywróć”.
+Etykiety POS: lista numerow z Excela → arkusz kodow kreskowych (PDF).
 """
-from flask import Blueprint, abort, jsonify, render_template
+import io
+import logging
+
+import openpyxl
+from flask import Blueprint, abort, flash, jsonify, make_response, redirect, render_template, request, url_for
 from flask_login import current_user
+from openpyxl import Workbook
 from sqlalchemy.exc import IntegrityError
 
 from logistat.czas import local_today, teraz_utc
 from logistat.dekoracje import (
-    LICZBA_MAX, NAZWA_MAX, NAZWA_SLOWNIKA_MAX, POLA_LICZB, POLA_PRODUKTYWNOSCI, POLA_SLOWNIKA,
-    RODZAJE_SLOWNIKA, data_z_tekstu)
+    ETYKIET_MAX, KOPIE_MAX, LICZBA_MAX, NAGLOWEK_EKSPORTU_POS, NAZWA_MAX, NAZWA_SLOWNIKA_MAX,
+    POLA_LICZB, POLA_PRODUKTYWNOSCI, POLA_SLOWNIKA, RODZAJE_SLOWNIKA, data_z_tekstu, wiersze_pos)
 from logistat.dekoracje_dane import (
-    akcja_dict, akcje_gantt, akcje_historia, index_dict, listy_dla_akcji, slownik,
-    uzyte_pozycje_slownika)
+    akcja_dict, akcje_gantt, akcje_historia, importuj_pos, index_dict, listy_dla_akcji,
+    ostatni_import_pos, pos_dict, pos_lista, slownik, uzyte_pozycje_slownika)
 from logistat.extensions import db
-from logistat.models import AkcjaDekoracji, IndexDekoracji, SlownikDekoracji
+from logistat.models import AkcjaDekoracji, IndexDekoracji, PosDekoracji, SlownikDekoracji
+from logistat.pdf_etykiet import NA_STRONIE, pdf_etykiet
+from logistat.web.excel import odpowiedz_xlsx, styl_naglowka
 from logistat.web.wspolne import admin_required, json_body, leader_required
 
 bp = Blueprint('displays', __name__)
+logger = logging.getLogger(__name__)
 
 
 # ── ekrany ───────────────────────────────────────────────────────────────────
@@ -269,3 +278,112 @@ def api_slownik_usun(poz_id):
     db.session.delete(p)
     db.session.commit()
     return jsonify({'ok': True})
+
+
+# ── Etykiety POS ─────────────────────────────────────────────────────────────
+
+@bp.route('/displays/pos')
+@leader_required
+def pos():
+    lista = pos_lista()
+    return render_template('displays_pos.html', lista=[pos_dict(p) for p in lista],
+                           ostatni_import=len(ostatni_import_pos()), na_stronie=NA_STRONIE,
+                           kopie_max=KOPIE_MAX, naglowki=NAGLOWEK_EKSPORTU_POS)
+
+
+@bp.route('/api/dekoracje/pos/import', methods=['POST'])
+@leader_required
+def api_pos_import():
+    """Plik .xlsx: kolumna POS (wymagana) i Post Processing (opcjonalna)."""
+    plik = request.files.get('file')
+    if plik is None or not plik.filename:
+        abort(400, 'Wybierz plik Excel (.xlsx).')
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(plik.read()), data_only=True, read_only=True)
+    except Exception:
+        abort(400, 'Nie można odczytać pliku — potrzebny Excel .xlsx.')
+    try:
+        ws = wb.active
+        if ws is None:
+            abort(400, 'Plik Excel jest pusty.')
+        pozycje, ma_pp, bledy = wiersze_pos(ws.iter_rows(values_only=True))
+    except ValueError as e:
+        abort(400, str(e))
+    finally:
+        wb.close()
+    if not pozycje and not bledy:
+        abort(400, 'W pliku nie ma numerów POS.')
+    wynik = importuj_pos(pozycje, ma_pp, current_user.id)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        abort(409, 'Ktoś w tej chwili importował te same numery — wczytaj plik jeszcze raz.')
+    logger.info('Import listy POS: %s, bledow %d (uzytkownik %s)', wynik, len(bledy), current_user.id)
+    return jsonify({**wynik, 'wczytane': len(pozycje), 'bledy': bledy, 'ma_pp': ma_pp,
+                    'lista': [pos_dict(p) for p in pos_lista()],
+                    'ostatni_import': len(ostatni_import_pos())})
+
+
+@bp.route('/api/dekoracje/pos/<int:pos_id>', methods=['DELETE'])
+@leader_required
+def api_pos_usun(pos_id):
+    p = db.get_or_404(PosDekoracji, pos_id)
+    db.session.delete(p)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/displays/pos/etykiety', methods=['POST'])
+@leader_required
+def pos_etykiety():
+    """Arkusz etykiet (PDF w nowej karcie). Formularz: `zakres` = wszystkie |
+    import (ostatni) | wybrane (+ `id`), `kopie` kazdej etykiety."""
+    zakres = request.form.get('zakres')
+    if zakres == 'wszystkie':
+        lista = pos_lista()
+    elif zakres == 'import':
+        lista = ostatni_import_pos()
+    elif zakres == 'wybrane':
+        ids = {int(i) for i in request.form.getlist('id') if i.isdigit()}
+        lista = [p for p in pos_lista() if p.id in ids]
+    else:
+        lista = []
+    try:
+        kopie = int(request.form.get('kopie') or 1)
+    except ValueError:
+        kopie = 0
+    if not 1 <= kopie <= KOPIE_MAX:
+        flash(f'Liczba kopii od 1 do {KOPIE_MAX}.', 'error')
+        return redirect(url_for('displays.pos'))
+    if not lista:
+        flash('Nie ma etykiet do druku — zaznacz numery POS albo wczytaj listę.', 'error')
+        return redirect(url_for('displays.pos'))
+    if len(lista) * kopie > ETYKIET_MAX:
+        flash(f'Za dużo etykiet naraz ({len(lista) * kopie}) — najwyżej {ETYKIET_MAX}.', 'error')
+        return redirect(url_for('displays.pos'))
+    odpowiedz = make_response(pdf_etykiet([p.numer for p in lista for _ in range(kopie)]))
+    odpowiedz.headers['Content-Type'] = 'application/pdf'
+    odpowiedz.headers['Content-Disposition'] = f'inline; filename="etykiety-pos-{local_today():%Y-%m-%d}.pdf"'
+    return odpowiedz
+
+
+@bp.route('/displays/pos/export')
+@leader_required
+def pos_export():
+    """Lista do poprawki w Excelu — ten sam uklad wczytuje import (klucz = POS)."""
+    wb = Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.title = 'POS'
+    ws.append(list(NAGLOWEK_EKSPORTU_POS))
+    for komorka in ws[1]:
+        styl_naglowka(komorka, '325C96')
+    for p in pos_lista():
+        ws.append([p.numer, {True: 'Tak', False: 'Nie'}.get(p.post_processing)])
+        # Numer zawsze jako tekst — inaczej Excel zjada wiodace zera.
+        ws.cell(ws.max_row, 1).number_format = '@'
+    ws.column_dimensions['A'].width = 24
+    ws.column_dimensions['B'].width = 18
+    ws.auto_filter.ref = ws.dimensions
+    return odpowiedz_xlsx(wb, f'POS_{local_today():%Y-%m-%d}.xlsx')

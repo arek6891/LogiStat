@@ -76,4 +76,5 @@ from logistat.models.dekoracje import (  # noqa: F401
     SlownikDekoracji,
     AkcjaDekoracji,
     IndexDekoracji,
+    PosDekoracji,
 )

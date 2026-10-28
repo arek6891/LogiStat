@@ -133,6 +133,9 @@ _ENDPOINTY = {
         'displays.displays', 'displays.historia', 'displays.akcja',
         'displays.api_akcja_dodaj', 'displays.api_akcja_zmien', 'displays.api_akcja_status',
         'displays.api_index_dodaj', 'displays.api_index_zmien', 'displays.api_index_usun',
+        # Etykiety POS: lista z Excela → PDF z kodami (2026-10-28)
+        'displays.pos', 'displays.api_pos_import', 'displays.api_pos_usun',
+        'displays.pos_etykiety', 'displays.pos_export',
     },
     ZWROTY: {
         'zwroty.zwroty', 'zwroty.zwroty_paczek', 'zwroty.zwroty_paczek_export',

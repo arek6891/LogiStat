@@ -330,7 +330,7 @@ STRONY = {
     POST_PROCESS: ['/dashboard', '/forecast', '/assignment', '/data-entry', '/stats', '/paczki',
                    '/worker-times', '/import-csv', '/general-stats', '/admin/users',
                    '/zwroty/przydzial'],
-    DISPLAYS: ['/displays', '/displays/historia'],
+    DISPLAYS: ['/displays', '/displays/historia', '/displays/pos'],
     ZWROTY: ['/zwroty/paczki', '/zwroty/invoice-specification', '/zwroty/sorting-data',
              '/zwroty/przydzial', '/zwroty/dashboard'],
     USTAWIENIA: ['/admin/panel', '/admin/activities', '/admin/country-mapping',

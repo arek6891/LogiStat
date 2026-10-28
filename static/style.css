@@ -1806,3 +1806,9 @@ a.gantt-nazwa:hover { color: var(--accent); text-decoration: underline; }
     color: var(--accent); font-weight: 700; }
 .dekoracje-produktywnosc { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 12px; border-top: 1px solid var(--border); padding-top: 10px; }
 .dekoracje-produktywnosc > strong { grid-column: 1 / -1; font-size: .85rem; margin-bottom: 6px; }
+/* Dekoracje → Etykiety POS */
+.dekoracje-pos-wczytaj, .dekoracje-pos-druk { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.dekoracje-pos-wczytaj .form-control { max-width: 360px; }
+.dekoracje-pos-druk { margin-bottom: 12px; }
+.dekoracje-pos-druk label { display: flex; align-items: center; gap: 6px; margin: 0; }
+.dekoracje-pos-wynik { margin-top: 12px; padding: 10px 14px; border-radius: var(--radius-sm); background: var(--bg-hover); }

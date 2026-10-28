@@ -109,6 +109,10 @@
                         class="{% if request.endpoint in ('displays.displays', 'displays.akcja') %}active{% endif %}">
                         <span class="icon">📅</span> Akcje
                     </a></li>
+                <li><a href="{{ url_for('displays.pos') }}"
+                        class="{% if request.endpoint == 'displays.pos' %}active{% endif %}">
+                        <span class="icon">🏷️</span> Etykiety POS
+                    </a></li>
                 <li><a href="{{ url_for('displays.historia') }}"
                         class="{% if request.endpoint == 'displays.historia' %}active{% endif %}">
                         <span class="icon">🗄️</span> Historia akcji

@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}{{ NAZWA_APLIKACJI }} — Etykiety POS{% endblock %}
+
+{# Dekoracje → Etykiety POS (operacja 2026-10-28): lista numerow POS z Excela →
+   arkusz etykiet z kodem kreskowym (PDF w nowej karcie, druk z przegladarki).
+   Post Processing poprawia sie w Excelu: eksport → zmiana → import (klucz = numer).
+   Tabele rysuje static/js/displays_pos.js. #}
+{% block content %}
+<div class="page-header">
+    <h2>🏷️ Etykiety POS</h2>
+    <p class="subtitle">Wczytaj listę numerów POS z Excela i wydrukuj etykiety z kodem kreskowym
+        (arkusz A4, {{ na_stronie }} etykiet na stronie).</p>
+</div>
+
+<div class="card">
+    <h3 style="margin-top:0;">⬆ Wczytaj listę z Excela</h3>
+    <p style="color:var(--text-muted);margin-top:0;">Pierwszy wiersz to nagłówki: <strong>{{ naglowki[0] }}</strong> (wymagana)
+        i <strong>{{ naglowki[1] }}</strong> (Tak / Nie / puste = nie ustalono). Numer, który już jest na liście, nie dubluje się —
+        import zmienia mu tylko Post Processing. Plik bez kolumny Post Processing nie rusza tej kolumny.</p>
+    <div class="dekoracje-pos-wczytaj">
+        <input type="file" id="plikPos" accept=".xlsx" class="form-control">
+        <button type="button" class="btn btn-primary" id="wczytajPos">⬆ Wczytaj</button>
+        <a href="{{ url_for('displays.pos_export') }}" class="btn">⬇ Lista do Excela</a>
+    </div>
+    <div id="wynikImportu"></div>
+</div>
+
+<form method="POST" action="{{ url_for('displays.pos_etykiety') }}" target="_blank" class="card" style="margin-top:16px;" id="formDruku">
+    <div class="dekoracje-pos-druk">
+        <h3 style="margin:0;">🖨 Drukuj</h3>
+        <label>Kopii każdej <input type="number" name="kopie" value="1" min="1" max="{{ kopie_max }}" class="form-control" style="width:80px;"></label>
+        <button type="submit" name="zakres" value="wybrane" class="btn btn-primary" id="drukWybrane">Zaznaczone (0)</button>
+        <button type="submit" name="zakres" value="import" class="btn" id="drukImport">Z ostatniego importu ({{ ostatni_import }})</button>
+        <button type="submit" name="zakres" value="wszystkie" class="btn" id="drukWszystkie">Wszystkie ({{ lista|length }})</button>
+        <input type="search" id="szukajPos" placeholder="Szukaj numeru…" class="form-control" style="width:200px;margin-left:auto;">
+    </div>
+    <table class="data-table">
+        <thead><tr>
+            <th style="width:36px;"><input type="checkbox" id="zaznaczWszystkie" title="Zaznacz widoczne"></th>
+            <th>POS</th><th>Post Processing</th><th>Dodano</th><th style="width:48px;"></th>
+        </tr></thead>
+        <tbody id="tabelaPos"></tbody>
+    </table>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const POS_DANE = {{ {'lista': lista, 'ostatni_import': ostatni_import}|tojson }};
+</script>
+<script src="{{ static_v('js/displays_pos.js') }}"></script>
+{% endblock %}

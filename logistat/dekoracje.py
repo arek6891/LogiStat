@@ -9,6 +9,9 @@ Puste pole = NULL, nie 0 — suma z brakujacym skladnikiem jest „niepelna”.
 """
 from datetime import date
 
+from logistat.pdf_etykiet import miesci_sie
+from logistat.przyjecie_zwrotu import pos_nummer
+
 # Listy z panelu admina (Supervisor → Listy Dekoracji).
 TYP_STOJAKA = 'typ_stojaka'
 MODEL_STOJAKA = 'model_stojaka'
@@ -80,3 +83,87 @@ def data_z_tekstu(wartosc):
         return date.fromisoformat(wartosc.strip())
     except ValueError:
         return None
+
+
+# ── Etykiety POS (operacja 2026-10-28) ──────────────────────────────────────
+# Lista numerow POS (point of sale) z Excela → arkusz etykiet z kodem kreskowym
+# (PDF, drukuje sie z przegladarki). Kolumna „Post Processing” (tak / nie / puste
+# = nie ustalono) poprawiana eksportem do Excela i ponownym importem (klucz = numer).
+# Ze stockiem stojakow i nosnikami jeszcze sie nie laczy (pozniejszy modul).
+NAGLOWKI_NUMERU_POS = ('pos', 'nr pos', 'numer pos', 'pos nr', 'pos-nummer', 'pos nummer',
+                       'pos_nummer', 'point of sale', 'point of sell')
+NAGLOWKI_PP = ('post processing', 'post-processing', 'postprocessing', 'pp')
+NAGLOWEK_EKSPORTU_POS = ('POS', 'Post Processing')
+TAK_PP = ('tak', 't', 'yes', 'y', 'ja', 'j', 'x', '1', 'true')
+NIE_PP = ('nie', 'n', 'no', 'nein', '0', 'false', '-')
+KOPIE_MAX = 20
+ETYKIET_MAX = 5000      # na jeden wydruk (~210 arkuszy)
+
+
+def naglowek(wartosc):
+    """Naglowek kolumny do porownan: male litery, pojedyncze spacje."""
+    return ' '.join(str(wartosc).split()).lower() if wartosc is not None else ''
+
+
+def flaga_pp(wartosc):
+    """Komorka „Post Processing” → (True | False | None, poprawna). Puste = None
+    (nie ustalono). Excel daje bool / liczbe / tekst."""
+    if wartosc is None or (isinstance(wartosc, str) and not wartosc.strip()):
+        return None, True
+    if isinstance(wartosc, bool):
+        return wartosc, True
+    if isinstance(wartosc, (int, float)) and wartosc in (0, 1):
+        return bool(wartosc), True
+    tekst = naglowek(wartosc)
+    if tekst in TAK_PP:
+        return True, True
+    if tekst in NIE_PP:
+        return False, True
+    return None, False
+
+
+def _numer_z_komorki(wartosc):
+    """Komorka numeru → tekst. Liczba z Excela przychodzi jako float — bez „.0”
+    (wiodace zera traci juz Excel, dlatego eksport zapisuje numer jako tekst)."""
+    if wartosc is None or isinstance(wartosc, bool):
+        return ''
+    if isinstance(wartosc, float) and wartosc.is_integer():
+        return str(int(wartosc))
+    return str(wartosc).strip()
+
+
+def wiersze_pos(wiersze):
+    """Arkusz listy POS (krotki komorek, pierwsza = naglowki) →
+    (`pozycje` {numer: post_processing}, `ma_pp`, `bledy` [{wiersz, wartosc, powod}]).
+
+    Kolumna numeru wymagana (ValueError), „Post Processing” opcjonalna — bez niej
+    import nie rusza flag (`ma_pp` False). Puste wiersze pomija; numer powtorzony
+    w pliku liczy sie raz (wygrywa ostatni wiersz)."""
+    wiersze = iter(wiersze)
+    naglowki = [naglowek(k) for k in next(wiersze, ())]
+    kol_nr = next((i for i, n in enumerate(naglowki) if n in NAGLOWKI_NUMERU_POS), None)
+    if kol_nr is None:
+        raise ValueError('Brak kolumny „POS” w pierwszym wierszu pliku (nagłówek: POS, Nr POS albo POS-Nummer).')
+    kol_pp = next((i for i, n in enumerate(naglowki) if n in NAGLOWKI_PP), None)
+    pozycje, bledy = {}, []
+    for nr, w in enumerate(wiersze, start=2):
+        surowy = _numer_z_komorki(w[kol_nr] if kol_nr < len(w) else None)
+        komorka_pp = w[kol_pp] if kol_pp is not None and kol_pp < len(w) else None
+        if not surowy:
+            if komorka_pp not in (None, ''):
+                bledy.append({'wiersz': nr, 'wartosc': '', 'powod': 'brak numeru POS'})
+            continue
+        numer = pos_nummer(surowy)
+        if numer is None:
+            bledy.append({'wiersz': nr, 'wartosc': surowy[:60], 'powod': 'niedozwolone znaki albo za długi'})
+            continue
+        if not miesci_sie(numer):
+            bledy.append({'wiersz': nr, 'wartosc': numer, 'powod': 'za długi na etykietę'})
+            continue
+        pp, poprawna = flaga_pp(komorka_pp)
+        if not poprawna:
+            bledy.append({'wiersz': nr, 'wartosc': numer,
+                          'powod': f'Post Processing „{str(komorka_pp)[:20]}” — wpisz Tak, Nie albo zostaw puste'})
+            continue
+        pozycje[numer] = pp
+    return pozycje, kol_pp is not None, bledy
