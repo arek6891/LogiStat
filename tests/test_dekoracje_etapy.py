@@ -94,6 +94,18 @@ def test_nie_dotyczy_tylko_picking(leader_client):
     assert leader_client.put(url(a, 'nieznany'), json={'od': ''}).status_code == 404
 
 
+def test_nie_dotyczy_czysci_termin(leader_client):
+    """Pominiety Picking z dawnymi datami nie blokuje zmiany dat akcji."""
+    start = date(2026, 11, 1)
+    a = nowa_akcja(leader_client, od=start, do=start + timedelta(days=30))
+    termin(leader_client, a, 'picking', start + timedelta(days=20), start + timedelta(days=25))
+    e = leader_client.put(url(a, 'picking'), json={'nie_dotyczy': True}).get_json()
+    assert e['od'] is None and e['do'] is None and e['stan'] == 'nie_dotyczy'
+    r = leader_client.put(f'/api/dekoracje/akcje/{a["id"]}', json={
+        'nazwa': a['nazwa'], 'od': start.isoformat(), 'do': (start + timedelta(days=10)).isoformat()})
+    assert r.status_code == 200, r.get_json()
+
+
 def test_daty_akcji_nie_moga_zgubic_etapu(leader_client):
     start = date(2026, 11, 1)
     a = nowa_akcja(leader_client, od=start, do=start + timedelta(days=30))

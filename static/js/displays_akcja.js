@@ -150,6 +150,8 @@ function odswiezEtap(e) {
     const td = tr.querySelectorAll('td');
     stanEtapu(td[3], e);
     osEtapu(td[4], e);
+    tr.querySelector('.js-od').value = e.od || '';
+    tr.querySelector('.js-do').value = e.do || '';
     tr.querySelectorAll('input[type=date]').forEach(i => { i.disabled = e.nie_dotyczy; });
     ostrzezeniaEtapow();
 }

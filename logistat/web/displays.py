@@ -138,7 +138,7 @@ def api_akcja_zmien(akcja_id):
     if poza:
         db.session.rollback()
         abort(400, 'Kamienie milowe wychodzą poza nowe daty akcji: ' + ', '.join(poza)
-              + '. Najpierw przesuń ich terminy.')
+              + '. Najpierw przesuń ich terminy (przesuwając akcję później: wydłuż koniec, przesuń etapy, potem start).')
     _zmieniono(a)
     db.session.commit()
     return jsonify(akcja_dict(a, local_today(), z_indexami=False))
@@ -197,6 +197,10 @@ def api_etap_zmien(akcja_id, etap):
         if d['nie_dotyczy'] and not opcjonalny:
             abort(400, f'{nazwa}: ten etap jest zawsze potrzebny.')
         nie_dotyczy = d['nie_dotyczy']
+    if nie_dotyczy:
+        # Etap pominiety nie ma terminu — inaczej stare daty blokowalyby
+        # zmiane dat akcji, a pola dat sa wtedy wylaczone.
+        od = do = None
     zapisz_etap(a.id, etap, od, do, nie_dotyczy, current_user.id)
     db.session.commit()
     return jsonify(next(e for e in etapy_akcji([a.id], local_today())[a.id] if e['klucz'] == etap))
