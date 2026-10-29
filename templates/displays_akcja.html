@@ -2,7 +2,8 @@
 {% block title %}{{ NAZWA_APLIKACJI }} — {{ akcja.nazwa }}{% endblock %}
 
 {# Ekran akcji Dekoracji (2026-10-28): naglowek (nazwa, start, koniec), kamienie
-   milowe (2026-10-29, tabele rysuje JS z AKCJA.etapy) i indexy
+   milowe (2026-10-29, tabele rysuje JS z AKCJA.etapy), dostawa produktow
+   (2026-10-29, typ + sumy / ✕ / Excel, z AKCJA.dostawy) i indexy
    („+ Index”) z autozapisem — kazde pole osobno (czesciowy PUT). Akcja zakonczona
    = tylko odczyt (serwer tez odmawia, 409), „Przywróć” wraca ja na Gantt.
    Skrypt: static/js/displays_akcja.js. #}
@@ -60,6 +61,21 @@
     </table></div>
 </div>
 
+<div class="card" style="margin-top:16px;">
+    <h3 style="margin-top:0;">🚚 Dostawa produktów</h3>
+    <p class="subtitle" style="margin-top:0;">Wpisuje magazynier na stanowisku: Operacje magazynowe → Dekoracje → Dostawy.
+        Typ dostawy można zmienić, dopóki akcja nie ma żadnego wpisu.</p>
+    <div class="dekoracje-dostawa-gora">
+        <div class="form-group"><label>Typ dostawy</label>
+            <select id="typDostawy" class="form-control" {% if ro %}disabled{% endif %}>
+                {% if not dostawy.typ %}<option value="">— wybierz —</option>{% endif %}
+                {% for klucz, nazwa in typy_dostawy.items() %}<option value="{{ klucz }}" {% if dostawy.typ == klucz %}selected{% endif %}>{{ nazwa }}</option>{% endfor %}
+            </select></div>
+        <a href="{{ url_for('displays.dostawy_export', akcja_id=akcja.id) }}" class="btn btn-ghost js-wyjdz" id="dostawyExcel">⬇ Excel</a>
+    </div>
+    <div id="dostawy"></div>
+</div>
+
 <div class="dekoracje-indexy">
     {% for ix in akcja.indexy %}
     <div class="card dekoracje-index" data-id="{{ ix.id }}">
@@ -108,7 +124,7 @@
 
 {% block scripts %}
 <script>
-const AKCJA = {{ {'id': akcja.id, 'zakonczona': akcja.zakonczona, 'etapy': akcja.etapy}|tojson }};
+const AKCJA = {{ {'id': akcja.id, 'zakonczona': akcja.zakonczona, 'etapy': akcja.etapy, 'dostawy': dostawy}|tojson }};
 </script>
 <script src="{{ static_v('js/displays_akcja.js') }}"></script>
 {% endblock %}

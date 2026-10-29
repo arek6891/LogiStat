@@ -57,8 +57,12 @@
                         class="{% if request.endpoint == 'zwroty.przyjecie_zwrotu' %}active{% endif %}">
                         <span class="icon">📥</span> Przyjęcie zwrotu
                     </a></li>
-                {# Belka Dekoracje kafelka Magazyn (2026-10-28): skan nosnik → strefa. #}
+                {# Belka Dekoracje kafelka Magazyn: skan nosnik → strefa (2026-10-28), dostawy produktow (2026-10-29). #}
                 <li class="nav-section">💍 Dekoracje</li>
+                <li><a href="{{ url_for('displays.dostawy_stanowisko') }}"
+                        class="{% if request.endpoint == 'displays.dostawy_stanowisko' %}active{% endif %}">
+                        <span class="icon">🚚</span> Dostawy
+                    </a></li>
                 <li><a href="{{ url_for('displays.skan_stojakow') }}"
                         class="{% if request.endpoint == 'displays.skan_stojakow' %}active{% endif %}">
                         <span class="icon">📍</span> Skan stojaków

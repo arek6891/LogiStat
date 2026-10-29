@@ -168,6 +168,8 @@ MIGRACJE_KOLUMN = [
     ("shift_attendance", "pierwotny_skan", "TIMESTAMP"),
     ("shift_attendance", "poprawione_przez", 'INTEGER REFERENCES "user"(id)'),
     ("shift_attendance", "poprawione_at", "TIMESTAMP"),
+    # Dekoracje: typ dostawy akcji (2026-10-29); NULL = jeszcze nie wybrany.
+    ("akcja_dekoracji", "typ_dostawy", "VARCHAR(20)"),
 ]
 
 

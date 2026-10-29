@@ -1836,6 +1836,21 @@ a.gantt-nazwa:hover { color: var(--accent); text-decoration: underline; }
 .dekoracje-etap-pasek.konczy-sie { background: var(--warning); }
 .dekoracje-etap-pasek.po-terminie { background: var(--danger); }
 .dekoracje-etapy-alert { background: var(--warning-bg); color: var(--warning); font-weight: 600; border-radius: var(--radius-sm); padding: 8px 12px; margin-bottom: 10px; }
+/* Dostawa produktow (2026-10-29): stanowisko (.przyjecie-*) i karta na ekranie akcji */
+.dostawa-akcja { flex-direction: column; gap: 6px; }
+.dostawa-akcja:disabled { border-color: var(--text-muted); color: var(--text-muted); cursor: not-allowed; }
+.dostawa-opcja-opis { font-size: 1.05rem; font-weight: 600; }
+.dostawa-formularz { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 16px; }
+.dostawa-formularz label { font-size: 1.15rem; }
+.dostawa-razem { font-size: 1.35rem; font-weight: 700; margin: 24px 0 10px; }
+.dostawa-wiersze .data-table { font-size: 1.1rem; }
+@media (max-width: 640px) { .dostawa-formularz { grid-template-columns: 1fr; } }
+.dekoracje-dostawa-gora { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 12px; }
+.dekoracje-dostawa-gora .form-group { margin: 0; min-width: 240px; }
+.dekoracje-dostawa-tabele { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.dekoracje-dostawa-tabele h4 { margin: 8px 0; }
+.dekoracje-dostawa-cala { grid-column: 1 / -1; }
+.dekoracje-dostawa-przewijanie { max-height: 420px; overflow: auto; }
 .gantt-nazwa-kom { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .gantt-etapy { flex: none; display: inline-flex; gap: 6px; font-size: .75rem; font-weight: 700; white-space: nowrap; cursor: help; }
 .gantt-etapy .po-terminie { color: var(--danger); }

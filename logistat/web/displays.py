@@ -6,6 +6,8 @@ Akcja zakonczona jest tylko do odczytu — zmienia ja dopiero „Przywróć”.
 Etykiety POS: lista numerow z Excela → arkusz kodow kreskowych (PDF).
 Stock stojakow: skan nosnik → strefa na stanowisku (Operacje magazynowe),
 tabela stocku z POS / akcja / strefa i historia ruchow (lider).
+Dostawa produktow (2026-10-29): typ dostawy akcji, wpis na stanowisku (kontener
+→ artykul / kartony / PU albo skan kartonu Beeline), sumy, ✕ i Excel u lidera.
 """
 import io
 import logging
@@ -16,21 +18,24 @@ from flask_login import current_user
 from openpyxl import Workbook
 from sqlalchemy.exc import IntegrityError
 
-from logistat.czas import local_today, teraz_utc
+from logistat.czas import local_today, teraz_utc, utc_to_local
 from logistat.dekoracje import (
-    DNI_OSTRZEZENIA_ETAPU, ETAPY_AKCJI, ETYKIET_MAX, KOPIE_MAX, LICZBA_MAX, NAGLOWEK_EKSPORTU_POS, NAZWA_MAX, NAZWA_SLOWNIKA_MAX,
-    POLA_LICZB, POLA_PRODUKTYWNOSCI, POLA_SLOWNIKA, RODZAJE_SLOWNIKA, STREFA, data_z_tekstu,
+    DNI_OSTRZEZENIA_ETAPU, DOSTAWA_BEELINE, DOSTAWA_KONTENER, ETAPY_AKCJI, ETYKIET_MAX, KOPIE_MAX, LICZBA_MAX, NAGLOWEK_EKSPORTU_POS, NAZWA_MAX, NAZWA_SLOWNIKA_MAX,
+    NAGLOWEK_ARTYKULOW, NAGLOWEK_BEELINE, NAGLOWEK_DOSTAW_KONTENER, NAGLOWEK_KONTENEROW, POLA_LICZB,
+    POLA_PRODUKTYWNOSCI, POLA_SLOWNIKA, RODZAJE_SLOWNIKA, STREFA, TYPY_DOSTAWY, data_z_tekstu, kod_dostawy,
     kod_nosnika, kod_strefy, wiersze_pos)
 from logistat.dekoracje_dane import (
-    akcja_dict, akcje_gantt, akcje_historia, etapy_akcji, importuj_pos, index_dict, listy_dla_akcji,
+    akcja_dict, akcje_dostaw, akcje_gantt, akcje_historia, dostawy_akcji, etapy_akcji, importuj_pos,
+    kontener_stanowiska, ma_wpisy_dostawy, index_dict, listy_dla_akcji,
     ostatni_import_pos, ostatnie_ruchy, pos_dict, pos_lista, pos_w_stocku, przenies_stojak,
     ruch_dict, slownik, stock_stojakow, stojak_dict, strefa_po_kodzie, uzyte_pozycje_slownika,
     zapisz_etap)
 from logistat.extensions import db
 from logistat.models import (
-    AkcjaDekoracji, EtapAkcji, IndexDekoracji, PosDekoracji, RuchStojaka, SlownikDekoracji, StojakDekoracji)
+    AkcjaDekoracji, EtapAkcji, IndexDekoracji, KartonBeeline, KontenerDostawy, PosDekoracji, PozycjaDostawy,
+    RuchStojaka, SlownikDekoracji, StojakDekoracji)
 from logistat.pdf_etykiet import NA_STRONIE, pdf_etykiet
-from logistat.przyjecie_zwrotu import pos_nummer
+from logistat.przyjecie_zwrotu import TOKEN_MAX, pos_nummer
 from logistat.web.excel import odpowiedz_xlsx, styl_naglowka
 from logistat.web.wspolne import admin_required, json_body, leader_required, magazyn_required
 
@@ -44,7 +49,7 @@ logger = logging.getLogger(__name__)
 @leader_required
 def displays():
     dzis = local_today()
-    return render_template('displays.html', akcje=akcje_gantt(dzis), dzis=dzis)
+    return render_template('displays.html', akcje=akcje_gantt(dzis), dzis=dzis, typy_dostawy=TYPY_DOSTAWY)
 
 
 @bp.route('/displays/historia')
@@ -60,7 +65,8 @@ def akcja(akcja_id):
     return render_template('displays_akcja.html', akcja=akcja_dict(a, local_today()),
                            listy=listy_dla_akcji(a), pola_liczb=POLA_LICZB,
                            pola_prod=POLA_PRODUKTYWNOSCI, max_nazwy=NAZWA_MAX, max_liczby=LICZBA_MAX,
-                           dni_ostrzezenia=DNI_OSTRZEZENIA_ETAPU)
+                           dni_ostrzezenia=DNI_OSTRZEZENIA_ETAPU, dostawy=dostawy_akcji(a),
+                           typy_dostawy=TYPY_DOSTAWY)
 
 
 # ── walidacja ────────────────────────────────────────────────────────────────
@@ -97,6 +103,12 @@ def _liczba(pole, wartosc, calkowita):
     return int(wartosc) if calkowita else float(wartosc)
 
 
+def _typ_dostawy(wartosc):
+    if wartosc not in TYPY_DOSTAWY:
+        abort(400, 'Wybierz typ dostawy: ' + ' albo '.join(f'„{n}”' for n in TYPY_DOSTAWY.values()) + '.')
+    return wartosc
+
+
 def _edytowalna(akcja):
     if akcja.zakonczona_at is not None:
         abort(409, 'Akcja jest zakończona — najpierw „Przywróć”, żeby ją zmienić.')
@@ -115,7 +127,7 @@ def api_akcja_dodaj():
     d = json_body()
     od, do = _daty(d)
     a = AkcjaDekoracji(nazwa=_nazwa(d.get('nazwa')), data_od=od, data_do=do,
-                       utworzyl_id=current_user.id)
+                       typ_dostawy=_typ_dostawy(d.get('typ_dostawy')), utworzyl_id=current_user.id)
     db.session.add(a)
     db.session.commit()
     return jsonify(akcja_dict(a, local_today())), 201
@@ -159,6 +171,23 @@ def api_akcja_status(akcja_id):
     _zmieniono(a)
     db.session.commit()
     return jsonify(akcja_dict(a, local_today(), z_indexami=False))
+
+
+@bp.route('/api/dekoracje/akcje/<int:akcja_id>/typ-dostawy', methods=['PUT'])
+@leader_required
+def api_akcja_typ_dostawy(akcja_id):
+    """{typ_dostawy} — zmiana tylko, dopoki akcja nie ma wpisow dostawy. Wiersz
+    akcji zablokowany: pierwszy skan na stanowisku czeka na ten sam zamek."""
+    a = AkcjaDekoracji.query.filter_by(id=akcja_id).with_for_update().first_or_404()
+    _edytowalna(a)
+    typ = _typ_dostawy(json_body().get('typ_dostawy'))
+    if typ != a.typ_dostawy:
+        if ma_wpisy_dostawy(a.id):
+            abort(409, 'Akcja ma już wpisy dostawy — typu nie można zmienić (najpierw usuń wpisy).')
+        a.typ_dostawy = typ
+        _zmieniono(a)
+    db.session.commit()
+    return jsonify(dostawy_akcji(a))
 
 
 # ── kamienie milowe ──────────────────────────────────────────────────────────
@@ -462,6 +491,180 @@ def pos_export():
     ws.column_dimensions['B'].width = 18
     ws.auto_filter.ref = ws.dimensions
     return odpowiedz_xlsx(wb, f'POS_{local_today():%Y-%m-%d}.xlsx')
+
+
+# ── Dostawa produktow: stanowisko (Operacje magazynowe) ──────────────────────
+
+@bp.route('/dekoracje/dostawy')
+@magazyn_required
+def dostawy_stanowisko():
+    return render_template('dekoracje_dostawy.html', akcje=akcje_dostaw(), typy=TYPY_DOSTAWY,
+                           max_liczby=LICZBA_MAX)
+
+
+def _akcja_do_dostawy(akcja_id, typ):
+    """Akcja pod zamkiem (zmiana typu i dwa stanowiska czekaja na siebie):
+    w toku, z ustalonym typem dostawy rownym `typ`."""
+    a = AkcjaDekoracji.query.filter_by(id=akcja_id).with_for_update().first_or_404()
+    if a.zakonczona_at is not None:
+        abort(409, 'Akcja jest zakończona — wybierz inną akcję.')
+    if a.typ_dostawy is None:
+        abort(400, 'Logistyk nie ustawił jeszcze typu dostawy tej akcji.')
+    if a.typ_dostawy != typ:
+        abort(400, f'Ta akcja ma typ „{TYPY_DOSTAWY[a.typ_dostawy]}” — odśwież stronę.')
+    return a
+
+
+def _kod(wartosc, co):
+    kod = kod_dostawy(wartosc)
+    if kod is None:
+        abort(400, f'Nieprawidłowy {co} — zeskanuj albo wpisz go jeszcze raz (bez spacji, najwyżej 50 znaków).')
+    return kod
+
+
+def _ilosc(pole, wartosc):
+    if isinstance(wartosc, bool) or not isinstance(wartosc, int) or not 0 <= wartosc < LICZBA_MAX:
+        abort(400, f'{pole}: liczba całkowita od 0 do {LICZBA_MAX - 1}.')
+    return wartosc
+
+
+@bp.route('/api/dekoracje/akcje/<int:akcja_id>/kontener')
+@magazyn_required
+def api_kontener(akcja_id):
+    """Krok stanowiska: kontener i wiersze juz w nim wpisane."""
+    a = db.get_or_404(AkcjaDekoracji, akcja_id)
+    return jsonify(kontener_stanowiska(a.id, _kod(request.args.get('kod'), 'numer kontenera')))
+
+
+@bp.route('/api/dekoracje/akcje/<int:akcja_id>/kontener', methods=['POST'])
+@magazyn_required
+def api_kontener_wiersz(akcja_id):
+    """{kontener, artykul, kartony, pu, token} — wiersz dostawy kontenerowej.
+    Ten sam `token` drugi raz → 200 bez nowego wiersza (podwojny Enter)."""
+    d = json_body()
+    token = d.get('token')
+    if not isinstance(token, str) or not 8 <= len(token) <= TOKEN_MAX:
+        abort(400, 'Brak identyfikatora zapisu — odśwież stronę.')
+    numer = _kod(d.get('kontener'), 'numer kontenera')
+    artykul = _kod(d.get('artykul'), 'numer artykułu')
+    kartony, pu = _ilosc('Kartony', d.get('kartony')), _ilosc('PU', d.get('pu'))
+    if kartony == 0 and pu == 0:
+        abort(400, 'Wpisz ilość kartonów albo PU.')
+    a = _akcja_do_dostawy(akcja_id, DOSTAWA_KONTENER)
+    if PozycjaDostawy.query.filter_by(token=token).first() is None:
+        teraz = teraz_utc()
+        k = KontenerDostawy.query.filter_by(akcja_id=a.id, numer=numer).first()
+        if k is None:
+            k = KontenerDostawy(akcja_id=a.id, numer=numer, utworzono_at=teraz, utworzyl_id=current_user.id)
+            db.session.add(k)
+            db.session.flush()
+        db.session.add(PozycjaDostawy(kontener_id=k.id, artykul=artykul, kartony=kartony, pu=pu,
+                                      token=token, kiedy=teraz, kto_id=current_user.id))
+        db.session.commit()
+    return jsonify(kontener_stanowiska(a.id, numer))
+
+
+@bp.route('/api/dekoracje/akcje/<int:akcja_id>/beeline', methods=['POST'])
+@magazyn_required
+def api_beeline(akcja_id):
+    """{numer} — skan kartonu z dostawy Beeline. Ten sam karton w akcji drugi
+    raz → 409 z tym, kto i kiedy go zeskanowal."""
+    numer = _kod(json_body().get('numer'), 'numer kartonu')
+    a = _akcja_do_dostawy(akcja_id, DOSTAWA_BEELINE)
+    juz = KartonBeeline.query.filter_by(akcja_id=a.id, numer=numer).first()
+    if juz is not None:
+        kto = juz.kto.display_name if juz.kto else '—'
+        abort(409, f'Karton {numer} jest już zeskanowany w tej akcji '
+                   f'({utc_to_local(juz.kiedy):%d.%m.%Y %H:%M}, {kto}).')
+    db.session.add(KartonBeeline(akcja_id=a.id, numer=numer, kiedy=teraz_utc(), kto_id=current_user.id))
+    db.session.commit()
+    liczba = KartonBeeline.query.filter_by(akcja_id=a.id).count()
+    return jsonify({'numer': numer, 'kartonow': liczba}), 201
+
+
+# ── Dostawa produktow: ekran akcji (lider) ───────────────────────────────────
+
+@bp.route('/api/dekoracje/akcje/<int:akcja_id>/dostawy')
+@leader_required
+def api_dostawy(akcja_id):
+    return jsonify(dostawy_akcji(db.get_or_404(AkcjaDekoracji, akcja_id)))
+
+
+@bp.route('/api/dekoracje/dostawy/pozycje/<int:pozycja_id>', methods=['DELETE'])
+@leader_required
+def api_pozycja_dostawy_usun(pozycja_id):
+    """Pomylka na stanowisku. Ostatni wiersz kontenera usuwa tez kontener."""
+    p = db.get_or_404(PozycjaDostawy, pozycja_id)
+    k = db.get_or_404(KontenerDostawy, p.kontener_id)
+    a = db.get_or_404(AkcjaDekoracji, k.akcja_id)
+    _edytowalna(a)
+    logger.info('Usuniety wiersz dostawy %s (kontener %s, artykul %s, kartony %s, PU %s) przez %s',
+                p.id, k.numer, p.artykul, p.kartony, p.pu, current_user.id)
+    db.session.delete(p)
+    db.session.flush()
+    if not PozycjaDostawy.query.filter_by(kontener_id=k.id).count():
+        db.session.delete(k)
+    db.session.commit()
+    return jsonify(dostawy_akcji(a))
+
+
+@bp.route('/api/dekoracje/dostawy/beeline/<int:karton_id>', methods=['DELETE'])
+@leader_required
+def api_karton_beeline_usun(karton_id):
+    k = db.get_or_404(KartonBeeline, karton_id)
+    a = db.get_or_404(AkcjaDekoracji, k.akcja_id)
+    _edytowalna(a)
+    logger.info('Usuniety karton Beeline %s (%s) przez %s', k.id, k.numer, current_user.id)
+    db.session.delete(k)
+    db.session.commit()
+    return jsonify(dostawy_akcji(a))
+
+
+def _arkusz(ws, tytul, naglowek, wiersze, tekstowe=(), szerokosci=()):
+    ws.title = tytul
+    ws.append(list(naglowek))
+    for komorka in ws[1]:
+        styl_naglowka(komorka, '325C96')
+    for w in wiersze:
+        ws.append(list(w))
+        # Numery kontenera / artykulu / kartonu jako tekst — Excel zjada wiodace zera.
+        for kol in tekstowe:
+            ws.cell(ws.max_row, kol).number_format = '@'
+    for i, szer in enumerate(szerokosci):
+        ws.column_dimensions[chr(ord('A') + i)].width = szer
+    ws.auto_filter.ref = ws.dimensions
+
+
+@bp.route('/displays/akcje/<int:akcja_id>/dostawy/export')
+@leader_required
+def dostawy_export(akcja_id):
+    """Dostawa produktow akcji do Excela (tez dla zakonczonej akcji)."""
+    a = db.get_or_404(AkcjaDekoracji, akcja_id)
+    d = dostawy_akcji(a)
+    wb = Workbook()
+    ws = wb.active
+    assert ws is not None
+    if a.typ_dostawy == DOSTAWA_KONTENER:
+        _arkusz(ws, 'Wiersze', NAGLOWEK_DOSTAW_KONTENER,
+                [(w['kontener'], w['artykul'], w['kartony'], w['pu'], w['kiedy'], w['kto']) for w in d['wiersze']],
+                tekstowe=(1, 2), szerokosci=(22, 22, 10, 10, 18, 22))
+        pierwszy = {}
+        for w in d['wiersze']:
+            pierwszy.setdefault(w['kontener'], w['kiedy'])
+        _arkusz(wb.create_sheet(), 'Per kontener', NAGLOWEK_KONTENEROW,
+                [(k['kontener'], k['wierszy'], k['kartony'], k['pu'], pierwszy[k['kontener']])
+                 for k in d['kontenery']], tekstowe=(1,), szerokosci=(22, 10, 10, 10, 18))
+        _arkusz(wb.create_sheet(), 'Per artykuł', NAGLOWEK_ARTYKULOW,
+                [(x['artykul'], x['kartony'], x['pu']) for x in d['artykuly']],
+                tekstowe=(1,), szerokosci=(22, 10, 10))
+    elif a.typ_dostawy == DOSTAWA_BEELINE:
+        _arkusz(ws, 'Kartony Beeline', NAGLOWEK_BEELINE,
+                [(k['numer'], k['kiedy'], k['kto']) for k in d['kartony']],
+                tekstowe=(1,), szerokosci=(26, 18, 22))
+    else:
+        flash('Akcja nie ma jeszcze typu dostawy.', 'error')
+        return redirect(url_for('displays.akcja', akcja_id=a.id))
+    return odpowiedz_xlsx(wb, f'Dostawy_akcja{a.id}_{local_today():%Y-%m-%d}.xlsx')
 
 
 # ── Stock stojakow: stanowisko (Operacje magazynowe) ─────────────────────────

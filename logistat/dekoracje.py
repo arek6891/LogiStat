@@ -240,3 +240,46 @@ def kod_strefy(wartosc):
     (A–Z, 0–9, - _ / .) i musi zmiescic sie na etykiecie. None = bledna."""
     kod = pos_nummer(wartosc)
     return kod if kod is not None and miesci_sie(kod) else None
+
+
+# ── Dostawa produktow (operacja 2026-10-29) ─────────────────────────────────
+# Akcja ma jeden typ dostawy — ustala go logistyk przy tworzeniu akcji (zmiana
+# mozliwa, dopoki akcja nie ma zadnego wpisu dostawy). Wpisuje magazynier na
+# stanowisku (Operacje magazynowe → Dekoracje → Dostawy):
+# - kontenerowa: nr kontenera, potem wiersze artykul / kartony / PU (suma per
+#   kontener i per artykul w akcji),
+# - Beeline: skan kodu z numerem kartonu (ten sam karton w akcji drugi raz → 409).
+# Lider poprawia (✕) i eksportuje do Excela na ekranie akcji.
+DOSTAWA_KONTENER = 'kontener'
+DOSTAWA_BEELINE = 'beeline'
+TYPY_DOSTAWY = {
+    DOSTAWA_BEELINE: 'Dostawa z Beeline',
+    DOSTAWA_KONTENER: 'Dostawa kontenerowa',
+}
+NAGLOWEK_DOSTAW_KONTENER = ('Kontener', 'Artykuł', 'Kartony', 'PU', 'Wpisano', 'Kto')
+NAGLOWEK_KONTENEROW = ('Kontener', 'Wierszy', 'Kartony', 'PU', 'Pierwszy wpis')
+NAGLOWEK_ARTYKULOW = ('Artykuł', 'Kartony', 'PU')
+NAGLOWEK_BEELINE = ('Nr kartonu', 'Zeskanowano', 'Kto')
+
+
+def kod_dostawy(wartosc):
+    """Nr kontenera / artykulu / kartonu Beeline: regula numeru nosnika (bez
+    bialych znakow, wielkie litery) — „123 ” i „123” to ten sam artykul."""
+    return kod_nosnika(wartosc)
+
+
+def sumy_dostaw(wiersze):
+    """Wiersze dostawy kontenerowej (dict-y: kontener, artykul, kartony, pu) →
+    (per kontener, per artykul, razem). Kolejnosc kontenerow = pierwsze
+    wystapienie, artykuly alfabetycznie."""
+    kontenery, artykuly = {}, {}
+    razem = {'wierszy': 0, 'kartony': 0, 'pu': 0}
+    for w in wiersze:
+        k = kontenery.setdefault(w['kontener'], {'kontener': w['kontener'], 'wierszy': 0, 'kartony': 0, 'pu': 0})
+        a = artykuly.setdefault(w['artykul'], {'artykul': w['artykul'], 'kartony': 0, 'pu': 0})
+        for s in (k, razem):
+            s['wierszy'] += 1
+        for s in (k, a, razem):
+            s['kartony'] += w['kartony']
+            s['pu'] += w['pu']
+    return list(kontenery.values()), sorted(artykuly.values(), key=lambda a: a['artykul']), razem

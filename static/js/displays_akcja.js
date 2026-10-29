@@ -181,6 +181,122 @@ if (!AKCJA.zakonczona) {
     }));
 }
 
+// ── Dostawa produktow (2026-10-29) ──
+// Dane z serwera (AKCJA.dostawy, potem odpowiedz ✕ / zmiany typu). Wpisy robi
+// stanowisko; tu sumy per kontener / artykul albo lista kartonow Beeline i ✕.
+function komorki(tr, wartosci) {
+    wartosci.forEach(v => {
+        const td = document.createElement('td');
+        td.textContent = v === null || v === undefined ? '—' : String(v);
+        tr.append(td);
+    });
+}
+
+function tabelaDostaw(tytul, naglowki, wiersze, wiersz, usun) {
+    const box = document.createElement('div');
+    const h = document.createElement('h4');
+    h.textContent = tytul;
+    const przew = document.createElement('div');
+    przew.className = 'dekoracje-dostawa-przewijanie';
+    const t = document.createElement('table');
+    t.className = 'data-table';
+    const g = t.createTHead().insertRow();
+    naglowki.concat(usun && !AKCJA.zakonczona ? [''] : []).forEach(n => {
+        const th = document.createElement('th');
+        th.textContent = n;
+        g.append(th);
+    });
+    const tb = t.createTBody();
+    wiersze.forEach(w => {
+        const tr = tb.insertRow();
+        komorki(tr, wiersz(w));
+        if (usun && !AKCJA.zakonczona) {
+            const td = tr.insertCell();
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'btn btn-danger btn-sm';
+            b.textContent = '✕';
+            b.title = 'Usuń (pomyłka na stanowisku)';
+            b.addEventListener('click', () => usun(w));
+            td.append(b);
+        }
+    });
+    przew.append(t);
+    box.append(h, przew);
+    return box;
+}
+
+async function usunDostawe(url, pytanie) {
+    if (!confirm(pytanie)) return;
+    try {
+        AKCJA.dostawy = await zapiszJson(url, 'DELETE', {});
+        rysujDostawy();
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+function rysujDostawy() {
+    const d = AKCJA.dostawy;
+    const box = document.getElementById('dostawy');
+    const typ = document.getElementById('typDostawy');
+    typ.disabled = AKCJA.zakonczona || d.ma_wpisy;
+    typ.title = d.ma_wpisy ? 'Akcja ma już wpisy dostawy — typu nie można zmienić' : '';
+    document.getElementById('dostawyExcel').hidden = !d.typ;
+    box.replaceChildren();
+    const info = document.createElement('p');
+    info.className = 'subtitle';
+    box.append(info);
+    if (!d.typ) {
+        info.textContent = '⚠ Wybierz typ dostawy — bez niego stanowisko nie przyjmie wpisów.';
+        return;
+    }
+    const tabele = document.createElement('div');
+    tabele.className = 'dekoracje-dostawa-tabele';
+    if (d.typ === 'beeline') {
+        info.textContent = `Kartonów zeskanowanych: ${d.kartony.length}`;
+        if (d.kartony.length) {
+            tabele.append(tabelaDostaw('Kartony', ['Nr kartonu', 'Zeskanowano', 'Kto'], d.kartony.slice().reverse(),
+                k => [k.numer, k.kiedy, k.kto],
+                k => usunDostawe(`/api/dekoracje/dostawy/beeline/${k.id}`, `Usunąć karton ${k.numer}?`)));
+        }
+    } else {
+        const r = d.razem;
+        info.textContent = `Kontenerów: ${d.kontenery.length} · wierszy: ${r.wierszy} · kartonów: ${r.kartony} · PU: ${r.pu}`;
+        if (r.wierszy) {
+            const wiersze = tabelaDostaw('Wiersze (najnowsze na górze)',
+                    ['Kontener', 'Artykuł', 'Kartony', 'PU', 'Wpisano', 'Kto'], d.wiersze.slice().reverse(), w => [w.kontener, w.artykul, w.kartony, w.pu, w.kiedy, w.kto],
+                    w => usunDostawe(`/api/dekoracje/dostawy/pozycje/${w.id}`,
+                        `Usunąć wiersz ${w.artykul} (kontener ${w.kontener}, kartony ${w.kartony}, PU ${w.pu})?`));
+            wiersze.classList.add('dekoracje-dostawa-cala');
+            tabele.append(
+                tabelaDostaw('Suma per kontener', ['Kontener', 'Wierszy', 'Kartony', 'PU'], d.kontenery,
+                    k => [k.kontener, k.wierszy, k.kartony, k.pu]),
+                tabelaDostaw('Suma per artykuł', ['Artykuł', 'Kartony', 'PU'], d.artykuly,
+                    a => [a.artykul, a.kartony, a.pu]),
+                wiersze);
+        }
+    }
+    box.append(tabele);
+}
+
+rysujDostawy();
+if (!AKCJA.zakonczona) {
+    const typ = document.getElementById('typDostawy');
+    typ.addEventListener('change', async () => {
+        try {
+            AKCJA.dostawy = await zapiszJson(`/api/dekoracje/akcje/${AKCJA.id}/typ-dostawy`, 'PUT',
+                { typ_dostawy: typ.value });
+            typ.querySelector('option[value=""]')?.remove();
+            showToast('Typ dostawy zapisany', 'success');
+        } catch (e) {
+            showToast(e.message, 'error');
+            typ.value = AKCJA.dostawy.typ || '';
+        }
+        rysujDostawy();
+    });
+}
+
 async function przeladuj(akcja) {
     if (!(await autoZapis.przedOpuszczeniem())) return;
     try {

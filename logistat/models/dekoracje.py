@@ -35,11 +35,15 @@ class AkcjaDekoracji(db.Model):
     utworzono_at = db.Column(db.DateTime, nullable=False, default=teraz_utc)
     zmienil_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     zmieniono_at = db.Column(db.DateTime, nullable=True)
+    # TYPY_DOSTAWY (2026-10-29); NULL = akcja sprzed typow, logistyk jeszcze nie wybral.
+    typ_dostawy = db.Column(db.String(20), nullable=True)
 
     indexy = db.relationship('IndexDekoracji', backref='akcja', cascade='all, delete-orphan',
                              order_by='(IndexDekoracji.kolejnosc, IndexDekoracji.id)')
     zakonczyl = db.relationship('User', foreign_keys=[zakonczyl_id])
     etapy = db.relationship('EtapAkcji', backref='akcja', cascade='all, delete-orphan')
+    kontenery = db.relationship('KontenerDostawy', cascade='all, delete-orphan')
+    kartony_beeline = db.relationship('KartonBeeline', cascade='all, delete-orphan')
 
 
 class EtapAkcji(db.Model):
@@ -57,6 +61,54 @@ class EtapAkcji(db.Model):
     zmieniono_at = db.Column(db.DateTime, nullable=True)
 
     __table_args__ = (db.UniqueConstraint('akcja_id', 'etap', name='uq_etap_akcji'),)
+
+
+class KontenerDostawy(db.Model):
+    """Dostawa kontenerowa akcji (2026-10-29) = jeden kontener; zaklada go
+    pierwszy wiersz wpisany na stanowisku, ten sam numer drugi raz dopisuje
+    do niego. Pusty (ostatni wiersz usuniety) znika."""
+    __tablename__ = 'kontener_dostawy'
+    id = db.Column(db.Integer, primary_key=True)
+    akcja_id = db.Column(db.Integer, db.ForeignKey('akcja_dekoracji.id'), nullable=False, index=True)
+    numer = db.Column(db.String(50), nullable=False)
+    utworzono_at = db.Column(db.DateTime, nullable=False, default=teraz_utc)
+    utworzyl_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+    pozycje = db.relationship('PozycjaDostawy', backref='kontener', cascade='all, delete-orphan')
+
+    __table_args__ = (db.UniqueConstraint('akcja_id', 'numer', name='uq_kontener_dostawy'),)
+
+
+class PozycjaDostawy(db.Model):
+    """Wiersz dostawy kontenerowej: artykul, kartony, PU. Ten sam artykul moze
+    byc w kilku wierszach — sumuje sie. `token` z ekranu stanowiska: ponowienie
+    tego samego zapisu (podwojny Enter, siec) nie dodaje drugiego wiersza."""
+    __tablename__ = 'pozycja_dostawy'
+    id = db.Column(db.Integer, primary_key=True)
+    kontener_id = db.Column(db.Integer, db.ForeignKey('kontener_dostawy.id'), nullable=False, index=True)
+    artykul = db.Column(db.String(50), nullable=False)
+    kartony = db.Column(db.Integer, nullable=False)
+    pu = db.Column(db.Integer, nullable=False)
+    token = db.Column(db.String(64), nullable=True, unique=True)
+    kiedy = db.Column(db.DateTime, nullable=False, default=teraz_utc)
+    kto_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+    kto = db.relationship('User')
+
+
+class KartonBeeline(db.Model):
+    """Karton z dostawy Beeline (2026-10-29) — skan kodu z numerem kartonu.
+    Ten sam numer w akcji tylko raz (unikalne, 409 z kto / kiedy)."""
+    __tablename__ = 'karton_beeline'
+    id = db.Column(db.Integer, primary_key=True)
+    akcja_id = db.Column(db.Integer, db.ForeignKey('akcja_dekoracji.id'), nullable=False, index=True)
+    numer = db.Column(db.String(50), nullable=False)
+    kiedy = db.Column(db.DateTime, nullable=False, default=teraz_utc)
+    kto_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+    kto = db.relationship('User')
+
+    __table_args__ = (db.UniqueConstraint('akcja_id', 'numer', name='uq_karton_beeline'),)
 
 
 class IndexDekoracji(db.Model):
