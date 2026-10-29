@@ -30,10 +30,10 @@ document.querySelectorAll('.sd-pole').forEach(pole => {
         }
         pole.classList.remove('autozapis-blad');
         const m = parseInt(pole.dataset.m, 10);
-        const body = { rok: SORTING.rok, miesiac: m, pole: pole.dataset.pole, wartosc };
-        if (pole.dataset.lic) body.licencja_id = parseInt(pole.dataset.lic, 10);
-        if (body.pole !== 'pos_processed') przeliczSume(m, body.pole);
-        autoZapis.zaplanuj(`sorting:${body.rok}:${pole.dataset.lic || 'pos'}:${m}:${body.pole}`,
+        const body = { rok: SORTING.rok, miesiac: m, pole: pole.dataset.pole, wartosc,
+                       licencja_id: parseInt(pole.dataset.lic, 10) };
+        przeliczSume(m, body.pole);
+        autoZapis.zaplanuj(`sorting:${body.rok}:${pole.dataset.lic}:${m}:${body.pole}`,
             () => zapiszJson('/api/zwroty/sorting-data', 'PUT', body), [pole]);
     };
     autoZapis.poWpisaniu(pole, zapisz);

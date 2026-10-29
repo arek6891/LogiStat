@@ -3,6 +3,7 @@
 
 {# Invoice specification (2026-10-26): uklad 1:1 z zakladki arkusza operacji.
    Ilosci wpisuje lider (autozapis), Sorting returns liczy system z Zwroty Paczek,
+   Palletizing z „Total boxes built” w Sorting Data (2026-10-29),
    Price ustawia admin w Ustawieniach → Cennik zwrotów. Lider nie dostaje cen. #}
 {% block content %}
 <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:1rem;">
@@ -47,7 +48,8 @@
                 <td>{{ w.activity }}</td>
                 <td class="srodek">
                     {% if w.auto %}<strong class="ilosc-auto">{{ w.ilosc }}</strong>
-                        <div class="z-systemu" title="Liczba paczek z raportu Zwroty Paczek w tym miesiącu">z raportu Zwroty Paczek</div>
+                        {% if w.klucz == 'palletizing' %}<div class="z-systemu" title="„Total boxes built” (Cartons) tego miesiąca z Sorting Data">z Sorting Data</div>
+                        {% else %}<div class="z-systemu" title="Liczba paczek z raportu Zwroty Paczek w tym miesiącu">z raportu Zwroty Paczek</div>{% endif %}
                     {% else %}<input type="text" inputmode="numeric" class="liczba ilosc-faktury" data-klucz="{{ w.klucz }}"
                         value="{{ w.ilosc if w.ilosc is not none else '' }}" aria-label="{{ w.activity }} — Total quantity">{% endif %}
                 </td>

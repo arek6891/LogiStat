@@ -85,9 +85,29 @@ function ekranSkanu(ekran, k) {
     pole.type = 'text';
     pole.autocomplete = 'off';
     pole.value = wartoscDomyslna(k);
-    const zatwierdz = () => {
+    const zatwierdz = async () => {
         const v = pole.value.trim();
         if (!v) { showToast('Zeskanuj numer paczki.', 'error'); pole.focus(); return; }
+        if (zajete) return;
+        // Paczka przyjeta juz wczesniej — odmowa od razu po skanie (operacja
+        // 2026-10-29), nie dopiero po wszystkich ekranach. Zapis sprawdza znowu.
+        zajete = true;
+        pole.disabled = true;
+        try {
+            const res = await fetch(`/api/zwroty/przyjecie/paczka?numer=${encodeURIComponent(v)}`);
+            if (!res.ok) {
+                const blad = await res.json().catch(() => ({}));
+                if (blad.juz_przyjeta) { pokazJuzPrzyjeta(blad.error); return; }
+                await pokazBladOdpowiedzi(res);
+                return;
+            }
+        } catch (e) {
+            showToast('Brak połączenia z serwerem — spróbuj ponownie.', 'error');
+            return;
+        } finally {
+            zajete = false;
+            pole.disabled = false;
+        }
         dane[k.pole] = v;
         dalej();
     };
@@ -192,6 +212,18 @@ function ekranLicznika(ekran, k) {
     nawigacja(ekran, przycisk('przyjecie-dalej', 'Dalej →', zatwierdz));
 }
 
+// Druga paczka z tym samym numerem: duzy komunikat na ekranie skanu, pole czyste
+// do nastepnej paczki. Czesc 2/2 dopisuje lider w Zwrotach Paczek.
+function pokazJuzPrzyjeta(komunikat) {
+    dane = {};
+    token = nowyToken();
+    krok = 0;
+    pokaz();
+    const ekran = document.getElementById('przyjecieEkran');
+    ekran.insertBefore(el('div', 'przyjecie-blokada', '⛔ ' + komunikat), ekran.children[1]);
+    showToast('Ta paczka była już przyjęta', 'error');
+}
+
 function pokazObsade() {
     document.getElementById('przyjecieObsada').textContent =
         obsada.length ? `Na stanowisku: ${obsada.join(', ')}` : '';
@@ -245,6 +277,10 @@ async function zapisz() {
         if (e.dane && e.dane.brak_obsady) {
             obsada = [];
             pokazBlokade(zapisz);
+            return;
+        }
+        if (e.dane && e.dane.juz_przyjeta) {
+            pokazJuzPrzyjeta(e.message);
             return;
         }
         showToast(e.message, 'error');

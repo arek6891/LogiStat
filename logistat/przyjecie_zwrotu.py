@@ -7,7 +7,9 @@ zapis = jeden wiersz raportu Zwroty Paczek. Naglowki raportu zostaja niemieckie
 z Ustawien (`etykieta_zwrotu:<klucz>`, pusta = domyslna ponizej).
 """
 import re
-from datetime import timedelta
+from datetime import date, timedelta
+
+from logistat.okresy import zlacz_okresy
 
 # Listy z przyciskami (Ustawienia → Przyjęcie zwrotu). Ta sama tabela co listy
 # Sorting Data (`licencja_zwrotow.rodzaj`), osobne rodzaje.
@@ -19,13 +21,15 @@ RODZAJE_PRZYJECIA = {
     KURIER: 'Kurierzy',
     OPAKOWANIE: 'Verpackungsvorschrift',
 }
-# Domyslne z probki arkusza operacji (Return_September_2026) — admin poprawia.
+# Domyslne z probki arkusza operacji (Return_September_2026) + TOSH (operacja
+# 2026-10-29) — lista sie zmienia, admin ja edytuje w Ustawieniach.
 LISTY_DOMYSLNE = {
-    BRAND: ('ACC', 'SIX', 'NK', 'ITS'),
+    BRAND: ('ACC', 'SIX', 'NK', 'ITS', 'TOSH'),
     KURIER: ('DPD', 'UPS', 'Other'),
     OPAKOWANIE: ('Yes', 'VKM'),
 }
 ZNACZNIK_LIST = 'listy_przyjecia_zwrotow_seeded'
+ZNACZNIK_TOSH = 'brand_tosh_dodany'   # dopisanie TOSH do baz zasianych przed 2026-10-29
 
 # Ekrany z liczba: (klucz = kolumna modelu, naglowek raportu, minimum, domyslna).
 # Retoure nie moze byc 0 ani puste (operacja) — paczka to co najmniej jeden zwrot.
@@ -56,13 +60,13 @@ ETYKIETY_DOMYSLNE = {
     'pos_nummer': 'Numer POS',
     'brak_pos': 'Brak numeru POS',
     'kurier': 'Wybierz kuriera',
-    'retoure': 'Ilość zwrotów',
+    'retoure': 'Ilość paczek',
     'defekt': 'Uszkodzone',
     'neuwarenueberschuss': 'Nadwyżka nowego towaru',
     'silber': 'Srebro (szt.)',
     'defektes_silber': 'Uszkodzone srebro (szt.)',
     'reduzierte_ware': 'Towar przeceniony',
-    'verpackungsvorschrift': 'Instrukcja pakowania',
+    'verpackungsvorschrift': 'Sposób pakowania',
 }
 # Co admin widzi obok etykiety — z jaka kolumna raportu sie wiaze.
 KOLUMNA_ETYKIETY = {
@@ -84,11 +88,13 @@ def monat(dzien):
 
 
 def woche(dzien):
-    """Kolumna Woche: tydzien i rok daty przyjecia — „36-2026”. Tydzien ISO
-    (poniedzialek–niedziela) i rok tego tygodnia: 31.12.2026 → „53-2026”,
-    01.01.2027 tez „53-2026” (ten sam tydzien)."""
-    rok, tydzien, _ = dzien.isocalendar()
-    return f'{tydzien}-{rok}'
+    """Kolumna Woche: tydzien i rok daty przyjecia — „36-2026”. Jak Excel
+    WEEKNUM(data; 2), nie ISO (operacja 2026-10-29): tydzien z 1 stycznia to
+    zawsze 1, kolejne od poniedzialku, rok = rok kalendarzowy daty.
+    31.12.2026 → „53-2026”, 01.01.2027 → „1-2027”, pon. 04.01.2027 → „2-2027”."""
+    pierwszy = date(dzien.year, 1, 1)
+    poczatek = pierwszy - timedelta(days=pierwszy.weekday())
+    return f'{(dzien - poczatek).days // 7 + 1}-{dzien.year}'
 
 
 def pos_nummer(wartosc):
@@ -103,12 +109,17 @@ def pos_nummer(wartosc):
 
 # ── Przydzial osob do stanowisk zwrotow (operacja 2026-10-27) ────────────────
 # Lider przydziela osoby z czynnosci „Zwroty” (Przydzielanie, po NAZWIE — zmiana
-# nazwy czynnosci odcina ten ekran) do stanowisk = kont roli `stanowisko`, albo do
-# Supportu. Osoba liczy sie od chwili przydzialu do przeniesienia / zdjecia,
+# nazwy czynnosci odcina ten ekran) do stanowisk = kont roli `stanowisko`, albo jako
+# Support przy stanowisku (2026-10-29: bez paczek i statystyk, „pod wynik stolu”). Osoba liczy sie od chwili przydzialu do przeniesienia / zdjecia,
 # skanu „Koniec pracy” albo MAX_GODZIN_PRZYDZIALU (zmiany nie maja godzin).
 CZYNNOSC_ZWROTOW = 'Zwroty'
 SUPPORT = 'support'
 MAX_GODZIN_PRZYDZIALU = 12
+# Ta sama paczka drugi raz na stanowisku (operacja 2026-10-29): odmowa. Paczka
+# z kilku czesci (1/2, 2/2) dopisuje lider w Zwrotach Paczek.
+KOMUNIKAT_JUZ_PRZYJETA = ('Paczka {numer} była już przyjęta {kiedy} ({gdzie}). Nie skanuj jej '
+                          'ponownie. Jeśli to kolejna część przesyłki (np. 2/2), zgłoś to '
+                          'liderowi — dopisze ją w Zwrotach Paczek.')
 KOMUNIKAT_BRAK_OBSADY = ('Nie przydzielono nikogo do stanowiska! Skontaktuj się z liderem, '
                          'aby przydzielił stanowisko do zwrotów.')
 
@@ -133,6 +144,32 @@ def efektywne_okresy(wiersze, konce_pracy):
         if koniec > od:
             wynik.append((user_id, stanowisko_id, support, od, koniec))
     return wynik
+
+
+def przerwy_osob(zdarzenia, teraz):
+    """Przerwy i „Inne” z Czasu pracy jako zlaczone okresy {user_id: [(start, koniec)]}
+    — odejmowane od godzin na stanowisku (czas netto, jak w Post-Processingu;
+    szkolenie to praca, nie odejmuje sie). `zdarzenia`: [(user_id, shift_id, typ,
+    czas)] posortowane po czasie. Pary w obrebie (osoba, zmiana) jak
+    `_compute_worker_times` — niezamknieta przerwa z poniedzialku nie moze zjesc
+    wtorku. Otwarty okres konczy „Koniec pracy” tej zmiany albo `teraz`."""
+    otwarte, okresy = {}, {}
+    for user_id, shift_id, typ, kiedy in zdarzenia:
+        moje = otwarte.setdefault((user_id, shift_id), {})
+        if typ in ('break_start', 'other_start'):
+            moje.setdefault(typ[:-6], kiedy)
+        elif typ in ('break_end', 'other_end'):
+            start = moje.pop(typ[:-4], None)
+            if start is not None:
+                okresy.setdefault(user_id, []).append((start, kiedy))
+        elif typ == 'work_end':
+            for start in moje.values():
+                okresy.setdefault(user_id, []).append((start, kiedy))
+            moje.clear()
+    for (user_id, _), moje in otwarte.items():
+        for start in moje.values():
+            okresy.setdefault(user_id, []).append((start, teraz))
+    return {u: zlacz_okresy(o) for u, o in okresy.items()}
 
 
 def kto_na_stanowisku(okresy, stanowisko_id, chwila):

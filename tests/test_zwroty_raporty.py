@@ -2,7 +2,8 @@
 
 - uklad i nazwy 1:1 z zakladek arkusza operacji, eksport do Excela z formulami;
 - ilosci wpisuje lider (puste ≠ 0), Sorting returns liczy system z Zwroty Paczek
-  (liczba WIERSZY raportu w miesiacu), ceny ustawia admin miesiacami;
+  (liczba WIERSZY raportu w miesiacu), Palletizing = „Total boxes built” z Sorting
+  Data, POS processed = Sorting returns (operacja 2026-10-29); ceny ustawia admin;
 - lider nie widzi cen ani Total charge — ani na ekranie, ani w zrodle, ani w Excelu;
 - listy wierszy Sorting Data: admin, pozycja z danymi nie znika z historii.
 Wszystkie liczby syntetyczne.
@@ -36,21 +37,21 @@ def xlsx(odpowiedz):
 
 def test_ilosc_wpisana_przez_lidera_i_puste_to_nie_zero(leader_client):
     r = leader_client.put('/api/zwroty/invoice-specification/ilosc',
-                          json={'rok': 2026, 'miesiac': 9, 'klucz': 'palletizing', 'ilosc': 12})
+                          json={'rok': 2026, 'miesiac': 9, 'klucz': 'weighing', 'ilosc': 12})
     assert r.status_code == 200, r.get_json()
     r = leader_client.put('/api/zwroty/invoice-specification/ilosc',
                           json={'rok': 2026, 'miesiac': 9, 'klucz': 'loading', 'ilosc': 0})
     assert r.status_code == 200
 
     w = {x['klucz']: x for x in invoice_specification(2026, 9)['wiersze']}
-    assert w['palletizing']['ilosc'] == 12
+    assert w['weighing']['ilosc'] == 12
     assert w['loading']['ilosc'] == 0
     assert w['unloading']['ilosc'] is None
 
     leader_client.put('/api/zwroty/invoice-specification/ilosc',
-                      json={'rok': 2026, 'miesiac': 9, 'klucz': 'palletizing', 'ilosc': None})
+                      json={'rok': 2026, 'miesiac': 9, 'klucz': 'weighing', 'ilosc': None})
     w = {x['klucz']: x for x in invoice_specification(2026, 9)['wiersze']}
-    assert w['palletizing']['ilosc'] is None, 'wyczyszczone pole = puste, nie 0'
+    assert w['weighing']['ilosc'] is None, 'wyczyszczone pole = puste, nie 0'
     assert IloscMiesiacaZwrotow.query.count() == 2, 'upsert, nie nowe wiersze'
 
 
@@ -60,7 +61,8 @@ def test_ilosc_wpisana_przez_lidera_i_puste_to_nie_zero(leader_client):
     ({'rok': 2026, 'miesiac': 9, 'klucz': 'loading', 'ilosc': -1}, 'od 0'),
     ({'rok': 2026, 'miesiac': 9, 'klucz': 'loading', 'ilosc': 1.5}, 'całkowitą'),
     ({'rok': 2026, 'miesiac': 9, 'klucz': 'loading', 'ilosc': True}, 'całkowitą'),
-    ({'rok': 2026, 'miesiac': 9, 'klucz': 'sorting_returns', 'ilosc': 5}, 'Zwroty Paczek'),
+    ({'rok': 2026, 'miesiac': 9, 'klucz': 'sorting_returns', 'ilosc': 5}, 'liczy system'),
+    ({'rok': 2026, 'miesiac': 9, 'klucz': 'palletizing', 'ilosc': 5}, 'liczy system'),
 ])
 def test_walidacja_ilosci(leader_client, body, blad):
     r = leader_client.put('/api/zwroty/invoice-specification/ilosc', json=body)
@@ -86,8 +88,27 @@ def test_sorting_returns_to_liczba_wierszy_raportu_zwrotow(flask_app):
     assert (w['klucz'], w['ilosc'], w['auto']) == ('sorting_returns', 3, True)
 
 
+def test_palletizing_to_total_boxes_built(flask_app):
+    """Operacja 2026-10-29: Palletizing sorted articles = „Total boxes built”
+    (Cartons) miesiaca z Sorting Data — tylko licencje, nie wysylki; stary reczny
+    wpis w bazie nic nie zmienia."""
+    db.session.add_all([
+        SortingDataWpis(licencja_id=licencja('DISNEY').id, rok=2026, miesiac=9, cartons=48, pallets=2),
+        SortingDataWpis(licencja_id=licencja('Marvel').id, rok=2026, miesiac=9, cartons=24),
+        SortingDataWpis(licencja_id=licencja('Marvel').id, rok=2026, miesiac=8, cartons=7),
+        SortingDataWpis(licencja_id=licencja('Disney boxes shipped', WYSYLKA).id, rok=2026, miesiac=9,
+                        cartons=100),
+        IloscMiesiacaZwrotow(rok=2026, miesiac=9, klucz='palletizing', wartosc=999),
+    ])
+    db.session.commit()
+    w = {x['klucz']: x for x in invoice_specification(2026, 9)['wiersze']}
+    assert (w['palletizing']['ilosc'], w['palletizing']['auto']) == (72, True)
+    assert w['palletizing']['ilosc'] == sorting_data(2026)['suma'][9]['cartons']
+    assert {x['klucz']: x for x in invoice_specification(2026, 10)['wiersze']}['palletizing']['ilosc'] == 0
+
+
 def test_total_charge_i_brak_ceny(flask_app):
-    db.session.add(IloscMiesiacaZwrotow(rok=2026, miesiac=9, klucz='palletizing', wartosc=10))
+    db.session.add(SortingDataWpis(licencja_id=licencja('DISNEY').id, rok=2026, miesiac=9, cartons=10))
     db.session.commit()
     ustaw_cene('palletizing', 2.5)
     ustaw_cene('unloading', 4.0)
@@ -188,12 +209,17 @@ def test_komorki_suma_i_pos(leader_client):
     wys = licencja('Disney boxes shipped', WYSYLKA)
     leader_client.put('/api/zwroty/sorting-data', json={
         'rok': 2026, 'miesiac': 9, 'licencja_id': wys.id, 'pole': 'cartons', 'wartosc': 100})
-    leader_client.put('/api/zwroty/sorting-data', json={
+    r = leader_client.put('/api/zwroty/sorting-data', json={
         'rok': 2026, 'miesiac': 9, 'pole': KLUCZ_POS, 'wartosc': 321})
+    assert r.status_code == 400 and 'liczy system' in r.get_json()['error']
+    db.session.add(ZwrotPaczki(paketnummer='%P', brand='ACC', pos_nummer='NO', kurier='DPD',
+                               retoure=1, verpackungsvorschrift='Yes', token='pos-processed-1',
+                               przyjeto_at=datetime(2026, 9, 10, 9)))
+    db.session.commit()
 
     d = sorting_data(2026)
     assert d['suma'][9] == {'cartons': 72, 'pallets': 2}, 'Total boxes built = tylko licencje'
-    assert d['pos'][9] == 321 and d['pos'][8] is None
+    assert d['pos'][9] == 1 and d['pos'][8] == 0, 'POS processed = Sorting returns miesiaca'
     wiersz = next(w for w in d['licencje'] if w['id'] == marvel.id)
     assert wiersz['mies'][9] == {'cartons': 24, 'pallets': None}
 
@@ -220,7 +246,10 @@ def test_wylaczona_licencja_z_danymi_zostaje_w_swoim_roku(flask_app):
 def test_ekran_i_excel_sorting_data(leader_client):
     lic = licencja('DISNEY')
     db.session.add(SortingDataWpis(licencja_id=lic.id, rok=2026, miesiac=2, cartons=24, pallets=1))
-    db.session.add(IloscMiesiacaZwrotow(rok=2026, miesiac=2, klucz=KLUCZ_POS, wartosc=55))
+    for i in range(3):
+        db.session.add(ZwrotPaczki(paketnummer=f'%L{i}', brand='ACC', pos_nummer='NO', kurier='DPD',
+                                   retoure=1, verpackungsvorschrift='Yes', token=f'luty-pos-{i}',
+                                   przyjeto_at=datetime(2026, 2, 10, 9)))
     db.session.commit()
 
     html = leader_client.get('/zwroty/sorting-data?rok=2026').get_data(as_text=True)
@@ -237,7 +266,7 @@ def test_ekran_i_excel_sorting_data(leader_client):
     nr_sumy = kolumna_a.index('Total boxes built') + 1
     assert ws.cell(nr_sumy, 4).value == f'=SUM(D4:D{nr_sumy - 1})'
     nr_pos = kolumna_a.index('POS processed') + 1
-    assert nr_pos == ws.max_row and ws.cell(nr_pos, 4).value == 55
+    assert nr_pos == ws.max_row and ws.cell(nr_pos, 4).value == 3
 
 
 # ── listy Sorting Data (admin) ───────────────────────────────────────────────

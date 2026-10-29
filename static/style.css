@@ -1740,6 +1740,7 @@ h1, h2, h3, .page-title, .sidebar-logo h1, .login-card h1 {
 .przydzial-stanowisko { padding: 14px 16px; margin: 0; }
 .przydzial-stanowisko h4 { margin: 0 0 4px; font-size: 1.05rem; }
 .przydzial-stanowisko ul { margin: 6px 0 0 18px; padding: 0; font-size: .9rem; }
+.przydzial-stanowisko li.przydzial-support { color: var(--text-muted); list-style: none; margin-left: -18px; }
 .przydzial-stanowisko.pusta { border-color: var(--warning); background: var(--warning-bg); }
 .przydzial-liczba { font-size: 1.6rem; font-weight: 800; color: var(--accent); }
 .przydzial-uwaga { color: var(--warning); }

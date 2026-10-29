@@ -55,6 +55,7 @@ GET /api/users
 GET /api/worker-times
 GET /api/zwroty/cennik/<int:rok>/<int:miesiac>
 GET /api/zwroty/przydzial
+GET /api/zwroty/przyjecie/paczka
 GET /assignment
 GET /dashboard
 GET /data-entry
@@ -128,6 +129,7 @@ POST /api/users
 POST /api/worker-times/event
 POST /api/zwroty/licencje
 POST /api/zwroty/przyjecie
+POST /api/zwroty/przyjecie/<int:zwrot_id>/czesc
 POST /displays/pos/etykiety
 POST /logout
 POST /start/<obszar>
