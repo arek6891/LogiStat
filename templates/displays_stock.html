@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block title %}{{ NAZWA_APLIKACJI }} — Stock stojaków{% endblock %}
+
+{# Dekoracje → Stock stojakow (operacja 2026-10-28): gotowe stojaki / displaye = nosniki.
+   Wiersz zaklada skan nosnika na stanowisku (Operacje magazynowe → Skan stojaków);
+   tu lider przypisuje POS (tylko z listy Etykiet POS) i akcje, poprawia strefe
+   (zapisuje sie jako ruch „ręcznie”) i oglada historie ruchow. Autozapis per pole.
+   Tabele rysuje static/js/displays_stock.js. #}
+{% block content %}
+<div class="page-header">
+    <h2>🗃️ Stock stojaków</h2>
+    <p class="subtitle">Gdzie stoi każdy gotowy stojak, do jakiego POS i akcji jest przeznaczony.
+        Nowe nośniki i zmiany stref przychodzą ze stanowiska „Skan stojaków” (Operacje magazynowe).</p>
+</div>
+
+<div class="card">
+    <div class="dekoracje-pos-druk">
+        <select id="filtrAkcja" class="form-control" style="width:220px;"><option value="">Wszystkie akcje</option><option value="brak">— bez akcji —</option></select>
+        <select id="filtrStrefa" class="form-control" style="width:180px;"><option value="">Wszystkie strefy</option><option value="brak">— bez strefy —</option></select>
+        <input type="search" id="filtrSzukaj" placeholder="Nośnik albo POS…" class="form-control" style="width:200px;">
+        <span id="licznikStock" style="color:var(--text-muted);"></span>
+        <span class="autozapis-status" id="autoZapisStatus" style="margin-left:auto;"></span>
+    </div>
+    <datalist id="listaPos"></datalist>
+    <div style="overflow-x:auto;"><table class="data-table">
+        <thead><tr><th>Nośnik</th><th>POS</th><th title="Post Processing (z listy Etykiet POS)">PP</th><th>Akcja</th><th>Strefa</th><th>Ostatni ruch</th><th></th></tr></thead>
+        <tbody id="tabelaStock"></tbody>
+    </table></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const STOCK = {{ {'stojaki': stojaki, 'akcje': akcje, 'strefy': strefy, 'pos': pos}|tojson }};
+</script>
+<script src="{{ static_v('js/displays_stock.js') }}"></script>
+{% endblock %}

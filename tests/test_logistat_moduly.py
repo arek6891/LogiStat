@@ -75,7 +75,7 @@ def test_create_app_nie_dotyka_bazy():
     wynik = subprocess.run([sys.executable, '-c', kod], capture_output=True, text=True,
                            timeout=60, cwd='.', env=env)
     assert wynik.returncode == 0, wynik.stderr
-    assert int(wynik.stdout.strip()) == 141
+    assert int(wynik.stdout.strip()) == 154
 
 
 def test_logistat_models_rejestruje_wszystkie_tabele():

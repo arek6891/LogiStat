@@ -57,6 +57,12 @@
                         class="{% if request.endpoint == 'zwroty.przyjecie_zwrotu' %}active{% endif %}">
                         <span class="icon">📥</span> Przyjęcie zwrotu
                     </a></li>
+                {# Belka Dekoracje kafelka Magazyn (2026-10-28): skan nosnik → strefa. #}
+                <li class="nav-section">💍 Dekoracje</li>
+                <li><a href="{{ url_for('displays.skan_stojakow') }}"
+                        class="{% if request.endpoint == 'displays.skan_stojakow' %}active{% endif %}">
+                        <span class="icon">📍</span> Skan stojaków
+                    </a></li>
                 {% endif %}
 
                 {% if 'post_process' in menu_obszary %}
@@ -109,9 +115,17 @@
                         class="{% if request.endpoint in ('displays.displays', 'displays.akcja') %}active{% endif %}">
                         <span class="icon">📅</span> Akcje
                     </a></li>
+                <li><a href="{{ url_for('displays.pos') }}"
+                        class="{% if request.endpoint == 'displays.pos' %}active{% endif %}">
+                        <span class="icon">🏷️</span> Etykiety POS
+                    </a></li>
                 <li><a href="{{ url_for('displays.historia') }}"
                         class="{% if request.endpoint == 'displays.historia' %}active{% endif %}">
                         <span class="icon">🗄️</span> Historia akcji
+                    </a></li>
+                <li><a href="{{ url_for('displays.stock') }}"
+                        class="{% if request.endpoint == 'displays.stock' %}active{% endif %}">
+                        <span class="icon">🗃️</span> Stock stojaków
                     </a></li>
                 {% endif %}
 
