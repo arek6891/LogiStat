@@ -13,9 +13,10 @@ CZYNNOSCI_FAKTURY = (
     ('loading', 'Loading pallets', 'pallet'),
 )
 KLUCZE_FAKTURY = tuple(k for k, _, _ in CZYNNOSCI_FAKTURY)
-# Liczone przez system: Sorting returns = liczba wierszy raportu Zwroty Paczek
-# w miesiacu (jedna paczka = jeden wiersz; powtorzony Paketnummer liczy sie znowu).
-CZYNNOSCI_AUTO = frozenset({'sorting_returns'})
+# Liczone przez system (operacja 2026-10-29: tylko te dwie, reszta reczna):
+# Sorting returns = liczba wierszy raportu Zwroty Paczek w miesiacu (jedna paczka =
+# jeden wiersz), Palletizing = „Total boxes built” (Cartons) miesiaca z Sorting Data.
+CZYNNOSCI_AUTO = frozenset({'sorting_returns', 'palletizing'})
 
 # Sorting Data: dwie listy wierszy, edytowane przez admina (Ustawienia).
 LICENCJA = 'licencja'   # wiersze nad „Total boxes built” (Cartons / Pallets)
@@ -31,7 +32,8 @@ LICENCJE_DOMYSLNE = {
 ZNACZNIK_LICENCJI = 'licencje_zwrotow_seeded'
 NAZWA_LICENCJI_MAX = 100
 
-# Pola Sorting Data: ilosci licencji / wysylek + jeden wiersz POS processed.
+# Pola Sorting Data: ilosci licencji / wysylek (wpisywane) + wiersz POS processed
+# (od 2026-10-29 liczony: = Sorting returns miesiaca, nie wpisuje sie go).
 POLA_SORTING = ('cartons', 'pallets')
 KLUCZ_POS = 'pos_processed'
 

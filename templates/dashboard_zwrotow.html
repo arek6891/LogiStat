@@ -2,8 +2,9 @@
 {% block title %}{{ NAZWA_APLIKACJI }} — Dashboard zwrotów{% endblock %}
 
 {# Dashboard zwrotow (operacja 2026-10-27): wszystkie dni miesiaca od razu (kolumny).
-   Per stanowisko (przyjete paczki), per osoba (paczka po rowno na obsade stanowiska
-   w chwili przyjecia; godziny = czas na stanowisku z przerwami), obsada + Support.
+   Per stanowisko (przyjete paczki + kto pomagal jako Support), per osoba (paczka po
+   rowno na obsade stanowiska w chwili przyjecia; godziny = czas na stanowisku netto,
+   bez przerw i „Inne”, 2026-10-29), obsada. Support nie ma statystyk.
    Dane: dashboard_zwrotow() w logistat/przydzial_zwrotow.py. #}
 {% macro liczba(x, miejsc=1) %}{{ ('%.' ~ miejsc ~ 'f')|format(x)|replace('.', ',') }}{% endmacro %}
 {% set DNI_TYG = ['pn', 'wt', 'śr', 'cz', 'pt', 'so', 'nd'] %}
@@ -34,7 +35,7 @@
         <thead><tr><th>Stanowisko</th>{{ naglowek_dni() }}<th class="suma">Suma</th></tr></thead>
         <tbody>
             {% for s in d.stanowiska %}
-            <tr><td>{{ s.nazwa }}</td>
+            <tr><td>{{ s.nazwa }}{% if s.support %}<br><small class="pusto" title="Support przy tym stanowisku — bez udziału w paczkach">🤝 {{ s.support|join(', ') }}</small>{% endif %}</td>
                 {% for dz in d.dni %}<td class="{{ klasa(dz) }} {% if not s.dni.get(dz) %}pusto{% endif %}">{{ s.dni.get(dz, 0) or '·' }}</td>{% endfor %}
                 <td class="suma">{{ s.suma }}</td></tr>
             {% else %}
@@ -53,7 +54,7 @@
 </div>
 
 <div class="card dashboard-zwrotow" style="margin-top:16px;">
-    <h3 style="margin-top:0;">👤 Per osoba <small style="color:var(--text-muted);font-weight:400;">— paczki (godziny na stanowisku, z przerwami)</small></h3>
+    <h3 style="margin-top:0;">👤 Per osoba <small style="color:var(--text-muted);font-weight:400;">— paczki (godziny na stanowisku netto: bez przerw i „Inne” z Czasu pracy)</small></h3>
     <div class="dashboard-zwrotow-przewijanie"><table class="data-table">
         <thead><tr><th>Osoba</th>{{ naglowek_dni() }}<th class="suma">Paczki</th><th class="suma">Godz.</th><th class="suma">Paczki/h</th></tr></thead>
         <tbody>
@@ -73,21 +74,14 @@
 </div>
 
 <div class="card dashboard-zwrotow" style="margin-top:16px;">
-    <h3 style="margin-top:0;">🧩 Obsada <small style="color:var(--text-muted);font-weight:400;">— liczba osób w dniu; Support: godziny (statystyki Supportu do uzgodnienia)</small></h3>
+    <h3 style="margin-top:0;">🧩 Obsada <small style="color:var(--text-muted);font-weight:400;">— liczba osób w dniu; Support bez statystyk (pomaga przy stanowisku, wynik idzie na stół)</small></h3>
     <div class="dashboard-zwrotow-przewijanie"><table class="data-table">
-        <thead><tr><th></th>{{ naglowek_dni() }}<th class="suma">Godz.</th></tr></thead>
+        <thead><tr><th></th>{{ naglowek_dni() }}</tr></thead>
         <tbody>
             <tr><td>Osoby na stanowiskach</td>
-                {% for dz in d.dni %}<td class="{{ klasa(dz) }} {% if not d.obsada[dz].osoby %}pusto{% endif %}">{{ d.obsada[dz].osoby or '·' }}</td>{% endfor %}
-                <td></td></tr>
+                {% for dz in d.dni %}<td class="{{ klasa(dz) }} {% if not d.obsada[dz].osoby %}pusto{% endif %}">{{ d.obsada[dz].osoby or '·' }}</td>{% endfor %}</tr>
             <tr><td>🤝 Support</td>
-                {% for dz in d.dni %}<td class="{{ klasa(dz) }} {% if not d.obsada[dz].support %}pusto{% endif %}">{{ d.obsada[dz].support or '·' }}</td>{% endfor %}
-                <td></td></tr>
-            {% for s in d.support %}
-            <tr><td style="padding-left:24px;">{{ s.nazwa }}</td>
-                {% for dz in d.dni %}<td class="{{ klasa(dz) }} {% if not s.dni.get(dz) %}pusto{% endif %}">{% if s.dni.get(dz) %}{{ liczba(s.dni[dz]) }} h{% else %}·{% endif %}</td>{% endfor %}
-                <td class="suma">{{ liczba(s.godziny) }}</td></tr>
-            {% endfor %}
+                {% for dz in d.dni %}<td class="{{ klasa(dz) }} {% if not d.obsada[dz].support %}pusto{% endif %}">{{ d.obsada[dz].support or '·' }}</td>{% endfor %}</tr>
         </tbody>
     </table></div>
 </div>

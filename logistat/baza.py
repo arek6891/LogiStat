@@ -9,7 +9,7 @@ from logistat.config import DEFAULT_ADMIN_PASSWORD
 from logistat.extensions import db
 from logistat.dekoracje import SLOWNIK_DOMYSLNY, ZNACZNIK_SLOWNIKA
 from logistat.faktura_zwrotow import LICENCJE_DOMYSLNE, ZNACZNIK_LICENCJI
-from logistat.przyjecie_zwrotu import LISTY_DOMYSLNE, ZNACZNIK_LIST
+from logistat.przyjecie_zwrotu import BRAND, LISTY_DOMYSLNE, ZNACZNIK_LIST, ZNACZNIK_TOSH
 from logistat.models import (
     Activity, AppSetting, CountryMapping, GeneralStat, ImportedCarton, LicencjaZwrotow, SlownikDekoracji,
     USER_OPTION_DEFAULTS, User, UserOption, zaznacz_wszystkich_przeszkolonych)
@@ -121,6 +121,17 @@ def seed_data():
         db.session.add(AppSetting(key=ZNACZNIK_LIST, value='1'))
         db.session.commit()
         log.info('[SEED] Listy Przyjecia zwrotu (brandy, kurierzy, opakowania) utworzone.')
+
+    # Brand TOSH (operacja 2026-10-29) — bazy zasiane wczesniej go nie maja; raz,
+    # pod znacznikiem, zeby usuniety przez admina nie wracal po restarcie.
+    if db.session.get(AppSetting, ZNACZNIK_TOSH) is None:
+        if LicencjaZwrotow.query.filter_by(rodzaj=BRAND, nazwa='TOSH').first() is None:
+            ostatnia = db.session.query(db.func.max(LicencjaZwrotow.kolejnosc))\
+                .filter(LicencjaZwrotow.rodzaj == BRAND).scalar()
+            db.session.add(LicencjaZwrotow(rodzaj=BRAND, nazwa='TOSH', kolejnosc=(ostatnia or 0) + 1))
+        db.session.add(AppSetting(key=ZNACZNIK_TOSH, value='1'))
+        db.session.commit()
+        log.info('[SEED] Brand TOSH dopisany do listy Przyjecia zwrotu.')
 
     # Dekoracje (2026-10-28): typy i modele stojakow — raz, jak listy wyzej.
     if db.session.get(AppSetting, ZNACZNIK_SLOWNIKA) is None:

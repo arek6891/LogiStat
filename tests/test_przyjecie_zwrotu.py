@@ -66,8 +66,13 @@ def test_monat_i_woche_jak_w_arkuszu():
     assert monat(date(2026, 9, 2)) == 'wrzesień-2026'
     assert woche(date(2026, 9, 2)) == '36-2026'
     assert monat(date(2026, 12, 31)) == 'grudzień-2026'
-    # Tydzien ISO: 01.01.2027 (piatek) nalezy do 53. tygodnia 2026.
-    assert woche(date(2027, 1, 1)) == '53-2026'
+    # Jak Excel WEEKNUM(;2), nie ISO (operacja 2026-10-29): tydzien z 1 stycznia = 1.
+    assert woche(date(2026, 12, 31)) == '53-2026'
+    assert woche(date(2027, 1, 1)) == '1-2027'
+    assert woche(date(2027, 1, 3)) == '1-2027'      # niedziela
+    assert woche(date(2027, 1, 4)) == '2-2027'      # poniedzialek
+    assert woche(date(2026, 1, 4)) == '1-2026'      # 2026 zaczyna sie w czwartek
+    assert woche(date(2026, 1, 5)) == '2-2026'
 
 
 @pytest.mark.parametrize('wpisane,wynik', [
@@ -102,11 +107,49 @@ def test_ten_sam_token_nie_dubluje_wiersza(stanowisko_client):
     assert ZwrotPaczki.query.count() == 1
 
 
-def test_powtorzony_paketnummer_to_nowy_wiersz(stanowisko_client):
-    """W arkuszu operacji Paketnummer sie powtarza; kazde przyjecie to wiersz."""
-    stanowisko_client.post('/api/zwroty/przyjecie', json=zwrot(token='pierwszy-1'))
-    stanowisko_client.post('/api/zwroty/przyjecie', json=zwrot(token='drugi-22'))
-    assert ZwrotPaczki.query.count() == 2
+def test_powtorzony_paketnummer_stanowisko_odmawia(stanowisko_client, stanowisko):
+    """Operacja 2026-10-29: tej samej paczki nie skanuje sie drugi raz — 409 z data
+    i stanowiskiem pierwszego przyjecia, wiersz sie nie dopisuje."""
+    assert stanowisko_client.post('/api/zwroty/przyjecie', json=zwrot(token='pierwszy-1')).status_code == 201
+    r = stanowisko_client.post('/api/zwroty/przyjecie', json=zwrot(token='drugi-22'))
+    assert r.status_code == 409
+    assert r.get_json()['juz_przyjeta'] is True
+    assert 'była już przyjęta' in r.get_json()['error']
+    assert stanowisko.display_name in r.get_json()['error']
+    assert ZwrotPaczki.query.count() == 1
+    # Ponowienie PIERWSZEGO zapisu (ten sam token) dalej przechodzi jako powtorzony.
+    r = stanowisko_client.post('/api/zwroty/przyjecie', json=zwrot(token='pierwszy-1'))
+    assert r.status_code == 200 and r.get_json()['powtorzony'] is True
+
+
+def test_sprawdzenie_paczki_po_skanie(stanowisko_client):
+    """Krok 1 ekranu: odmowa od razu po skanie, nie po wszystkich ekranach."""
+    numer = zwrot()['paketnummer']
+    r = stanowisko_client.get('/api/zwroty/przyjecie/paczka', query_string={'numer': numer})
+    assert r.status_code == 200
+    stanowisko_client.post('/api/zwroty/przyjecie', json=zwrot())
+    r = stanowisko_client.get('/api/zwroty/przyjecie/paczka', query_string={'numer': f' {numer} '})
+    assert r.status_code == 409 and r.get_json()['juz_przyjeta'] is True
+    assert stanowisko_client.get('/api/zwroty/przyjecie/paczka').status_code == 400
+
+
+def test_lider_dopisuje_kolejna_czesc(stanowisko_client, stanowisko, leader_client, leader):
+    """Paczka 1/2 + 2/2 (ten sam numer): druga czesc dopisuje lider — nowy wiersz
+    z numerem, stanowiskiem i chwila przyjecia pierwszej czesci; liczy sie w raporcie."""
+    stanowisko_client.post('/api/zwroty/przyjecie', json=zwrot(retoure=3))
+    pierwsza = ZwrotPaczki.query.one()
+    body = zwrot(retoure=2, paketnummer='INNY-NUMER')   # numer z body serwer ignoruje
+    r = leader_client.post(f'/api/zwroty/przyjecie/{pierwsza.id}/czesc', json=body)
+    assert r.status_code == 201
+    druga = db.session.get(ZwrotPaczki, r.get_json()['id'])
+    assert druga.paketnummer == pierwsza.paketnummer and druga.retoure == 2
+    assert druga.przyjal_id == stanowisko.id and druga.zmienil_id == leader.id
+    assert druga.przyjeto_at == pierwsza.przyjeto_at, 'ta sama obsada, data i miesiac faktury'
+    assert druga.token != pierwsza.token
+    assert len(wiersze_zwrotow(local_today(), local_today())) == 2
+    # Stanowisko nie dopisuje czesci samo.
+    assert stanowisko_client.post(f'/api/zwroty/przyjecie/{pierwsza.id}/czesc',
+                                  json=body).status_code == 403
 
 
 def test_brak_pos_to_no(stanowisko_client):
@@ -262,3 +305,22 @@ def test_stanowisko_nie_poprawia_ani_nie_usuwa(stanowisko_client):
     z = ZwrotPaczki.query.one()
     assert stanowisko_client.put(f'/api/zwroty/przyjecie/{z.id}', json=zwrot()).status_code == 403
     assert stanowisko_client.delete(f'/api/zwroty/przyjecie/{z.id}').status_code == 403
+
+
+def test_tosh_dochodzi_do_zasianej_bazy_raz(flask_app):
+    """Operacja 2026-10-29: TOSH na liscie brandow — takze w bazach zasianych
+    wczesniej (znacznik listy juz byl); usuniety przez admina nie wraca."""
+    from logistat.baza import init_db
+    from logistat.models import AppSetting
+    from logistat.przyjecie_zwrotu import BRAND, ZNACZNIK_TOSH
+    tosh = lambda: LicencjaZwrotow.query.filter_by(rodzaj=BRAND, nazwa='TOSH')  # noqa: E731
+    assert tosh().count() == 1
+    tosh().delete()
+    db.session.delete(db.session.get(AppSetting, ZNACZNIK_TOSH))
+    db.session.commit()
+    init_db()
+    assert tosh().count() == 1, 'baza sprzed 2026-10-29 dostaje TOSH'
+    tosh().delete()
+    db.session.commit()
+    init_db()
+    assert tosh().count() == 0, 'usuniety przez admina nie wraca'

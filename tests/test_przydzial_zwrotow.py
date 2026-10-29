@@ -15,7 +15,7 @@ from logistat.models import (
     get_or_create_shift)
 from logistat.przydzial_zwrotow import dashboard_zwrotow
 from logistat.przyjecie_zwrotu import (
-    CZYNNOSC_ZWROTOW, KOMUNIKAT_BRAK_OBSADY, efektywne_okresy, kto_na_stanowisku)
+    CZYNNOSC_ZWROTOW, KOMUNIKAT_BRAK_OBSADY, efektywne_okresy, kto_na_stanowisku, przerwy_osob)
 
 T0 = datetime(2026, 9, 2, 6, 0)
 
@@ -48,6 +48,30 @@ def test_okres_konczy_sie_na_do_koncu_pracy_albo_po_12h():
     assert kto_na_stanowisku(okresy, 10, h(2)) == [2, 3], 'koniec okresu wylaczny'
     assert kto_na_stanowisku(okresy, 10, h(12)) == []
     assert kto_na_stanowisku(okresy, None, h(1)) == [], 'Support nie stoi na stanowisku'
+
+
+def test_przerwy_osob_pary_otwarte_i_koniec_pracy():
+    h = lambda n: T0 + timedelta(hours=n)  # noqa: E731
+    przerwy = przerwy_osob([
+        (1, 7, 'break_start', h(1)), (1, 7, 'break_end', h(1.5)),
+        (1, 7, 'other_start', h(2)), (1, 7, 'other_end', h(2.25)),
+        (1, 7, 'training_start', h(3)), (1, 7, 'training_end', h(4)),   # praca — nie odejmuje
+        (2, 7, 'break_start', h(1)), (2, 7, 'work_end', h(2)),          # zamyka Koniec pracy
+        (3, 7, 'other_start', h(1)),                                    # trwa — do „teraz”
+        (4, 7, 'break_end', h(1)),                                      # koniec bez startu
+    ], teraz=h(5))
+    assert przerwy == {1: [(h(1), h(1.5)), (h(2), h(2.25))], 2: [(h(1), h(2))], 3: [(h(1), h(5))]}
+
+
+def test_przerwy_paruja_sie_w_obrebie_zmiany():
+    """Niezamknieta przerwa z poniedzialku nie moze zjesc wtorku: wtorkowa para
+    start/koniec zostaje sobie, poniedzialkowa trwa (do „teraz”, jak w Czasie pracy)."""
+    h = lambda n: T0 + timedelta(hours=n)  # noqa: E731
+    przerwy = przerwy_osob([
+        (1, 7, 'break_start', h(2)),                                # pon., bez konca
+        (1, 8, 'break_start', h(26)), (1, 8, 'break_end', h(26.5)), # wt.
+    ], teraz=h(2.5))
+    assert przerwy == {1: [(h(2), h(2.5)), (h(26), h(26.5))]}
 
 
 # ── blokada przyjecia ────────────────────────────────────────────────────────
@@ -108,22 +132,27 @@ def test_lider_przydziela_przenosi_i_zdejmuje(leader_client):
     assert [w.stanowisko_id for w in wiersze] == [st1.id, st2.id]
     assert wiersze[0].do == wiersze[1].od, 'przeniesienie bez dziury i nakladki'
 
-    leader_client.put('/api/zwroty/przydzial', json={**body, 'miejsce': 'support'})
+    # Support przy stanowisku (2026-10-29): miejsce = stol, bez udzialu w paczkach.
+    r = leader_client.put('/api/zwroty/przydzial', json={**body, 'miejsce': st1.id, 'support': True})
+    assert [(o['miejsce'], o['support']) for o in r.get_json()['osoby']] == [(st1.id, True)]
     leader_client.put('/api/zwroty/przydzial', json={**body, 'miejsce': None})
     assert PrzydzialZwrotow.query.filter_by(do=None).count() == 0
-    assert PrzydzialZwrotow.query.filter_by(support=True).count() == 1
+    sup = PrzydzialZwrotow.query.filter_by(support=True).one()
+    assert sup.stanowisko_id == st1.id
 
 
 @pytest.mark.parametrize('zmiana_body,blad', [
     ({'miejsce': 999999}, 'Nieznane stanowisko'),
     ({'miejsce': True}, 'Nieznane stanowisko'),
     ({'date': '2020-01-01'}, 'bieżącej zmiany'),
+    ({'miejsce': 'support'}, 'odśwież'),          # ekran sprzed Supportu przy stole
+    ({'support': 'tak'}, 'support'),
 ])
 def test_walidacja_przydzialu(leader_client, zmiana_body, blad):
     ola = make_user('operator')
     na_zwrotach(get_or_create_shift(local_today(), 1), ola)
     body = {'date': local_today().isoformat(), 'shift': 1, 'user_id': ola.id,
-            'miejsce': 'support', **zmiana_body}
+            'miejsce': None, **zmiana_body}
     r = leader_client.put('/api/zwroty/przydzial', json=body)
     assert r.status_code == 400 and blad in r.get_json()['error']
 
@@ -212,6 +241,28 @@ def test_dashboard_po_rowno_i_suma_zgadza_sie_ze_stanowiskiem(flask_app):
     assert d['obsada'][dzien] == {'osoby': 2, 'support': 0}
 
 
+def test_dashboard_godziny_netto_bez_przerw_i_innych(flask_app):
+    """Operacja 2026-10-29: godziny na stanowisku netto, jak w PP — przerwa
+    i „Inne” z Czasu pracy odjete, szkolenie nie; przerwa poza przydzialem nic."""
+    st = make_user('stanowisko')
+    a = make_user('operator', display_name='A')
+    zmiana = get_or_create_shift(date(2026, 9, 2), 1)
+    h = lambda n: T0 + timedelta(hours=n)  # noqa: E731
+    db.session.add(PrzydzialZwrotow(shift_id=zmiana.id, user_id=a.id, stanowisko_id=st.id,
+                                    od=h(0), do=h(6)))
+    for typ, kiedy in (('break_start', h(-1)), ('break_end', h(-0.5)),     # przed przydzialem
+                       ('break_start', h(2)), ('break_end', h(2.5)),
+                       ('other_start', h(3)), ('other_end', h(3.25)),
+                       ('training_start', h(4)), ('training_end', h(5))):
+        db.session.add(WorkerTimeEvent(user_id=a.id, shift_id=zmiana.id, event_type=typ, timestamp=kiedy))
+    _zwrot_o(st, h(1), 'netto-1')
+    db.session.commit()
+    d = dashboard_zwrotow([date(2026, 9, 2)], teraz=datetime(2026, 9, 3))
+    a_ = d['osoby'][0]
+    assert a_['godziny'] == pytest.approx(6 - 0.5 - 0.25)
+    assert a_['na_godzine'] == pytest.approx(1 / 5.25)
+
+
 def test_dashboard_dzien_lokalny_i_godziny_dzielone_o_polnocy(flask_app):
     st = make_user('stanowisko')
     a = make_user('operator', display_name='A')
@@ -221,7 +272,8 @@ def test_dashboard_dzien_lokalny_i_godziny_dzielone_o_polnocy(flask_app):
     od, do = datetime(2026, 9, 2, 18, 0), datetime(2026, 9, 3, 0, 0)
     db.session.add_all([
         PrzydzialZwrotow(shift_id=zmiana.id, user_id=a.id, stanowisko_id=st.id, od=od, do=do),
-        PrzydzialZwrotow(shift_id=zmiana.id, user_id=s.id, support=True, od=od, do=do),
+        PrzydzialZwrotow(shift_id=zmiana.id, user_id=s.id, stanowisko_id=st.id, support=True,
+                         od=od, do=do),
     ])
     _zwrot_o(st, datetime(2026, 9, 2, 22, 30), 'polnoc')   # 03.09 00:30 w Warszawie
     db.session.commit()
@@ -232,16 +284,21 @@ def test_dashboard_dzien_lokalny_i_godziny_dzielone_o_polnocy(flask_app):
     assert a_['dni'][d2]['godziny'] == pytest.approx(4.0)
     assert a_['dni'][d3]['godziny'] == pytest.approx(2.0)
     assert a_['dni'][d3]['paczki'] == pytest.approx(1.0) and a_['dni'][d2]['paczki'] == 0
-    assert d['support'][0]['dni'] == {d2: pytest.approx(4.0), d3: pytest.approx(2.0)}
+    # Support: bez paczek i godzin, tylko nazwisko przy stole (operacja 2026-10-29).
+    assert a_['dni'][d3]['paczki'] == pytest.approx(1.0), 'Support nie bierze udzialu'
+    assert 'S' not in {o['nazwa'] for o in d['osoby']} and 'support' not in d
+    assert next(x for x in d['stanowiska'] if x['id'] == st.id)['support'] == ['S']
     assert d['obsada'][d3] == {'osoby': 1, 'support': 1}
 
 
 def test_odpowiedz_zapisu_zostawia_edycje(leader_client):
     """Ekran rysuje sie z odpowiedzi PUT — bez `edycja` przelaczal sie w podglad."""
     ola = make_user('operator')
+    st = make_user('stanowisko')
     na_zwrotach(get_or_create_shift(local_today(), 1), ola)
     r = leader_client.put('/api/zwroty/przydzial', json={
-        'date': local_today().isoformat(), 'shift': 1, 'user_id': ola.id, 'miejsce': 'support'})
+        'date': local_today().isoformat(), 'shift': 1, 'user_id': ola.id, 'miejsce': st.id,
+        'support': True})
     assert r.get_json()['edycja'] is True
     r = leader_client.get('/api/zwroty/przydzial?date=2020-01-01&shift=1')
     assert r.get_json()['edycja'] is False

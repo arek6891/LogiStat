@@ -14,6 +14,7 @@
   z czynnosci Zwroty do stanowisk / Supportu; statystyki dni miesiaca.
 """
 import logging
+import uuid
 from datetime import date, timedelta
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
@@ -23,7 +24,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from sqlalchemy.exc import IntegrityError
 
-from logistat.czas import local_today, teraz_utc
+from logistat.czas import local_today, teraz_utc, utc_to_local
 from logistat.extensions import db
 from logistat.faktura_zwrotow import (
     CZYNNOSCI_AUTO, CZYNNOSCI_FAKTURY, KLUCZ_POS, KLUCZE_FAKTURY, MAX_ILOSC_ZWROTOW,
@@ -35,17 +36,17 @@ from logistat.przydzial_zwrotow import (
     zamknij_otwarty, zmiana_edytowalna)
 from logistat.przyjecie_zwrotu import (
     BRAK_POS, BRAND, ETYKIETA_MAX, ETYKIETY_DOMYSLNE, KOLUMNA_ETYKIETY, KURIER, LICZNIKI,
-    KOMUNIKAT_BRAK_OBSADY, MAX_GODZIN_PRZYDZIALU, MAX_LICZNIK, MIESIACE_PL, OPAKOWANIE, PAKETNUMMER_MAX, RODZAJE_PRZYJECIA, SUPPORT,
-    TOKEN_MAX, pos_nummer)
+    KOMUNIKAT_BRAK_OBSADY, KOMUNIKAT_JUZ_PRZYJETA, MAX_GODZIN_PRZYDZIALU, MAX_LICZNIK,
+    MIESIACE_PL, OPAKOWANIE, PAKETNUMMER_MAX, RODZAJE_PRZYJECIA, SUPPORT, TOKEN_MAX, pos_nummer)
 from logistat.web.excel import odpowiedz_xlsx
 from logistat.web.wspolne import (
     acting_as_admin, admin_required, json_body, leader_required, magazyn_required, parse_date,
     parse_shift_number, require_int)
 from logistat.zwroty_dane import (
     brandy_zwrotow, ceny_miesiaca, etykiety_przyjecia, granice_miesiaca, invoice_specification,
-    kurierzy_raportu, listy_przyjecia, naglowki_zwrotow, opcje_przyjecia, sorting_data,
-    wiersze_zwrotow, zapisz_ceny, zapisz_etykiety, zapisz_ilosc_miesiaca, zapisz_sorting,
-    zapisz_zwrot)
+    juz_przyjeta, kurierzy_raportu, listy_przyjecia, naglowki_zwrotow, opcje_przyjecia,
+    sorting_data, wiersze_zwrotow, zablokuj_paketnummer, zapisz_ceny, zapisz_etykiety,
+    zapisz_ilosc_miesiaca, zapisz_sorting, zapisz_zwrot)
 
 # Listy edytowane w Ustawieniach — Sorting Data i przyciski Przyjecia zwrotu.
 RODZAJE_LIST = {**RODZAJE_LICENCJI, **RODZAJE_PRZYJECIA}
@@ -195,7 +196,8 @@ def api_invoice_ilosc():
     if klucz not in KLUCZE_FAKTURY:
         abort(400, 'Nieznana czynność.')
     if klucz in CZYNNOSCI_AUTO:
-        abort(400, 'Sorting returns liczy system z raportu Zwroty Paczek — nie wpisuje się go ręcznie.')
+        abort(400, 'Tę ilość liczy system (Sorting returns ze Zwrotów Paczek, Palletizing '
+                   'z „Total boxes built” w Sorting Data) — nie wpisuje się jej ręcznie.')
     zapisz_ilosc_miesiaca(rok, miesiac, klucz, _ilosc(d.get('ilosc')), current_user.id)
     return jsonify({'ok': True})
 
@@ -276,15 +278,14 @@ def sorting_data_view():
 @bp.route('/api/zwroty/sorting-data', methods=['PUT'])
 @leader_required
 def api_sorting_data():
-    """Jedna komorka: {rok, miesiac, pole: cartons|pallets, licencja_id, wartosc}
-    albo POS processed: {rok, miesiac, pole: 'pos_processed', wartosc}."""
+    """Jedna komorka: {rok, miesiac, pole: cartons|pallets, licencja_id, wartosc}.
+    POS processed liczy system (2026-10-29) — 400."""
     d = json_body()
     rok, miesiac = _rok_miesiac(d.get('rok'), d.get('miesiac'))
     pole = d.get('pole')
     wartosc = _ilosc(d.get('wartosc'), 'wartosc')
     if pole == KLUCZ_POS:
-        zapisz_ilosc_miesiaca(rok, miesiac, KLUCZ_POS, wartosc, current_user.id)
-        return jsonify({'ok': True})
+        abort(400, 'POS processed liczy system z raportu Zwroty Paczek — nie wpisuje się go ręcznie.')
     if pole not in POLA_SORTING:
         abort(400, 'Nieznane pole.')
     lic_id = d.get('licencja_id')
@@ -452,9 +453,61 @@ def api_przyjecie_zwrotu():
     obsada = _obsada_nazwy(current_user, teraz)
     if not obsada:
         return jsonify({'error': KOMUNIKAT_BRAK_OBSADY, 'brak_obsady': True}), 409
+    # Druga paczka z tym numerem na stanowisku — odmowa (operacja 2026-10-29);
+    # czesc 2/2 dopisuje lider. Blokada na numer: dwa stanowiska naraz.
+    zablokuj_paketnummer(dane['paketnummer'])
+    pierwsza = juz_przyjeta(dane['paketnummer'])
+    if pierwsza is not None:
+        db.session.rollback()
+        return jsonify(_juz_przyjeta(pierwsza)), 409
     zwrot, nowy = zapisz_zwrot(dane, token, current_user.id, teraz)
     return jsonify({'ok': True, 'id': zwrot.id, 'powtorzony': not nowy,
                     'paketnummer': zwrot.paketnummer, 'obsada': obsada}), 201 if nowy else 200
+
+
+def _juz_przyjeta(zwrot):
+    """Odpowiedz 409 dla paczki przyjetej juz wczesniej: kiedy i na ktorym stanowisku."""
+    konto = db.session.get(User, zwrot.przyjal_id) if zwrot.przyjal_id else None
+    return {'error': KOMUNIKAT_JUZ_PRZYJETA.format(
+                numer=zwrot.paketnummer,
+                kiedy=utc_to_local(zwrot.przyjeto_at).strftime('%d.%m.%Y %H:%M'),
+                gdzie=konto.display_name if konto else '—'),
+            'juz_przyjeta': True}
+
+
+@bp.route('/api/zwroty/przyjecie/paczka', methods=['GET'])
+@magazyn_required
+def api_przyjecie_sprawdz():
+    """Krok 1 stanowiska: czy paczka byla juz przyjeta — pracownik dowiaduje sie
+    od razu po skanie, nie po wypelnieniu wszystkich ekranow. POST sprawdza znowu."""
+    numer = (request.args.get('numer') or '').strip()
+    if not numer:
+        abort(400, 'Zeskanuj numer paczki.')
+    pierwsza = juz_przyjeta(numer)
+    if pierwsza is not None:
+        return jsonify(_juz_przyjeta(pierwsza)), 409
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/zwroty/przyjecie/<int:zwrot_id>/czesc', methods=['POST'])
+@leader_required
+def api_zwrot_czesc(zwrot_id):
+    """Kolejna czesc paczki (1/2, 2/2 — ten sam Paketnummer) dopisana przez lidera
+    (operacja 2026-10-29: stanowisko drugiego skanu odmawia). Nowy wiersz z numerem,
+    stanowiskiem i CHWILA PRZYJECIA pierwszej czesci — paczka byla obslugiwana
+    razem z nia, wiec ta sama obsada, Date / Woche / Monat i miesiac faktury, nawet
+    gdy lider dopisze ja po zmianie. Pola jak przy poprawce; `zmienil_id` = lider."""
+    zwrot = db.get_or_404(ZwrotPaczki, zwrot_id)
+    dane = _dane_zwrotu(json_body(), zwrot)
+    dane['paketnummer'] = zwrot.paketnummer
+    nowy = ZwrotPaczki(**dane, token=uuid.uuid4().hex, przyjal_id=zwrot.przyjal_id,
+                       przyjeto_at=zwrot.przyjeto_at, zmienil_id=current_user.id,
+                       zmieniono_at=teraz_utc())
+    db.session.add(nowy)
+    db.session.commit()
+    log.info('Zwrot %s: kolejna czesc %s dopisana przez %s', zwrot.id, nowy.id,
+             current_user.username)
+    return jsonify({'ok': True, 'id': nowy.id}), 201
 
 
 @bp.route('/api/zwroty/przyjecie/<int:zwrot_id>', methods=['PUT'])
@@ -515,13 +568,20 @@ def api_przydzial_zwrotow():
 @bp.route('/api/zwroty/przydzial', methods=['PUT'])
 @leader_required
 def api_przydzial_zwrotow_zapisz():
-    """{date, shift, user_id, miejsce: id stanowiska | 'support' | null}.
-    Przeniesienie liczy sie od chwili zapisu; null = zejscie ze stanowiska."""
+    """{date, shift, user_id, miejsce: id stanowiska | null, support: bool}.
+    Przeniesienie liczy sie od chwili zapisu; null = zejscie ze stanowiska.
+    `support` = pomaga przy tym stanowisku bez udzialu w paczkach (2026-10-29)."""
     d = json_body()
     dzien = parse_date(d.get('date'))
     numer = parse_shift_number(d.get('shift'))
     user_id = require_int(d.get('user_id'), 'user_id')
     miejsce = d.get('miejsce')
+    if miejsce == SUPPORT:
+        # Ekran sprzed 2026-10-29 (Support bez stolu).
+        abort(400, 'Support wybiera się teraz przy stanowisku — odśwież stronę.')
+    support = d.get('support', False)
+    if not isinstance(support, bool):
+        abort(400, 'Pole „support” musi być true/false.')
     shift = _zmiana_przydzialu(dzien, numer)
     # Dwoch liderow na jednej zmianie — kolejno, nie na raz.
     shift = Shift.query.filter_by(id=shift.id).with_for_update().one()
@@ -533,13 +593,10 @@ def api_przydzial_zwrotow_zapisz():
         if user_id not in {o['user_id'] for o in stan['osoby'] if not o['poza_zwrotami']}:
             abort(400, f'Ta osoba nie jest przydzielona do czynności „{stan["czynnosc"]}” '
                        'na tej zmianie — najpierw Przydzielanie.')
-        if miejsce == SUPPORT:
-            przydziel(shift, user_id, None, True, teraz, current_user.id)
-        else:
-            if isinstance(miejsce, bool) or not isinstance(miejsce, int) \
-                    or miejsce not in {s.id for s in stanowiska_zwrotow()}:
-                abort(400, 'Nieznane stanowisko.')
-            przydziel(shift, user_id, miejsce, False, teraz, current_user.id)
+        if isinstance(miejsce, bool) or not isinstance(miejsce, int) \
+                or miejsce not in {s.id for s in stanowiska_zwrotow()}:
+            abort(400, 'Nieznane stanowisko.')
+        przydziel(shift, user_id, miejsce, support, teraz, current_user.id)
     try:
         db.session.commit()
     except IntegrityError:

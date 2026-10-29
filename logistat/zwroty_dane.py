@@ -7,7 +7,8 @@ kurier, 0 = inny. Ekran i eksport do Excela biora wiersze z JEDNEJ funkcji
 `wiersze_zwrotow()`, zrodlem jest Magazyn → Przyjęcie zwrotu (`ZwrotPaczki`).
 
 Invoice specification i Sorting Data (2026-10-26): wpisy reczne + cennik
-miesieczny (admin); Sorting returns = liczba przyjetych zwrotow w miesiacu.
+miesieczny (admin); Sorting returns i POS processed = liczba przyjetych zwrotow
+w miesiacu, Palletizing = „Total boxes built” (Cartons) z Sorting Data (2026-10-29).
 """
 import calendar
 from datetime import date
@@ -18,7 +19,7 @@ from sqlalchemy.dialects.postgresql import insert
 from logistat.czas import local_day_bounds, teraz_utc, utc_to_local
 from logistat.extensions import db
 from logistat.faktura_zwrotow import (
-    CZYNNOSCI_AUTO, CZYNNOSCI_FAKTURY, KLUCZ_POS, KLUCZE_FAKTURY, LICENCJA, WYSYLKA)
+    CZYNNOSCI_AUTO, CZYNNOSCI_FAKTURY, KLUCZE_FAKTURY, LICENCJA, WYSYLKA)
 from logistat.models import (
     AppSetting, CenaZwrotow, IloscMiesiacaZwrotow, LicencjaZwrotow, SortingDataWpis,
     ZwrotPaczki, set_setting)
@@ -136,6 +137,21 @@ def listy_przyjecia():
     return {r: opcje_przyjecia(r) for r in RODZAJE_PRZYJECIA}
 
 
+def juz_przyjeta(paketnummer):
+    """Najwczesniejszy zwrot z tym numerem paczki albo None (stanowisko odmawia
+    drugiego skanu — operacja 2026-10-29)."""
+    return ZwrotPaczki.query.filter_by(paketnummer=paketnummer)\
+        .order_by(ZwrotPaczki.przyjeto_at, ZwrotPaczki.id).first()
+
+
+def zablokuj_paketnummer(paketnummer):
+    """Blokada transakcyjna na numer paczki: dwa stanowiska z ta sama paczka
+    naraz — drugie czeka i widzi zapis pierwszego (indeksu unikalnego byc nie
+    moze, bo czesci 1/2 i 2/2 maja ten sam numer). Zwalnia ja commit."""
+    db.session.execute(db.text('SELECT pg_advisory_xact_lock(hashtext(:p))'),
+                       {'p': 'zwrot_paczki:' + paketnummer})
+
+
 def zapisz_zwrot(dane, token, kto_id, teraz):
     """Nowy wiersz zwrotu (dane juz sprawdzone). Ten sam `token` drugi raz
     (podwojne klikniecie, ponowienie) nie dodaje wiersza → (zwrot, False).
@@ -159,10 +175,23 @@ def granice_miesiaca(rok, miesiac):
 
 def liczba_sorting_returns(rok, miesiac):
     """Sorting returns = liczba wierszy raportu Zwroty Paczek w miesiacu (paczka =
-    wiersz; powtorzony Paketnummer liczy sie znowu — tak liczy arkusz operacji)."""
+    wiersz; czesc 2/2 dopisana przez lidera liczy sie znowu — tak liczy arkusz).
+    To samo jest w Sorting Data jako POS processed (operacja 2026-10-29)."""
     start, koniec = _granice(*granice_miesiaca(rok, miesiac))
     return ZwrotPaczki.query.filter(
         ZwrotPaczki.przyjeto_at >= start, ZwrotPaczki.przyjeto_at < koniec).count()
+
+
+def boxes_built(rok, miesiac):
+    """„Total boxes built” (Cartons) miesiaca = suma Cartons licencji z Sorting Data
+    (puste = 0, jak formula SUM w arkuszu). Ta sama liczba to Palletizing sorted
+    articles w Invoice specification — licencje z `licencje_roku()`, jak ekran."""
+    licencje, _ = licencje_roku(rok)
+    if not licencje:
+        return 0
+    return db.session.query(db.func.coalesce(db.func.sum(SortingDataWpis.cartons), 0)).filter(
+        SortingDataWpis.rok == rok, SortingDataWpis.miesiac == miesiac,
+        SortingDataWpis.licencja_id.in_([lic.id for lic in licencje])).scalar()
 
 
 def ceny_miesiaca(rok, miesiac):
@@ -180,9 +209,11 @@ def invoice_specification(rok, miesiac):
         IloscMiesiacaZwrotow.klucz.in_(KLUCZE_FAKTURY))}
     ceny = ceny_miesiaca(rok, miesiac)
     wiersze = []
+    liczone = {'sorting_returns': lambda: liczba_sorting_returns(rok, miesiac),
+               'palletizing': lambda: boxes_built(rok, miesiac)}
     for klucz, nazwa, uom in CZYNNOSCI_FAKTURY:
         auto = klucz in CZYNNOSCI_AUTO
-        ilosc = liczba_sorting_returns(rok, miesiac) if auto else reczne.get(klucz)
+        ilosc = liczone[klucz]() if auto else reczne.get(klucz)
         cena = ceny.get(klucz)
         wiersze.append({
             'klucz': klucz, 'activity': nazwa, 'uom': uom, 'auto': auto,
@@ -205,7 +236,7 @@ def _upsert(model, klucz, wartosci):
 
 
 def zapisz_ilosc_miesiaca(rok, miesiac, klucz, wartosc, kto_id):
-    """Reczna liczba miesiaca (czynnosc Invoice albo POS processed); None = puste."""
+    """Reczna liczba miesiaca (czynnosc Invoice); None = puste."""
     _upsert(IloscMiesiacaZwrotow, {'rok': rok, 'miesiac': miesiac, 'klucz': klucz},
             {'wartosc': wartosc, 'zmienil_id': kto_id, 'zmieniono_at': teraz_utc()})
     db.session.commit()
@@ -237,7 +268,7 @@ def licencje_roku(rok):
 
 def sorting_data(rok):
     """Caly rok: licencje i wysylki z Cartons/Pallets per miesiac, „Total boxes
-    built” (suma licencji; puste = 0) i POS processed."""
+    built” (suma licencji; puste = 0) i POS processed (= Sorting returns miesiaca)."""
     licencje, wysylki = licencje_roku(rok)
     wpisy = {(w.licencja_id, w.miesiac): w for w in SortingDataWpis.query.filter_by(rok=rok)}
 
@@ -251,9 +282,8 @@ def sorting_data(rok):
     wiersze_lic = [wiersz(lic) for lic in licencje]
     suma = {m: {pole: sum(w['mies'][m][pole] or 0 for w in wiersze_lic)
                 for pole in ('cartons', 'pallets')} for m in range(1, 13)}
-    pos = {w.miesiac: w.wartosc for w in IloscMiesiacaZwrotow.query.filter_by(rok=rok, klucz=KLUCZ_POS)}
     return {'rok': rok, 'licencje': wiersze_lic, 'wysylki': [wiersz(lic) for lic in wysylki],
-            'suma': suma, 'pos': {m: pos.get(m) for m in range(1, 13)}}
+            'suma': suma, 'pos': {m: liczba_sorting_returns(rok, m) for m in range(1, 13)}}
 
 
 def zapisz_sorting(licencja_id, rok, miesiac, pole, wartosc, kto_id):

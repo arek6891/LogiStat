@@ -86,8 +86,9 @@ class ZwrotPaczki(db.Model):
 
 
 class PrzydzialZwrotow(db.Model):
-    """Osoba na stanowisku zwrotow (konto roli `stanowisko`) albo na Supporcie
-    (`stanowisko_id` NULL, `support`) — od `od` do `do` (NULL = trwa). Przeniesienie
+    """Osoba na stanowisku zwrotow (konto roli `stanowisko`) albo jako Support przy nim
+    (`support` — bez paczek i statystyk, od 2026-10-29; wczesniej Support bez stolu,
+    `stanowisko_id` NULL) — od `od` do `do` (NULL = trwa). Przeniesienie
     = zamkniecie + nowy wiersz w tej samej chwili; historii sie nie poprawia.
     Najwyzej jeden otwarty wiersz na osobe (indeks czesciowy)."""
     __tablename__ = 'przydzial_zwrotow'

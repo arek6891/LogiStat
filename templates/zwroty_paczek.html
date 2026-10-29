@@ -49,6 +49,7 @@ const LISTY_ZWROTOW = {{ listy|tojson }};
             <tr>{% for v in w %}<td>{% if v is not none and v.strftime is defined %}{{ v.strftime('%d.%m.%Y') }}{% elif v is not none %}{{ v }}{% endif %}</td>{% endfor %}
                 <td style="white-space:nowrap;">{% if w.id %}
                     <button type="button" class="btn btn-ghost btn-sm js-popraw" data-zwrot='{{ w.edycja|tojson }}' title="Popraw zwrot">✎</button>
+                    <button type="button" class="btn btn-ghost btn-sm js-czesc" data-zwrot='{{ w.edycja|tojson }}' title="Dopisz kolejną część tej paczki (np. 2/2) — stanowisko drugiego skanu nie przyjmie">➕ Część</button>
                     <button type="button" class="btn btn-danger btn-sm js-usun" data-id="{{ w.id }}" data-paket="{{ w[0] }}" title="Usuń zwrot">✕</button>
                 {% endif %}</td></tr>
             {% else %}
@@ -60,10 +61,12 @@ const LISTY_ZWROTOW = {{ listy|tojson }};
     </table>
 </div>
 
-{# Poprawka lidera (2026-10-27): te same pola co ekran przyjecia; data i stanowisko zostaja. #}
+{# Poprawka lidera (2026-10-27): te same pola co ekran przyjecia; data i stanowisko zostaja.
+   Ten sam formularz dopisuje kolejna czesc paczki (2026-10-29): nowy wiersz, numer / stanowisko / data przyjecia z pierwszej czesci. #}
 <div class="modal-overlay" id="zwrotModal" style="display:none;" data-modal-guard>
     <div class="modal" style="background:var(--bg-card-solid);max-width:560px;">
-        <h3>✎ Popraw zwrot</h3>
+        <h3 id="zwrotTytul">✎ Popraw zwrot</h3>
+        <p id="zwrotCzescInfo" style="color:var(--text-muted);margin-top:0;" hidden>Nowy wiersz raportu z tym samym numerem paczki — na tym samym stanowisku i z tą samą datą przyjęcia co pierwsza część. Wpisz ilości tej części.</p>
         <form id="zwrotForm">
             <div class="form-group"><label>Paketnummer</label><input name="paketnummer" class="form-control" maxlength="100" required></div>
             <div class="form-group"><label>Brand</label><select name="brand" class="form-control" data-lista="brand"></select></div>

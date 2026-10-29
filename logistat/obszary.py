@@ -93,7 +93,7 @@ _ENDPOINTY = {
         # Paczki inspektor
         'stanowisko.scan_package', 'stanowisko.api_package_lookup',
         # Przyjecie zwrotu (2026-10-27) — wiersze raportu Zwroty Paczek
-        'zwroty.przyjecie_zwrotu', 'zwroty.api_przyjecie_zwrotu',
+        'zwroty.przyjecie_zwrotu', 'zwroty.api_przyjecie_zwrotu', 'zwroty.api_przyjecie_sprawdz',
         # Dekoracje: skan stojakow nosnik → strefa (2026-10-28)
         'displays.skan_stojakow', 'displays.api_nosnik', 'displays.api_skan',
         # Dekoracje: dostawa produktow — kontener / Beeline (2026-10-29)
@@ -158,7 +158,7 @@ _ENDPOINTY = {
         'zwroty.przydzial_zwrotow', 'zwroty.api_przydzial_zwrotow',
         'zwroty.api_przydzial_zwrotow_zapisz', 'zwroty.dashboard_zwrotow_view',
         # Poprawka / usuniecie przyjetego zwrotu z ekranu Zwroty Paczek
-        'zwroty.api_zwrot_popraw', 'zwroty.api_zwrot_usun',
+        'zwroty.api_zwrot_popraw', 'zwroty.api_zwrot_czesc', 'zwroty.api_zwrot_usun',
     },
     USTAWIENIA: {
         'admin.admin_panel', 'admin.admin_activities', 'admin.admin_country_mapping',

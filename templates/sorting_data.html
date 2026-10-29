@@ -2,7 +2,8 @@
 {% block title %}Sorting Data — {{ NAZWA_APLIKACJI }}{% endblock %}
 
 {# Sorting Data (2026-10-26): uklad 1:1 z zakladki arkusza operacji, caly rok.
-   Wszystko wpisywane recznie (autozapis), „Total boxes built” = suma licencji.
+   Wpisywane recznie (autozapis); „Total boxes built” = suma licencji, POS processed =
+   liczba paczek z Zwrotow Paczek w miesiacu (2026-10-29, liczy system).
    Wiersze (licencje / wysylki) ustawia admin: Ustawienia → Listy Sorting Data. #}
 {% macro komorka(lic_id, m, pole, wartosc, pas) -%}
 <td data-pas="{{ pas }}"><input type="text" inputmode="numeric" class="liczba sd-pole"
@@ -15,6 +16,7 @@
     <div>
         <h1>📦 Sorting Data</h1>
         <p style="color:var(--text-muted);">Cały rok, wartości wpisywane ręcznie — każde pole zapisuje się samo chwilę po wpisaniu.
+            POS processed liczy system z raportu Zwroty Paczek.
             {% if current_user.role == 'admin' %}Wiersze: <a href="{{ url_for('zwroty.admin_licencje') }}">Supervisor → Listy Sorting Data</a>.{% endif %}</p>
     </div>
     <form method="GET" id="okresSorting" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
@@ -44,8 +46,8 @@
             <tr><td>{{ w.nazwa }}{% if not w.aktywna %} <span class="z-systemu" title="Wyłączona w Supervisor — widać ją, bo ma dane w tym roku">(wyłączona)</span>{% endif %}</td>
                 {% for m in range(1, 13) %}{{ komorka(w.id, m, 'cartons', w.mies[m].cartons, (m - 1) % 2) }}{{ komorka(w.id, m, 'pallets', w.mies[m].pallets, (m - 1) % 2) }}{% endfor %}</tr>
             {% endfor %}
-            <tr><td>POS processed</td>
-                {% for m in range(1, 13) %}{{ komorka('', m, 'pos_processed', dane.pos[m], (m - 1) % 2) }}<td data-pas="{{ (m - 1) % 2 }}"></td>{% endfor %}</tr>
+            <tr class="suma"><td title="Liczba paczek z raportu Zwroty Paczek w miesiącu — liczy system">POS processed</td>
+                {% for m in range(1, 13) %}<td class="srodek" data-pas="{{ (m - 1) % 2 }}">{{ dane.pos[m] }}</td><td data-pas="{{ (m - 1) % 2 }}"></td>{% endfor %}</tr>
         </tbody>
     </table>
 </div>
