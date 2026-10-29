@@ -96,6 +96,9 @@ _ENDPOINTY = {
         'zwroty.przyjecie_zwrotu', 'zwroty.api_przyjecie_zwrotu',
         # Dekoracje: skan stojakow nosnik → strefa (2026-10-28)
         'displays.skan_stojakow', 'displays.api_nosnik', 'displays.api_skan',
+        # Dekoracje: dostawa produktow — kontener / Beeline (2026-10-29)
+        'displays.dostawy_stanowisko', 'displays.api_kontener', 'displays.api_kontener_wiersz',
+        'displays.api_beeline',
     },
     POST_PROCESS: {
         'dashboard.dashboard', 'dashboard.api_dashboard', 'dashboard.api_dashboard_plik',
@@ -135,6 +138,8 @@ _ENDPOINTY = {
         'displays.displays', 'displays.historia', 'displays.akcja',
         'displays.api_akcja_dodaj', 'displays.api_akcja_zmien', 'displays.api_akcja_status',
         'displays.api_etap_zmien',
+        'displays.api_akcja_typ_dostawy', 'displays.api_dostawy', 'displays.api_pozycja_dostawy_usun',
+        'displays.api_karton_beeline_usun', 'displays.dostawy_export',
         'displays.api_index_dodaj', 'displays.api_index_zmien', 'displays.api_index_usun',
         # Etykiety POS: lista z Excela → PDF z kodami (2026-10-28)
         'displays.pos', 'displays.api_pos_import', 'displays.api_pos_usun',

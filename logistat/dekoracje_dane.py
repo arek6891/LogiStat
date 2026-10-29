@@ -5,11 +5,12 @@ from sqlalchemy.orm import selectinload
 
 from logistat.czas import iso_z, teraz_utc, utc_to_local
 from logistat.dekoracje import (
-    ETAPY_AKCJI, ETAPY_OSTRZEZENIA, POLA_LICZB, POLA_PRODUKTYWNOSCI, RODZAJE_SLOWNIKA, STREFA,
-    haki_razem, po_terminie, podsumowanie, stan_etapu)
+    DOSTAWA_BEELINE, DOSTAWA_KONTENER, ETAPY_AKCJI, ETAPY_OSTRZEZENIA, POLA_LICZB, POLA_PRODUKTYWNOSCI,
+    RODZAJE_SLOWNIKA, STREFA, TYPY_DOSTAWY, haki_razem, po_terminie, podsumowanie, stan_etapu, sumy_dostaw)
 from logistat.extensions import db
 from logistat.models import (
-    AkcjaDekoracji, EtapAkcji, IndexDekoracji, PosDekoracji, RuchStojaka, SlownikDekoracji, StojakDekoracji)
+    AkcjaDekoracji, EtapAkcji, IndexDekoracji, KartonBeeline, KontenerDostawy, PosDekoracji, PozycjaDostawy,
+    RuchStojaka, SlownikDekoracji, StojakDekoracji)
 
 
 def index_dict(ix):
@@ -65,6 +66,7 @@ def akcja_dict(akcja, dzis, z_indexami=True, etapy=None):
                                  if akcja.zakonczona_at else None),
          'zakonczyl': akcja.zakonczyl.display_name if akcja.zakonczyl else None,
          'po_terminie': akcja.zakonczona_at is None and po_terminie(akcja.data_do, dzis),
+         'typ_dostawy': akcja.typ_dostawy,
          'liczba_indexow': len(indexy), 'sumy': podsumowanie(indexy), 'etapy': etapy,
          # Ostrzezenia tylko dla akcji w toku — zakonczona nie ma juz czego pilnowac.
          'ostrzezenia': [] if akcja.zakonczona_at else
@@ -235,3 +237,69 @@ def pos_w_stocku():
     """Id POS-ow przypisanych do stojakow (takiego POS nie usuwa sie z listy)."""
     return {i for (i,) in db.session.query(StojakDekoracji.pos_id)
             .filter(StojakDekoracji.pos_id.isnot(None)).distinct()}
+
+
+# ── Dostawa produktow (2026-10-29) ───────────────────────────────────────────
+
+def _wpis(kiedy, kto):
+    return {'kiedy': _lokalnie(kiedy), 'kto': kto.display_name if kto else None}
+
+
+def wiersze_kontenerow(akcja_id, kontener_id=None):
+    """Wiersze dostaw kontenerowych akcji (albo jednego kontenera) — jedno
+    zapytanie, w kolejnosci wpisywania."""
+    q = db.session.query(PozycjaDostawy, KontenerDostawy.numer)\
+        .join(KontenerDostawy, PozycjaDostawy.kontener_id == KontenerDostawy.id)\
+        .options(selectinload(PozycjaDostawy.kto))\
+        .filter(KontenerDostawy.akcja_id == akcja_id)
+    if kontener_id is not None:
+        q = q.filter(KontenerDostawy.id == kontener_id)
+    q = q.order_by(KontenerDostawy.utworzono_at, KontenerDostawy.id, PozycjaDostawy.kiedy, PozycjaDostawy.id)
+    return [{'id': p.id, 'kontener': numer, 'artykul': p.artykul, 'kartony': p.kartony, 'pu': p.pu,
+             **_wpis(p.kiedy, p.kto)} for p, numer in q]
+
+
+def kartony_beeline(akcja_id):
+    q = KartonBeeline.query.options(selectinload(KartonBeeline.kto))\
+        .filter_by(akcja_id=akcja_id).order_by(KartonBeeline.kiedy, KartonBeeline.id)
+    return [{'id': k.id, 'numer': k.numer, **_wpis(k.kiedy, k.kto)} for k in q]
+
+
+def ma_wpisy_dostawy(akcja_id):
+    """Czy akcja ma juz kontener albo karton Beeline (wtedy typu sie nie zmienia)."""
+    return db.session.query(db.or_(
+        db.exists().where(KontenerDostawy.akcja_id == akcja_id),
+        db.exists().where(KartonBeeline.akcja_id == akcja_id))).scalar()
+
+
+def dostawy_akcji(akcja):
+    """Dostawa produktow akcji dla ekranu lidera i eksportu."""
+    d = {'typ': akcja.typ_dostawy, 'typ_nazwa': TYPY_DOSTAWY.get(akcja.typ_dostawy or ''),
+         'ma_wpisy': ma_wpisy_dostawy(akcja.id)}
+    if akcja.typ_dostawy == DOSTAWA_KONTENER:
+        wiersze = wiersze_kontenerow(akcja.id)
+        kontenery, artykuly, razem = sumy_dostaw(wiersze)
+        d.update(wiersze=wiersze, kontenery=kontenery, artykuly=artykuly, razem=razem)
+    elif akcja.typ_dostawy == DOSTAWA_BEELINE:
+        d['kartony'] = kartony_beeline(akcja.id)
+    return d
+
+
+def kontener_stanowiska(akcja_id, numer):
+    """Krok stanowiska: co jest juz w kontenerze (nowy = jeszcze bez wierszy)."""
+    k = KontenerDostawy.query.filter_by(akcja_id=akcja_id, numer=numer).first()
+    wiersze = wiersze_kontenerow(akcja_id, k.id) if k else []
+    _, _, razem = sumy_dostaw(wiersze)
+    return {'kontener': numer, 'nowy': k is None, 'wiersze': wiersze, 'razem': razem}
+
+
+def akcje_dostaw():
+    """Akcje do wyboru na stanowisku: niezakonczone, od najwczesniejszego startu."""
+    akcje = AkcjaDekoracji.query.filter(AkcjaDekoracji.zakonczona_at.is_(None))\
+        .order_by(AkcjaDekoracji.data_od, AkcjaDekoracji.id).all()
+    liczba = dict(db.session.query(KartonBeeline.akcja_id, db.func.count(KartonBeeline.id))
+                  .group_by(KartonBeeline.akcja_id).all())
+    return [{'id': a.id, 'nazwa': a.nazwa, 'od': a.data_od.isoformat(), 'do': a.data_do.isoformat(),
+             'typ': a.typ_dostawy, 'typ_nazwa': TYPY_DOSTAWY.get(a.typ_dostawy or ''),
+             'kartonow': liczba.get(a.id, 0) if a.typ_dostawy == DOSTAWA_BEELINE else None}
+            for a in akcje]

@@ -33,6 +33,7 @@ KOLUMNY = [
     ('shift_attendance', 'pierwotny_skan'),
     ('shift_attendance', 'poprawione_przez'),
     ('shift_attendance', 'poprawione_at'),
+    ('akcja_dekoracji', 'typ_dostawy'),
 ]
 
 

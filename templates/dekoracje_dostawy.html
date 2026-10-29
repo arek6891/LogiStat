@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block title %}Dostawy — {{ NAZWA_APLIKACJI }}{% endblock %}
+
+{# Operacje magazynowe → Dekoracje → Dostawy (operacja 2026-10-29): wybor akcji,
+   potem wedlug typu dostawy akcji — kontenerowa (nr kontenera → wiersze artykul /
+   kartony / PU) albo Beeline (skan kartonu). Duze pola jak Przyjecie zwrotu
+   (stanowisko, skaner). Ekrany buduje static/js/dekoracje_dostawy.js. #}
+{% block content %}
+<div class="przyjecie">
+    <div class="przyjecie-gora">
+        <h1>🚚 Dostawy</h1>
+        <span class="przyjecie-krok" id="dostawaAkcja"></span>
+    </div>
+    <div class="przyjecie-ostatni" id="dostawaOstatni" hidden></div>
+    <div class="card przyjecie-ekran" id="dostawaEkran"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const DOSTAWY = {{ {'akcje': akcje, 'typy': typy, 'max_liczby': max_liczby}|tojson }};
+</script>
+<script src="{{ static_v('js/dekoracje_dostawy.js') }}"></script>
+{% endblock %}

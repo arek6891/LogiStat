@@ -122,7 +122,7 @@ form.addEventListener('submit', async e => {
     e.preventDefault();
     try {
         const a = await zapiszJson('/api/dekoracje/akcje', 'POST',
-            { nazwa: form.nazwa.value, od: form.od.value, do: form.do.value });
+            { nazwa: form.nazwa.value, od: form.od.value, do: form.do.value, typ_dostawy: form.typ_dostawy.value });
         location.href = `/displays/akcje/${a.id}`;
     } catch (err) {
         showToast(err.message, 'error');

@@ -126,7 +126,8 @@ def test_strefy_nie_trafiaja_do_listy_akcji(leader_client, strefy):
     from logistat.dekoracje_dane import listy_dla_akcji
     from logistat.extensions import db
     from logistat.models import AkcjaDekoracji
-    r = leader_client.post('/api/dekoracje/akcje', json={'nazwa': 'A', 'od': '2026-11-01', 'do': '2026-11-02'})
+    r = leader_client.post('/api/dekoracje/akcje', json={'nazwa': 'A', 'od': '2026-11-01', 'do': '2026-11-02',
+                                                         'typ_dostawy': 'beeline'})
     a = db.session.get(AkcjaDekoracji, r.get_json()['id'])
     assert STREFA not in listy_dla_akcji(a)
 
@@ -138,7 +139,7 @@ def test_lider_przypisuje_pos_akcje_i_strefe(leader_client, stanowisko, strefy):
     s = StojakDekoracji.query.one()
     lista_pos(leader_client, 'PL-1')
     akcja = leader_client.post('/api/dekoracje/akcje', json={'nazwa': 'Gwiazdka', 'od': '2026-11-01',
-                                                             'do': '2026-12-20'}).get_json()
+                                                             'do': '2026-12-20', 'typ_dostawy': 'beeline'}).get_json()
     url = f'/api/dekoracje/stojaki/{s.id}'
 
     r = leader_client.put(url, json={'pos': 'PL-9'})

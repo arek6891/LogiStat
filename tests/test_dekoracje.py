@@ -21,10 +21,11 @@ from logistat.models import SlownikDekoracji
 from logistat.obszary import DISPLAYS, obszary_endpointu
 
 
-def nowa_akcja(client, nazwa='Akcja jesień', od=None, do=None):
+def nowa_akcja(client, nazwa='Akcja jesień', od=None, do=None, typ_dostawy='kontener'):
     od = od or local_today()
     do = do or od + timedelta(days=10)
-    r = client.post('/api/dekoracje/akcje', json={'nazwa': nazwa, 'od': od.isoformat(), 'do': do.isoformat()})
+    r = client.post('/api/dekoracje/akcje', json={'nazwa': nazwa, 'od': od.isoformat(), 'do': do.isoformat(),
+                                                  'typ_dostawy': typ_dostawy})
     assert r.status_code == 201, r.get_json()
     return r.get_json()
 
