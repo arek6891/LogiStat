@@ -1,7 +1,8 @@
 {% extends 'base.html' %}
 {% block title %}{{ NAZWA_APLIKACJI }} — {{ akcja.nazwa }}{% endblock %}
 
-{# Ekran akcji Dekoracji (2026-10-28): naglowek (nazwa, start, koniec) i indexy
+{# Ekran akcji Dekoracji (2026-10-28): naglowek (nazwa, start, koniec), kamienie
+   milowe (2026-10-29, tabele rysuje JS z AKCJA.etapy) i indexy
    („+ Index”) z autozapisem — kazde pole osobno (czesciowy PUT). Akcja zakonczona
    = tylko odczyt (serwer tez odmawia, 409), „Przywróć” wraca ja na Gantt.
    Skrypt: static/js/displays_akcja.js. #}
@@ -46,6 +47,17 @@
         {{ suma('akcesoria', 'Akcesoria') }}
         {{ suma('pos', 'POS') }}
     </div>
+</div>
+
+<div class="card" style="margin-top:16px;">
+    <h3 style="margin-top:0;">🏁 Kamienie milowe</h3>
+    <p class="subtitle" style="margin-top:0;">Termin każdego etapu mieści się w datach akcji. ⏳ = do końca terminu zostały najwyżej {{ dni_ostrzezenia }} dni, ⚠ = termin minął
+        (potwierdzanie etapów dojdzie później).</p>
+    <div id="etapyOstrzezenia"></div>
+    <div style="overflow-x:auto;"><table class="data-table dekoracje-etapy">
+        <thead><tr><th>Etap</th><th>Od</th><th>Do</th><th>Stan</th><th class="dekoracje-etap-os-naglowek">Termin w akcji</th></tr></thead>
+        <tbody id="etapy"></tbody>
+    </table></div>
 </div>
 
 <div class="dekoracje-indexy">
@@ -96,7 +108,7 @@
 
 {% block scripts %}
 <script>
-const AKCJA = {{ {'id': akcja.id, 'zakonczona': akcja.zakonczona}|tojson }};
+const AKCJA = {{ {'id': akcja.id, 'zakonczona': akcja.zakonczona, 'etapy': akcja.etapy}|tojson }};
 </script>
 <script src="{{ static_v('js/displays_akcja.js') }}"></script>
 {% endblock %}

@@ -39,6 +39,24 @@ class AkcjaDekoracji(db.Model):
     indexy = db.relationship('IndexDekoracji', backref='akcja', cascade='all, delete-orphan',
                              order_by='(IndexDekoracji.kolejnosc, IndexDekoracji.id)')
     zakonczyl = db.relationship('User', foreign_keys=[zakonczyl_id])
+    etapy = db.relationship('EtapAkcji', backref='akcja', cascade='all, delete-orphan')
+
+
+class EtapAkcji(db.Model):
+    """Kamien milowy akcji (2026-10-29): termin od–do etapu z `ETAPY_AKCJI`
+    (`etap` = klucz). Wiersz powstaje przy pierwszym wpisaniu terminu; brak
+    wiersza = etap bez terminu. Daty wewnatrz dat akcji (pilnuje API)."""
+    __tablename__ = 'etap_akcji'
+    id = db.Column(db.Integer, primary_key=True)
+    akcja_id = db.Column(db.Integer, db.ForeignKey('akcja_dekoracji.id'), nullable=False, index=True)
+    etap = db.Column(db.String(30), nullable=False)
+    data_od = db.Column(db.Date, nullable=True)
+    data_do = db.Column(db.Date, nullable=True)
+    nie_dotyczy = db.Column(db.Boolean, nullable=False, default=False)
+    zmienil_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    zmieniono_at = db.Column(db.DateTime, nullable=True)
+
+    __table_args__ = (db.UniqueConstraint('akcja_id', 'etap', name='uq_etap_akcji'),)
 
 
 class IndexDekoracji(db.Model):

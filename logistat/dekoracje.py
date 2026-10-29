@@ -77,6 +77,51 @@ def po_terminie(data_do, dzis):
     return data_do < dzis
 
 
+# ── Kamienie milowe akcji (operacja 2026-10-29) ─────────────────────────────
+# Stala lista etapow — w bazie tylko klucz (zmiana nazwy nie przepisuje historii).
+# Kazdy etap ma termin od–do wewnatrz dat akcji; „mało do końca” / „po terminie”
+# liczy `stan_etapu()`. Potwierdzania etapow jeszcze nie ma (operacja ustali, co
+# je potwierdza) — do tego czasu etap po terminie zostaje „po terminie”.
+# (klucz, nazwa, podpowiedz, opcjonalny — tylko taki moze byc „nie dotyczy”)
+ETAPY_AKCJI = (
+    ('komponenty', 'Dostawa komponentów', 'Logistyk nakłada zadanie (później z WMS)', False),
+    ('produkty', 'Dostawa produktów na stojak', '', False),
+    ('opakowania', 'Dostawa materiałów opakowaniowych', '', False),
+    ('picking', 'Picking', 'Tylko gdy produkty przyszły nieposortowane', True),
+    ('assembly', 'Skręcanie displayów (Assembly)', 'Nadajemy nr nośnika i miejsce', False),
+    ('hakowanie', 'Hakowanie', 'Haki na wieże displayów; nr nośnika i miejsce (opcjonalnie)', False),
+    ('dekoracje', 'Dekoracje', 'Przed startem POS przypisany do nośnika; nr nośnika i miejsce (opcjonalnie)', False),
+    ('pakowanie', 'Pakowanie i zabezpieczanie', '', False),
+    ('wysylka', 'Wysyłka — załadunek', 'Skan nośnika przy załadunku; awizacje wprowadza Logistyka / Dispo', False),
+)
+KLUCZE_ETAPOW = tuple(k for k, *_ in ETAPY_AKCJI)
+# „Mało do końca”: do konca terminu zostalo najwyzej tyle dni (0 = konczy sie dzis).
+DNI_OSTRZEZENIA_ETAPU = 2
+
+ETAP_BEZ_TERMINU = 'bez_terminu'
+ETAP_NIE_DOTYCZY = 'nie_dotyczy'
+ETAP_PLANOWANY = 'planowany'
+ETAP_W_TOKU = 'w_toku'
+ETAP_KONCZY_SIE = 'konczy_sie'
+ETAP_PO_TERMINIE = 'po_terminie'
+ETAPY_OSTRZEZENIA = (ETAP_KONCZY_SIE, ETAP_PO_TERMINIE)
+
+
+def stan_etapu(od, do, dzis, nie_dotyczy=False):
+    """Stan etapu wzgledem `dzis` (dzien lokalny serwera), koniec wlacznie:
+    dzis == do → „kończy się”, dzis == do + 1 → „po terminie”. Bez dat = bez
+    ostrzezenia."""
+    if nie_dotyczy:
+        return ETAP_NIE_DOTYCZY
+    if od is None or do is None:
+        return ETAP_BEZ_TERMINU
+    if dzis > do:
+        return ETAP_PO_TERMINIE
+    if (do - dzis).days <= DNI_OSTRZEZENIA_ETAPU:
+        return ETAP_KONCZY_SIE
+    return ETAP_W_TOKU if dzis >= od else ETAP_PLANOWANY
+
+
 def data_z_tekstu(wartosc):
     """'YYYY-MM-DD' → date; None przy pustym / blednym (nigdy „dzis”)."""
     if not isinstance(wartosc, str) or not wartosc.strip():

@@ -75,6 +75,7 @@ from logistat.models.zwroty import (  # noqa: F401
 from logistat.models.dekoracje import (  # noqa: F401
     SlownikDekoracji,
     AkcjaDekoracji,
+    EtapAkcji,
     IndexDekoracji,
     PosDekoracji,
     StojakDekoracji,
