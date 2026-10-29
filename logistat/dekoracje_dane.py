@@ -1,13 +1,15 @@
 """Dekoracje (2026-10-28) — odczyt akcji z bazy dla Gantta, historii i ekranu
 akcji. Bez requestu; zapis i walidacja w `logistat/web/displays.py`."""
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import selectinload
 
 from logistat.czas import iso_z, teraz_utc, utc_to_local
 from logistat.dekoracje import (
-    POLA_LICZB, POLA_PRODUKTYWNOSCI, RODZAJE_SLOWNIKA, STREFA, haki_razem, po_terminie, podsumowanie)
+    ETAPY_AKCJI, ETAPY_OSTRZEZENIA, POLA_LICZB, POLA_PRODUKTYWNOSCI, RODZAJE_SLOWNIKA, STREFA,
+    haki_razem, po_terminie, podsumowanie, stan_etapu)
 from logistat.extensions import db
 from logistat.models import (
-    AkcjaDekoracji, IndexDekoracji, PosDekoracji, RuchStojaka, SlownikDekoracji, StojakDekoracji)
+    AkcjaDekoracji, EtapAkcji, IndexDekoracji, PosDekoracji, RuchStojaka, SlownikDekoracji, StojakDekoracji)
 
 
 def index_dict(ix):
@@ -18,8 +20,43 @@ def index_dict(ix):
     return d
 
 
-def akcja_dict(akcja, dzis, z_indexami=True):
+def etapy_akcji(akcja_ids, dzis):
+    """{akcja_id: [etap — wszystkie z ETAPY_AKCJI, w ich kolejnosci]} jednym
+    zapytaniem. Etap bez wiersza = bez terminu."""
+    zapisane = {}
+    if akcja_ids:
+        for e in EtapAkcji.query.filter(EtapAkcji.akcja_id.in_(list(akcja_ids))):
+            zapisane[(e.akcja_id, e.etap)] = e
+    wynik = {}
+    for akcja_id in akcja_ids:
+        lista = []
+        for klucz, nazwa, podpowiedz, opcjonalny in ETAPY_AKCJI:
+            e = zapisane.get((akcja_id, klucz))
+            od, do = (e.data_od, e.data_do) if e else (None, None)
+            nie_dotyczy = bool(e and e.nie_dotyczy)
+            lista.append({'klucz': klucz, 'nazwa': nazwa, 'podpowiedz': podpowiedz,
+                          'opcjonalny': opcjonalny, 'nie_dotyczy': nie_dotyczy,
+                          'od': od.isoformat() if od else None, 'do': do.isoformat() if do else None,
+                          'stan': stan_etapu(od, do, dzis, nie_dotyczy)})
+        wynik[akcja_id] = lista
+    return wynik
+
+
+def zapisz_etap(akcja_id, etap, od, do, nie_dotyczy, kto_id):
+    """INSERT … ON CONFLICT DO UPDATE — dwoch liderow na jednym etapie (autozapis
+    z dwoch kart) nie wywraca sie na unikalnym (akcja, etap). Commit robi wolajacy."""
+    wartosci = {'data_od': od, 'data_do': do, 'nie_dotyczy': nie_dotyczy,
+                'zmienil_id': kto_id, 'zmieniono_at': teraz_utc()}
+    stmt = insert(EtapAkcji.__table__).values(akcja_id=akcja_id, etap=etap, **wartosci)
+    db.session.execute(stmt.on_conflict_do_update(index_elements=['akcja_id', 'etap'], set_=wartosci))
+
+
+def akcja_dict(akcja, dzis, z_indexami=True, etapy=None):
+    """`etapy` = lista z `etapy_akcji()` (Gantt bierze je jednym zapytaniem dla
+    wszystkich akcji); None → zapytanie dla tej jednej."""
     indexy = [index_dict(ix) for ix in akcja.indexy]
+    if etapy is None:
+        etapy = etapy_akcji([akcja.id], dzis)[akcja.id]
     d = {'id': akcja.id, 'nazwa': akcja.nazwa,
          'od': akcja.data_od.isoformat(), 'do': akcja.data_do.isoformat(),
          'zakonczona': akcja.zakonczona_at is not None,
@@ -28,7 +65,11 @@ def akcja_dict(akcja, dzis, z_indexami=True):
                                  if akcja.zakonczona_at else None),
          'zakonczyl': akcja.zakonczyl.display_name if akcja.zakonczyl else None,
          'po_terminie': akcja.zakonczona_at is None and po_terminie(akcja.data_do, dzis),
-         'liczba_indexow': len(indexy), 'sumy': podsumowanie(indexy)}
+         'liczba_indexow': len(indexy), 'sumy': podsumowanie(indexy), 'etapy': etapy,
+         # Ostrzezenia tylko dla akcji w toku — zakonczona nie ma juz czego pilnowac.
+         'ostrzezenia': [] if akcja.zakonczona_at else
+         [{'nazwa': e['nazwa'], 'stan': e['stan'], 'do': e['do']} for e in etapy
+          if e['stan'] in ETAPY_OSTRZEZENIA]}
     if z_indexami:
         d['indexy'] = indexy
     return d
@@ -46,12 +87,16 @@ def _akcje(zakonczone):
 
 def akcje_gantt(dzis):
     """Akcje niezakonczone (takze po terminie) — od najwczesniejszego startu."""
-    return [akcja_dict(a, dzis, z_indexami=False) for a in _akcje(False)]
+    akcje = _akcje(False)
+    etapy = etapy_akcji([a.id for a in akcje], dzis)
+    return [akcja_dict(a, dzis, z_indexami=False, etapy=etapy[a.id]) for a in akcje]
 
 
 def akcje_historia(dzis):
     """Akcje zakonczone — najpozniej konczace sie na gorze."""
-    return [akcja_dict(a, dzis, z_indexami=False) for a in _akcje(True)]
+    akcje = _akcje(True)
+    etapy = etapy_akcji([a.id for a in akcje], dzis)
+    return [akcja_dict(a, dzis, z_indexami=False, etapy=etapy[a.id]) for a in akcje]
 
 
 def slownik(rodzaj=None):

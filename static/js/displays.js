@@ -63,10 +63,23 @@ function rysujGantt() {
 
     akcje.forEach(a => {
         const w = el('div', 'gantt-wiersz');
+        const komorka = el('div', 'gantt-nazwa-kom');
         const nazwa = el('a', 'gantt-nazwa', a.nazwa);
         nazwa.href = `/displays/akcje/${a.id}`;
         nazwa.title = a.nazwa;
-        w.append(nazwa);
+        komorka.append(nazwa);
+        // Kamienie milowe: ⚠ po terminie / ⏳ konczy sie (stan liczy serwer).
+        const po = a.ostrzezenia.filter(e => e.stan === 'po_terminie').length;
+        const konczy = a.ostrzezenia.length - po;
+        const opisEtapow = a.ostrzezenia.map(e => `${e.stan === 'po_terminie' ? '⚠ po terminie' : '⏳ kończy się'}: ${e.nazwa} (do ${krotko(e.do)})`);
+        if (a.ostrzezenia.length) {
+            const znak = el('span', 'gantt-etapy');
+            if (po) znak.append(el('span', 'po-terminie', `⚠ ${po}`));
+            if (konczy) znak.append(el('span', 'konczy-sie', `⏳ ${konczy}`));
+            znak.title = 'Kamienie milowe:\n' + opisEtapow.join('\n');
+            komorka.append(znak);
+        }
+        w.append(komorka);
         const tor = el('div', 'gantt-tor');
         tygodnie.forEach(nr => {
             const l = el('div', 'gantt-linia');
@@ -80,7 +93,8 @@ function rysujGantt() {
         const st = a.sumy.ilosc_stojakow, hk = a.sumy.haki;
         pasek.title = `${a.nazwa}\n${krotko(a.od)} – ${krotko(a.do)}` +
             `\nIndexów: ${a.liczba_indexow} · stojaków: ${st.suma}${st.pelna ? '' : '*'} · haków: ${hk.suma}${hk.pelna ? '' : '*'}` +
-            (a.po_terminie ? '\n⚠ Po terminie — nie zakończona' : '');
+            (a.po_terminie ? '\n⚠ Po terminie — nie zakończona' : '') +
+            (opisEtapow.length ? '\nKamienie milowe:\n' + opisEtapow.join('\n') : '');
         pasek.textContent = `${a.po_terminie ? '⚠ ' : ''}${krotko(a.od)} – ${krotko(a.do)}`;
         tor.append(pasek);
         const teraz = el('div', 'gantt-dzis');
@@ -89,7 +103,7 @@ function rysujGantt() {
         w.append(tor);
         box.append(w);
     });
-    box.append(el('div', 'gantt-legenda', '│ czerwona linia = dziś · ⚠ = po terminie, a akcja nie jest zakończona · najedź na pasek, żeby zobaczyć sumy'));
+    box.append(el('div', 'gantt-legenda', '│ czerwona linia = dziś · ⚠ na pasku = akcja po terminie, a nie zakończona · przy nazwie: ⚠ N kamieni milowych po terminie, ⏳ N kończy się · najedź na pasek, żeby zobaczyć sumy'));
 }
 
 rysujGantt();

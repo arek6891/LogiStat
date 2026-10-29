@@ -18,16 +18,17 @@ from sqlalchemy.exc import IntegrityError
 
 from logistat.czas import local_today, teraz_utc
 from logistat.dekoracje import (
-    ETYKIET_MAX, KOPIE_MAX, LICZBA_MAX, NAGLOWEK_EKSPORTU_POS, NAZWA_MAX, NAZWA_SLOWNIKA_MAX,
+    DNI_OSTRZEZENIA_ETAPU, ETAPY_AKCJI, ETYKIET_MAX, KOPIE_MAX, LICZBA_MAX, NAGLOWEK_EKSPORTU_POS, NAZWA_MAX, NAZWA_SLOWNIKA_MAX,
     POLA_LICZB, POLA_PRODUKTYWNOSCI, POLA_SLOWNIKA, RODZAJE_SLOWNIKA, STREFA, data_z_tekstu,
     kod_nosnika, kod_strefy, wiersze_pos)
 from logistat.dekoracje_dane import (
-    akcja_dict, akcje_gantt, akcje_historia, importuj_pos, index_dict, listy_dla_akcji,
+    akcja_dict, akcje_gantt, akcje_historia, etapy_akcji, importuj_pos, index_dict, listy_dla_akcji,
     ostatni_import_pos, ostatnie_ruchy, pos_dict, pos_lista, pos_w_stocku, przenies_stojak,
-    ruch_dict, slownik, stock_stojakow, stojak_dict, strefa_po_kodzie, uzyte_pozycje_slownika)
+    ruch_dict, slownik, stock_stojakow, stojak_dict, strefa_po_kodzie, uzyte_pozycje_slownika,
+    zapisz_etap)
 from logistat.extensions import db
 from logistat.models import (
-    AkcjaDekoracji, IndexDekoracji, PosDekoracji, RuchStojaka, SlownikDekoracji, StojakDekoracji)
+    AkcjaDekoracji, EtapAkcji, IndexDekoracji, PosDekoracji, RuchStojaka, SlownikDekoracji, StojakDekoracji)
 from logistat.pdf_etykiet import NA_STRONIE, pdf_etykiet
 from logistat.przyjecie_zwrotu import pos_nummer
 from logistat.web.excel import odpowiedz_xlsx, styl_naglowka
@@ -58,7 +59,8 @@ def akcja(akcja_id):
     a = db.get_or_404(AkcjaDekoracji, akcja_id)
     return render_template('displays_akcja.html', akcja=akcja_dict(a, local_today()),
                            listy=listy_dla_akcji(a), pola_liczb=POLA_LICZB,
-                           pola_prod=POLA_PRODUKTYWNOSCI, max_nazwy=NAZWA_MAX, max_liczby=LICZBA_MAX)
+                           pola_prod=POLA_PRODUKTYWNOSCI, max_nazwy=NAZWA_MAX, max_liczby=LICZBA_MAX,
+                           dni_ostrzezenia=DNI_OSTRZEZENIA_ETAPU)
 
 
 # ── walidacja ────────────────────────────────────────────────────────────────
@@ -128,6 +130,15 @@ def api_akcja_zmien(akcja_id):
     d = json_body()
     a.nazwa = _nazwa(d.get('nazwa'))
     a.data_od, a.data_do = _daty(d)
+    # Kamienie milowe musza zostac w datach akcji — najpierw przesuwa sie etap.
+    nazwy = {k: n for k, n, *_ in ETAPY_AKCJI}
+    poza = [f'{nazwy.get(e.etap, e.etap)} ({e.data_od:%d.%m}–{e.data_do:%d.%m})'
+            for e in EtapAkcji.query.filter_by(akcja_id=a.id)
+            if e.data_od and e.data_do and (e.data_od < a.data_od or e.data_do > a.data_do)]
+    if poza:
+        db.session.rollback()
+        abort(400, 'Kamienie milowe wychodzą poza nowe daty akcji: ' + ', '.join(poza)
+              + '. Najpierw przesuń ich terminy (przesuwając akcję później: wydłuż koniec, przesuń etapy, potem start).')
     _zmieniono(a)
     db.session.commit()
     return jsonify(akcja_dict(a, local_today(), z_indexami=False))
@@ -148,6 +159,51 @@ def api_akcja_status(akcja_id):
     _zmieniono(a)
     db.session.commit()
     return jsonify(akcja_dict(a, local_today(), z_indexami=False))
+
+
+# ── kamienie milowe ──────────────────────────────────────────────────────────
+
+@bp.route('/api/dekoracje/akcje/<int:akcja_id>/etapy/<etap>', methods=['PUT'])
+@leader_required
+def api_etap_zmien(akcja_id, etap):
+    """{od, do} — obie daty razem (albo obie puste = bez terminu), wewnatrz dat
+    akcji; {nie_dotyczy: bool} — tylko etap opcjonalny (Picking)."""
+    a = db.get_or_404(AkcjaDekoracji, akcja_id)
+    _edytowalna(a)
+    opis = next((e for e in ETAPY_AKCJI if e[0] == etap), None)
+    if opis is None:
+        abort(404, 'Nieznany kamień milowy.')
+    _, nazwa, _, opcjonalny = opis
+    d = json_body()
+    obecny = EtapAkcji.query.filter_by(akcja_id=a.id, etap=etap).first()
+    od, do = (obecny.data_od, obecny.data_do) if obecny else (None, None)
+    nie_dotyczy = bool(obecny and obecny.nie_dotyczy)
+    if 'od' in d or 'do' in d:
+        puste = [d.get(k) in (None, '') for k in ('od', 'do')]
+        if all(puste):
+            od = do = None
+        else:
+            od, do = data_z_tekstu(d.get('od')), data_z_tekstu(d.get('do'))
+            if od is None or do is None:
+                abort(400, f'{nazwa}: podaj obie daty (od i do) albo zostaw obie puste.')
+            if do < od:
+                abort(400, f'{nazwa}: data końca nie może być przed datą startu.')
+            if od < a.data_od or do > a.data_do:
+                abort(400, f'{nazwa}: termin musi mieścić się w datach akcji '
+                           f'({a.data_od:%d.%m.%Y} – {a.data_do:%d.%m.%Y}).')
+    if 'nie_dotyczy' in d:
+        if not isinstance(d['nie_dotyczy'], bool):
+            abort(400, 'Pole „nie_dotyczy” musi być true/false.')
+        if d['nie_dotyczy'] and not opcjonalny:
+            abort(400, f'{nazwa}: ten etap jest zawsze potrzebny.')
+        nie_dotyczy = d['nie_dotyczy']
+    if nie_dotyczy:
+        # Etap pominiety nie ma terminu — inaczej stare daty blokowalyby
+        # zmiane dat akcji, a pola dat sa wtedy wylaczone.
+        od = do = None
+    zapisz_etap(a.id, etap, od, do, nie_dotyczy, current_user.id)
+    db.session.commit()
+    return jsonify(next(e for e in etapy_akcji([a.id], local_today())[a.id] if e['klucz'] == etap))
 
 
 # ── indexy ───────────────────────────────────────────────────────────────────

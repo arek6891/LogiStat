@@ -129,6 +129,7 @@ PUT /api/category-labels
 PUT /api/country-mappings/<int:mapping_id>
 PUT /api/daily-stats/<int:stat_id>
 PUT /api/dekoracje/akcje/<int:akcja_id>
+PUT /api/dekoracje/akcje/<int:akcja_id>/etapy/<etap>
 PUT /api/dekoracje/akcje/<int:akcja_id>/status
 PUT /api/dekoracje/indexy/<int:index_id>
 PUT /api/dekoracje/slownik/<int:poz_id>

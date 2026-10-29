@@ -134,6 +134,7 @@ _ENDPOINTY = {
         # Akcje na Gantcie, ekran akcji z indexami, historia (2026-10-28)
         'displays.displays', 'displays.historia', 'displays.akcja',
         'displays.api_akcja_dodaj', 'displays.api_akcja_zmien', 'displays.api_akcja_status',
+        'displays.api_etap_zmien',
         'displays.api_index_dodaj', 'displays.api_index_zmien', 'displays.api_index_usun',
         # Etykiety POS: lista z Excela → PDF z kodami (2026-10-28)
         'displays.pos', 'displays.api_pos_import', 'displays.api_pos_usun',

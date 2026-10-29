@@ -1818,3 +1818,25 @@ a.gantt-nazwa:hover { color: var(--accent); text-decoration: underline; }
 .dekoracje-skan-info small { color: var(--text-muted); }
 .dekoracje-historia td { background: var(--bg-hover); }
 .dekoracje-historia ul { margin: 0; padding-left: 20px; }
+/* Dekoracje → kamienie milowe akcji (2026-10-29): stan i pasek etapu na osi dat akcji */
+.dekoracje-etapy td { vertical-align: middle; }
+.dekoracje-etapy input[type=date] { min-width: 140px; }
+.dekoracje-etap-podpowiedz { display: block; color: var(--text-muted); font-size: .78rem; }
+.dekoracje-etap-nd { display: inline-flex; gap: 4px; align-items: center; font-size: .8rem; color: var(--text-secondary); margin-top: 2px; }
+.dekoracje-etap-stan { white-space: nowrap; font-size: .85rem; color: var(--text-muted); }
+.dekoracje-etap-stan.w-toku { color: var(--accent); font-weight: 600; }
+.dekoracje-etap-stan.konczy-sie { color: var(--warning); font-weight: 700; }
+.dekoracje-etap-stan.po-terminie { color: var(--danger); font-weight: 700; }
+.dekoracje-etap-os-naglowek { min-width: 220px; }
+.dekoracje-etap-os { min-width: 220px; }
+.dekoracje-etap-tor { position: relative; height: 30px; }
+.dekoracje-etap-tor::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; border-top: 2px solid var(--border); }
+.dekoracje-etap-pasek { position: absolute; top: 8px; height: 14px; min-width: 4px; border-radius: 4px; background: var(--text-muted); }
+.dekoracje-etap-pasek.w-toku { background: var(--accent); }
+.dekoracje-etap-pasek.konczy-sie { background: var(--warning); }
+.dekoracje-etap-pasek.po-terminie { background: var(--danger); }
+.dekoracje-etapy-alert { background: var(--warning-bg); color: var(--warning); font-weight: 600; border-radius: var(--radius-sm); padding: 8px 12px; margin-bottom: 10px; }
+.gantt-nazwa-kom { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.gantt-etapy { flex: none; display: inline-flex; gap: 6px; font-size: .75rem; font-weight: 700; white-space: nowrap; cursor: help; }
+.gantt-etapy .po-terminie { color: var(--danger); }
+.gantt-etapy .konczy-sie { color: var(--warning); }
