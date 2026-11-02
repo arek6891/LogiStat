@@ -10,8 +10,10 @@ from logistat.extensions import db
 from logistat.dekoracje import SLOWNIK_DOMYSLNY, ZNACZNIK_SLOWNIKA
 from logistat.faktura_zwrotow import LICENCJE_DOMYSLNE, ZNACZNIK_LICENCJI
 from logistat.przyjecie_zwrotu import BRAND, LISTY_DOMYSLNE, ZNACZNIK_LIST, ZNACZNIK_TOSH
+from logistat.zadania import CZYNNOSCI_DOMYSLNE, ZNACZNIK_CZYNNOSCI
 from logistat.models import (
-    Activity, AppSetting, CountryMapping, GeneralStat, ImportedCarton, LicencjaZwrotow, SlownikDekoracji,
+    Activity, AppSetting, CountryMapping, CzynnoscDodatkowa, GeneralStat, ImportedCarton,
+    LicencjaZwrotow, SlownikDekoracji,
     USER_OPTION_DEFAULTS, User, UserOption, zaznacz_wszystkich_przeszkolonych)
 from logistat.normy_dane import zasiej_historie_celu
 from logistat.rozliczenie import _odsun_linie, przenies_linie, recompute_general_stat
@@ -142,6 +144,15 @@ def seed_data():
         db.session.add(AppSetting(key=ZNACZNIK_SLOWNIKA, value='1'))
         db.session.commit()
         log.info('[SEED] Listy Dekoracji (typy i modele stojakow) utworzone.')
+
+    # Zadania dodatkowe (2026-11-02): czynnosci dodatkowe — raz, potem lista admina.
+    if db.session.get(AppSetting, ZNACZNIK_CZYNNOSCI) is None:
+        if CzynnoscDodatkowa.query.count() == 0:
+            for i, nazwa in enumerate(CZYNNOSCI_DOMYSLNE):
+                db.session.add(CzynnoscDodatkowa(nazwa=nazwa, kolejnosc=i))
+        db.session.add(AppSetting(key=ZNACZNIK_CZYNNOSCI, value='1'))
+        db.session.commit()
+        log.info('[SEED] Czynnosci dodatkowe (Zadania dodatkowe) utworzone.')
 
     if CountryMapping.query.count() == 0:
         for country, innenauftrag in DEFAULT_COUNTRY_MAPPINGS:

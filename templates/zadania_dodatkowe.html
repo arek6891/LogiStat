@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block title %}{{ NAZWA_APLIKACJI }} — Zadania dodatkowe{% endblock %}
+
+{# Zadania dodatkowe (operacja 2026-11-02, zastepuja Wpis ilosci): osoba, dzial,
+   czas od–do na suwaku, czynnosc dodatkowa (lista admina), komentarz — bez ilosci.
+   Kazdy wiersz zapisuje sie sam (autoZapis, klucz = wiersz). Ekran rysuje
+   static/js/zadania_dodatkowe.js. #}
+{% block content %}
+<div class="page-header">
+    <h2>🧹 Zadania dodatkowe</h2>
+    <p class="subtitle">Ile czasu pracownik spędził na dziale i przy jakiej czynności dodatkowej (sprzątanie, 5S…).
+        Każdy wiersz zapisuje się sam chwilę po zmianie.</p>
+</div>
+
+<form method="GET" class="assignment-controls" id="zadaniaFiltr">
+    <div class="form-group" style="margin-bottom:0;">
+        <label>Data</label>
+        <input type="date" name="date" value="{{ dzien.isoformat() }}" class="form-control" style="width:180px;">
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+        <label>Zmiana</label>
+        <div class="shift-tabs" style="margin-bottom:0;">
+            {% for n in (1, 2) %}
+            <button type="submit" name="shift" value="{{ n }}" class="shift-tab {% if zmiana == n %}active{% endif %}" data-shift="{{ n }}">Zmiana {{ n }}</button>
+            {% endfor %}
+        </div>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:10px;align-self:flex-end;align-items:center;">
+        <span class="autozapis-status" id="autoZapisStatus"></span>
+    </div>
+</form>
+
+<div class="card shift-frame" data-shift="{{ zmiana }}">
+    <div class="table-container">
+        <table class="data-table zadania-tabela">
+            <thead><tr><th style="width:200px;">Pracownik</th><th style="width:150px;">Dział</th>
+                <th>Czas na dziale</th><th style="width:190px;">Czynność dodatkowa</th>
+                <th style="width:220px;">Komentarz</th><th style="width:50px;"></th></tr></thead>
+            <tbody id="zadaniaWiersze"></tbody>
+        </table>
+    </div>
+    <button type="button" class="btn btn-primary" id="zadaniaDodaj" style="margin-top:12px;">➕ Dodaj wiersz</button>
+</div>
+
+<div class="card" style="margin-top:16px;">
+    <h3 style="margin-top:0;">⬇ Eksport do Excela</h3>
+    <form id="zadaniaEksport" action="{{ url_for('zadania.zadania_export') }}" method="GET"
+          style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+        <label>Od <input type="date" name="date_from" value="{{ dzien.replace(day=1).isoformat() }}" class="form-control" style="width:170px;display:inline-block;"></label>
+        <label>Do <input type="date" name="date_to" value="{{ dzien.isoformat() }}" class="form-control" style="width:170px;display:inline-block;"></label>
+        <button type="submit" class="btn">⬇ Excel</button>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const ZADANIA = {{ {'date': dzien.isoformat(), 'shift': zmiana, 'po_polnocy': godzin_po_polnocy}|tojson }};
+</script>
+<script src="{{ static_v('js/zadania_dodatkowe.js') }}"></script>
+{% endblock %}

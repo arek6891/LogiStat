@@ -59,7 +59,7 @@
         <thead><tr><th>Osoba</th>{{ naglowek_dni() }}<th class="suma">Paczki</th><th class="suma">Godz.</th><th class="suma">Paczki/h</th></tr></thead>
         <tbody>
             {% for o in d.osoby %}
-            <tr><td><a href="{{ url_for('normy.stats', user=o.id) }}" class="link-normy">{{ o.nazwa }}</a>{% if o.support %} <small class="pusto" title="Był(a) w Supporcie — udział w paczkach całej zmiany">🤝</small>{% endif %}{% if not o.aktywny %} <small class="pusto">nieaktywna</small>{% endif %}</td>
+            <tr id="osoba-{{ o.id }}"><td><a href="{{ url_for('normy.stats', user=o.id) }}" class="link-normy">{{ o.nazwa }}</a>{% if o.support %} <small class="pusto" title="Był(a) w Supporcie — udział w paczkach całej zmiany">🤝</small>{% endif %}{% if not o.aktywny %} <small class="pusto">nieaktywna</small>{% endif %}</td>
                 {% for dz in d.dni %}{% set c = o.dni.get(dz) %}
                 <td class="{{ klasa(dz) }} {% if not c %}pusto{% endif %}">{% if c %}{{ liczba(c.paczki) }}<br><small class="pusto">{{ liczba(c.godziny) }} h</small>{% else %}·{% endif %}</td>
                 {% endfor %}

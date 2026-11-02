@@ -1,7 +1,8 @@
 """Kafelki po zalogowaniu (operacja 2026-10-24, grupy 2026-10-28): na ekranie
 startowym trzy kafelki-GRUPY — Operacje magazynowe / Dzial etykietowania /
 Supervisor; Dzial etykietowania po kliknieciu pokazuje swoje kafelki
-(Post-Process, Dekoracje, Zwroty). Grupa to tylko ekran wyboru — dostep, menu
+(od 2026-11-02: Przydzielanie, Pracownicy, Post-Process, Dekoracje, Zwroty,
+Zadania dodatkowe). Grupa to tylko ekran wyboru — dostep, menu
 i `session['obszar']` dzialaja dalej na kafelkach (obszarach) ponizej.
 
 Kazdy endpoint nalezy do jednego lub kilku obszarow (kafelkow), albo do
@@ -16,9 +17,12 @@ Czysta logika — bez Flaska i bazy (import z `aplikacja.py` i `web/`).
 """
 
 MAGAZYN = 'magazyn'
+PRZYDZIELANIE = 'przydzielanie'
+PRACOWNICY = 'pracownicy'
 POST_PROCESS = 'post_process'
 DISPLAYS = 'displays'
 ZWROTY = 'zwroty'
+ZADANIA = 'zadania'
 USTAWIENIA = 'ustawienia'
 
 # Kolejnosc = kolejnosc kafelkow. `start` = pierwszy ekran po wyborze kafelka.
@@ -27,9 +31,18 @@ OBSZARY = {
         'nazwa': 'Operacje magazynowe', 'ikona': '👷', 'start': 'stanowisko.scan_paczki',
         'opis': 'Stanowiska: skaner zmian, czas pracy, czasy paczek, inspektor paczek, przyjęcie zwrotu',
     },
+    # Operacja 2026-11-02: Przydzielanie i Pracownicy wyjete z menu Post-Process.
+    PRZYDZIELANIE: {
+        'nazwa': 'Przydzielanie', 'ikona': '📋', 'start': 'przydzial.assignment',
+        'opis': 'Przydział ludzi do czynności na zmianie, stanowiska zwrotów',
+    },
+    PRACOWNICY: {
+        'nazwa': 'Pracownicy', 'ikona': '👥', 'start': 'admin.admin_users',
+        'opis': 'Lista pracowników, normy per proces, czasy pracowników',
+    },
     POST_PROCESS: {
         'nazwa': 'Post-Process', 'ikona': '📦', 'start': 'dashboard.dashboard',
-        'opis': 'Lider: dashboard, przydzielanie, normy, paczki, import, statystyki, użytkownicy',
+        'opis': 'Lider: dashboard, forecast, normy, paczki, import, statystyki',
     },
     # Do 2026-10-28 „Akcje - Displays”; od 2026-10-28 akcje na wykresie Gantta.
     DISPLAYS: {
@@ -39,6 +52,11 @@ OBSZARY = {
     ZWROTY: {
         'nazwa': 'Zwroty', 'ikona': '↩️', 'start': 'zwroty.zwroty_paczek',
         'opis': 'Zwroty Paczek, dashboard i przydział zwrotów, Invoice specification, Sorting Data',
+    },
+    # Operacja 2026-11-02: zastepuje „Wpis ilosci” — czas na dziale + czynnosc dodatkowa.
+    ZADANIA: {
+        'nazwa': 'Zadania dodatkowe', 'ikona': '🧹', 'start': 'zadania.zadania_dodatkowe',
+        'opis': 'Czas pracowników w działach i czynności dodatkowe (sprzątanie, 5S…), eksport do Excela',
     },
     USTAWIENIA: {
         'nazwa': 'Supervisor', 'ikona': '🛡️', 'start': 'admin.admin_panel',
@@ -55,8 +73,9 @@ GRUPY = {
         'opis': 'Wszystkie moduły magazynu: skaner zmian, czas pracy, czasy paczek, przyjęcie zwrotu',
     },
     'etykietowanie': {
-        'nazwa': 'Dział etykietowania', 'ikona': '🏷️', 'obszary': (POST_PROCESS, DISPLAYS, ZWROTY),
-        'opis': 'Post-Process, Dekoracje, Zwroty',
+        'nazwa': 'Dział etykietowania', 'ikona': '🏷️',
+        'obszary': (PRZYDZIELANIE, PRACOWNICY, POST_PROCESS, DISPLAYS, ZWROTY, ZADANIA),
+        'opis': 'Przydzielanie, Pracownicy, Post-Process, Dekoracje, Zwroty, Zadania dodatkowe',
     },
     'supervisor': {
         'nazwa': 'Supervisor', 'ikona': '🛡️', 'obszary': (USTAWIENIA,),
@@ -67,8 +86,8 @@ GRUPY = {
 # Rola → kafelki. Operator (skanowany na zmianie) nie loguje sie wcale.
 ROLE_OBSZARY = {
     'stanowisko': (MAGAZYN,),
-    'leader': (MAGAZYN, POST_PROCESS, DISPLAYS, ZWROTY),
-    'admin': (MAGAZYN, POST_PROCESS, DISPLAYS, ZWROTY, USTAWIENIA),
+    'leader': (MAGAZYN, PRZYDZIELANIE, PRACOWNICY, POST_PROCESS, DISPLAYS, ZWROTY, ZADANIA),
+    'admin': (MAGAZYN, PRZYDZIELANIE, PRACOWNICY, POST_PROCESS, DISPLAYS, ZWROTY, ZADANIA, USTAWIENIA),
 }
 
 # Dostepne zawsze po zalogowaniu (i przed wyborem kafelka).
@@ -106,8 +125,7 @@ _ENDPOINTY = {
         'dashboard.api_dashboard_shifts',
         'forecast.forecast_page', 'forecast.api_forecast_chart_data',
         'forecast.api_forecast_save', 'forecast.api_forecast_export',
-        'przydzial.assignment', 'przydzial.api_assignment_data', 'przydzial.api_assignment_save',
-        'przydzial.api_assignment_suggestions', 'przydzial.data_entry',
+        # Stary Wpis ilosci: PUT poprawia wpis z karty pracownika w Normach.
         'przydzial.api_daily_stats_get', 'przydzial.api_daily_stats_save',
         'przydzial.api_daily_stat_update',
         'normy.stats', 'normy.api_stats_overview', 'normy.api_stats_user',
@@ -117,21 +135,33 @@ _ENDPOINTY = {
         'paczki.api_package_categories_update', 'paczki.api_package_tabela_update',
         'paczki.api_package_potwierdz_roznice', 'paczki.api_package_unlock_scan',
         'paczki.api_package_zamknij_zespol',
-        'czas_pracy.worker_times', 'czas_pracy.api_worker_times',
-        'czas_pracy.api_time_event_create', 'czas_pracy.api_time_event_update',
-        'czas_pracy.api_time_event_delete', 'czas_pracy.api_wejscie_update',
         'imports.import_csv_page', 'imports.api_import_csv', 'imports.api_import_excel',
         'imports.api_imports', 'imports.api_imports_zmien_date',
         'rozliczenie.general_stats_page', 'rozliczenie.general_stats_export',
         'rozliczenie.api_general_stats', 'rozliczenie.api_general_stat_update',
         'rozliczenie.api_general_stat_use_scan',
-        # Uzytkownicy (w menu Lidera) + listy, ktore ich okno czyta
-        'admin.admin_users', 'admin.api_users', 'admin.api_user_create',
-        'admin.api_user_update', 'admin.api_user_delete',
-        'admin.api_user_options', 'admin.api_activities',
+    },
+    PRZYDZIELANIE: {
+        'przydzial.assignment', 'przydzial.api_assignment_data', 'przydzial.api_assignment_save',
+        'przydzial.api_assignment_suggestions',
         # Przydzielanie → kolumna „Zwroty” → stanowiska (2026-10-27; tez w kafelku Zwroty)
         'zwroty.przydzial_zwrotow', 'zwroty.api_przydzial_zwrotow',
         'zwroty.api_przydzial_zwrotow_zapisz',
+    },
+    PRACOWNICY: {
+        # Lista pracownikow (dawniej „Uzytkownicy” w Post-Process) + listy, ktore jej okno czyta
+        'admin.admin_users', 'admin.api_users', 'admin.api_user_create',
+        'admin.api_user_update', 'admin.api_user_delete',
+        'admin.api_user_options', 'admin.api_activities',
+        'czas_pracy.worker_times', 'czas_pracy.api_worker_times',
+        'czas_pracy.api_time_event_create', 'czas_pracy.api_time_event_update',
+        'czas_pracy.api_time_event_delete', 'czas_pracy.api_wejscie_update',
+    },
+    ZADANIA: {
+        # Zadania dodatkowe (2026-11-02); stary adres Wpisu ilosci przekierowuje tutaj
+        'zadania.zadania_dodatkowe', 'zadania.zadania_export', 'zadania.api_zadania',
+        'zadania.api_zadanie_dodaj', 'zadania.api_zadanie_zmien', 'zadania.api_zadanie_usun',
+        'zadania.stary_wpis_ilosci',
     },
     DISPLAYS: {
         # Akcje na Gantcie, ekran akcji z indexami, historia (2026-10-28)
@@ -180,6 +210,9 @@ _ENDPOINTY = {
         # Dekoracje (2026-10-28): typy i modele stojakow
         'displays.admin_slownik', 'displays.api_slownik_dodaj', 'displays.api_slownik_zmien',
         'displays.api_slownik_usun', 'displays.strefy_etykiety',
+        # Zadania dodatkowe (2026-11-02): lista czynnosci dodatkowych
+        'zadania.admin_czynnosci', 'zadania.api_czynnosc_dodaj', 'zadania.api_czynnosc_zmien',
+        'zadania.api_czynnosc_usun',
     },
 }
 

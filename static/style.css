@@ -1857,3 +1857,27 @@ a.gantt-nazwa:hover { color: var(--accent); text-decoration: underline; }
 .gantt-etapy { flex: none; display: inline-flex; gap: 6px; font-size: .75rem; font-weight: 700; white-space: nowrap; cursor: help; }
 .gantt-etapy .po-terminie { color: var(--danger); }
 .gantt-etapy .konczy-sie { color: var(--warning); }
+
+/* ── Zadania dodatkowe (2026-11-02): suwak zakresu godzin z dwoma uchwytami ── */
+.zadania-tabela td { vertical-align: top; }
+.zadania-czas { min-width: 260px; }
+.zadania-uwaga { color: var(--warning); font-size: .8rem; margin-top: 4px; }
+.zadania-uwaga:empty { display: none; }
+.zadania-godziny { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+.zadania-godziny input[type="time"] { width: 110px; }
+.zadania-suma { color: var(--text-muted); font-weight: 600; white-space: nowrap; }
+.suwak-zakresu { position: relative; height: 26px; }
+.suwak-zakresu::before { content: ''; position: absolute; left: 0; right: 0; top: 11px; height: 4px;
+    border-radius: 2px; background: var(--border); }
+.suwak-zakresu-pasek { position: absolute; top: 11px; height: 4px; border-radius: 2px; background: var(--accent); }
+.suwak-zakresu input[type="range"] { position: absolute; left: 0; top: 0; width: 100%; height: 26px; margin: 0;
+    background: none; pointer-events: none; -webkit-appearance: none; appearance: none; }
+.suwak-zakresu input[type="range"]::-webkit-slider-runnable-track { background: none; }
+.suwak-zakresu input[type="range"]::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none;
+    width: 16px; height: 16px; border-radius: 50%; background: var(--bg-card-solid); border: 3px solid var(--accent);
+    cursor: pointer; margin-top: 0; }
+.suwak-zakresu input[type="range"]::-moz-range-track { background: none; }
+.suwak-zakresu input[type="range"]::-moz-range-thumb { pointer-events: auto; width: 12px; height: 12px;
+    border-radius: 50%; background: var(--bg-card-solid); border: 3px solid var(--accent); cursor: pointer; }
+/* Link z listy pracownikow (#osoba-<id>) podswietla wiersz w Dashboardzie zwrotow */
+.dashboard-zwrotow tr:target td { background: rgb(var(--accent-rgb) / .12); }

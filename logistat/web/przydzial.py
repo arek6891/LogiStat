@@ -1,4 +1,5 @@
-"""Przydzielanie osob do czynnosci (szkolenia, estymacja, sugestie AI, wersja) i Wpis ilosci."""
+"""Przydzielanie osob do czynnosci (szkolenia, estymacja, sugestie AI, wersja) i API starego
+Wpisu ilosci (ekran zastapily Zadania dodatkowe 2026-11-02; PUT poprawia wpis z Norm)."""
 from datetime import timedelta
 
 from flask import Blueprint, jsonify, render_template, request
@@ -29,14 +30,6 @@ def assignment():
         .order_by(Activity.sort_order).all()
     return render_template('assignment.html', activities=activities,
                            czynnosc_pp=CZYNNOSC_SKANOW_PACZEK, czynnosc_zwrotow=CZYNNOSC_ZWROTOW)
-
-
-@bp.route('/data-entry')
-@leader_required
-def data_entry():
-    activities = Activity.query.filter_by(is_active=True)\
-        .order_by(Activity.sort_order).all()
-    return render_template('data_entry.html', activities=activities)
 
 
 @bp.route('/api/assignment/data', methods=['GET'])

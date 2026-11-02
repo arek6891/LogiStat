@@ -7,7 +7,7 @@ from conftest import strona_z_js
 # Trasy renderujace strony (bez API i eksportow)
 STRONY_ADMINA = [
     '/dashboard', '/forecast', '/scanner/1', '/scanner/2', '/assignment',
-    '/data-entry', '/stats', '/scan-package', '/scan-paczki', '/paczki',
+    '/zadania-dodatkowe', '/admin/zadania/czynnosci', '/stats', '/scan-package', '/scan-paczki', '/paczki',
     '/time-tracking', '/worker-times', '/profile',
     '/admin/users', '/admin/activities', '/admin/panel',
     '/admin/country-mapping', '/admin/cost-mapping', '/admin/settings',
@@ -17,7 +17,7 @@ STRONY_ADMINA = [
 
 # Strony dostepne liderowi (bez sekcji admin-only)
 STRONY_LIDERA = [
-    '/dashboard', '/forecast', '/scanner/1', '/assignment', '/data-entry',
+    '/dashboard', '/forecast', '/scanner/1', '/assignment', '/zadania-dodatkowe',
     '/stats', '/scan-package', '/scan-paczki', '/paczki', '/time-tracking',
     '/worker-times', '/profile', '/admin/users', '/import-csv', '/general-stats', '/displays',
     '/zwroty/paczki',
@@ -25,7 +25,7 @@ STRONY_LIDERA = [
 
 TYLKO_ADMIN = [
     '/admin/activities', '/admin/panel', '/admin/country-mapping', '/admin/user-options',
-    '/admin/cost-mapping', '/admin/settings', '/admin/category-labels',
+    '/admin/cost-mapping', '/admin/settings', '/admin/category-labels', '/admin/zadania/czynnosci',
 ]
 
 

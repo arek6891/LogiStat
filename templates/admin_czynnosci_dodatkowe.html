@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block title %}{{ NAZWA_APLIKACJI }} — Czynności dodatkowe{% endblock %}
+
+{# Czynnosci dodatkowe (2026-11-02): lista rozwijana ekranu Zadania dodatkowe.
+   Pozycja uzyta w zadaniu: tylko zmiana nazwy / wylaczenie. #}
+{% block content %}
+<div class="page-header">
+    <h2>🧹 Czynności dodatkowe</h2>
+    <p class="subtitle">Lista rozwijana „Czynność dodatkowa” w kafelku Zadania dodatkowe. Kolejność tutaj = kolejność na liście.
+        Pozycji użytej w zadaniu nie da się usunąć — można ją wyłączyć (zniknie z nowych wyborów) albo zmienić nazwę.</p>
+</div>
+
+{% set api_listy = url_for('zadania.api_czynnosc_dodaj') %}
+{% set opis_uzytej = 'Użyta w zadaniach dodatkowych — można tylko wyłączyć' %}
+{% include '_listy_zwrotow.html' %}
+
+<div style="margin-top:16px; text-align:center;">
+    <a href="{{ url_for('admin.admin_panel') }}" class="btn btn-ghost btn-sm">← Powrót do Panelu Admina</a>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ static_v('js/admin_licencje_zwrotow.js') }}"></script>
+{% endblock %}

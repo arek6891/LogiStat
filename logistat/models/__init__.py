@@ -84,3 +84,7 @@ from logistat.models.dekoracje import (  # noqa: F401
     StojakDekoracji,
     RuchStojaka,
 )
+from logistat.models.zadania import (  # noqa: F401
+    CzynnoscDodatkowa,
+    ZadanieDodatkowe,
+)
