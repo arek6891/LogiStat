@@ -481,5 +481,14 @@ document.getElementById('eventModal').addEventListener('click', e => {
     if (e.target === document.getElementById('eventModal')) closeModal();
 });
 
-// Auto-load today on page open
-loadData();
+// Link z listy pracownikow (kafelek Pracownicy, 2026-11-02): `?user_id=` = ta osoba,
+// zakres od poczatku miesiaca do dzis.
+const osobaZAdresu = new URLSearchParams(location.search).get('user_id');
+const filtrOsoby = document.getElementById('workerFilter');
+if (osobaZAdresu && [...filtrOsoby.options].some(o => o.value === osobaZAdresu)) {
+    filtrOsoby.value = osobaZAdresu;
+    zmianaOsoby();
+} else {
+    // Auto-load today on page open
+    loadData();
+}

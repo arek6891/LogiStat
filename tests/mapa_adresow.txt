@@ -10,6 +10,8 @@ DELETE /api/scan/<int:attendance_id>
 DELETE /api/user-options/<int:option_id>
 DELETE /api/users/<int:user_id>
 DELETE /api/worker-times/event/<int:event_id>
+DELETE /api/zadania-dodatkowe/<int:zadanie_id>
+DELETE /api/zadania/czynnosci/<int:czynnosc_id>
 DELETE /api/zwroty/licencje/<int:lic_id>
 DELETE /api/zwroty/przyjecie/<int:zwrot_id>
 GET /
@@ -22,6 +24,7 @@ GET /admin/panel
 GET /admin/settings
 GET /admin/user-options
 GET /admin/users
+GET /admin/zadania/czynnosci
 GET /admin/zwroty/cennik
 GET /admin/zwroty/licencje
 GET /admin/zwroty/przyjecie
@@ -53,6 +56,7 @@ GET /api/time/training/aktywne
 GET /api/user-options
 GET /api/users
 GET /api/worker-times
+GET /api/zadania-dodatkowe
 GET /api/zwroty/cennik/<int:rok>/<int:miesiac>
 GET /api/zwroty/przydzial
 GET /api/zwroty/przyjecie/paczka
@@ -81,6 +85,8 @@ GET /start
 GET /stats
 GET /time-tracking
 GET /worker-times
+GET /zadania-dodatkowe
+GET /zadania-dodatkowe/export
 GET /zwroty
 GET /zwroty/dashboard
 GET /zwroty/invoice-specification
@@ -127,6 +133,8 @@ POST /api/time/training/trener
 POST /api/user-options
 POST /api/users
 POST /api/worker-times/event
+POST /api/zadania-dodatkowe
+POST /api/zadania/czynnosci
 POST /api/zwroty/licencje
 POST /api/zwroty/przyjecie
 POST /api/zwroty/przyjecie/<int:zwrot_id>/czesc
@@ -157,6 +165,8 @@ PUT /api/user-options/<int:option_id>
 PUT /api/users/<int:user_id>
 PUT /api/worker-times/event/<int:event_id>
 PUT /api/worker-times/wejscie/<int:attendance_id>
+PUT /api/zadania-dodatkowe/<int:zadanie_id>
+PUT /api/zadania/czynnosci/<int:czynnosc_id>
 PUT /api/zwroty/cennik/<int:rok>/<int:miesiac>
 PUT /api/zwroty/etykiety
 PUT /api/zwroty/invoice-specification/ilosc

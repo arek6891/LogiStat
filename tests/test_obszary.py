@@ -1,7 +1,7 @@
 """Kafelki po zalogowaniu: Magazyn / Post-Process / Dekoracje / Zwroty / Ustawienia
 (operacja 2026-10-24), od 2026-10-28 w grupach na ekranie startowym: Operacje
-magazynowe (Magazyn) / Dzial etykietowania (Post-Process, Dekoracje, Zwroty) /
-Supervisor (Ustawienia).
+magazynowe (Magazyn) / Dzial etykietowania (od 2026-11-02: Przydzielanie, Pracownicy,
+Post-Process, Dekoracje, Zwroty, Zadania dodatkowe) / Supervisor (Ustawienia).
 
 - rola → kafelki: stanowisko = Magazyn, lider = Magazyn + Post-Process + Dekoracje
   + Zwroty, admin = wszystkie piec; konto stanowiska po zalogowaniu od razu w Magazynie,
@@ -14,8 +14,8 @@ Supervisor (Ustawienia).
 import pytest
 from conftest import PASSWORD, login, make_user
 
-from logistat.obszary import DISPLAYS, GRUPY, MAGAZYN, OBSZARY, POST_PROCESS, USTAWIENIA, ZWROTY, \
-    obszary_endpointu, wszystkie_przypisane
+from logistat.obszary import DISPLAYS, GRUPY, MAGAZYN, OBSZARY, POST_PROCESS, PRACOWNICY, \
+    PRZYDZIELANIE, USTAWIENIA, ZADANIA, ZWROTY, obszary_endpointu, wszystkie_przypisane
 
 
 def zaloguj(client, rola):
@@ -125,12 +125,18 @@ def test_lider_widzi_dwie_grupy_admin_trzy(client):
 
 
 def test_dzial_etykietowania_pokazuje_swoje_kafelki(client):
+    """Od 2026-11-02 (operacja): Przydzielanie i Pracownicy na gorze, Zadania dodatkowe na koncu."""
     zaloguj(client, 'leader')
     html = client.get('/start?grupa=etykietowanie').get_data(as_text=True)
 
-    assert html.count('data-obszar=') == 3
-    for obszar, nazwa in ((POST_PROCESS, 'Post-Process'), (DISPLAYS, 'Dekoracje'), (ZWROTY, 'Zwroty')):
+    kafelki = ((PRZYDZIELANIE, 'Przydzielanie'), (PRACOWNICY, 'Pracownicy'),
+               (POST_PROCESS, 'Post-Process'), (DISPLAYS, 'Dekoracje'), (ZWROTY, 'Zwroty'),
+               (ZADANIA, 'Zadania dodatkowe'))
+    assert html.count('data-obszar=') == len(kafelki)
+    for obszar, nazwa in kafelki:
         assert f'data-obszar="{obszar}"' in html and nazwa in html
+    pozycje = [html.index(f'data-obszar="{o}"') for o, _ in kafelki]
+    assert pozycje == sorted(pozycje)
     assert '⬅ Wszystkie kafelki' in html
     assert 'Akcje - Displays' not in html
 
@@ -187,7 +193,7 @@ def test_kafelek_wybiera_tylko_menu(client):
         assert s['obszar'] == MAGAZYN, 'API nie zmienia kafelka'
 
     html = client.get('/dashboard').get_data(as_text=True)
-    assert 'Przydzielanie' in html and 'Czasy paczek' not in html
+    assert 'Forecast' in html and 'Czasy paczek' not in html
     with client.session_transaction() as s:
         assert s['obszar'] == POST_PROCESS
     assert client.get('/api/employee-lookup?barcode=x').status_code in (400, 404)
@@ -199,8 +205,11 @@ def test_menu_pokazuje_tylko_wybrany_kafelek(client):
 
     html = client.get('/dashboard').get_data(as_text=True)
 
-    assert 'Przydzielanie' in html and '⬅ Kafelki' in html
+    assert 'Forecast' in html and '⬅ Kafelki' in html
     assert 'Czasy paczek' not in html and 'Panel Admina' not in html
+    # Operacja 2026-11-02: te ekrany maja wlasne kafelki.
+    for wyjete in ('Przydzielanie', 'Użytkownicy', 'Czasy pracowników', 'Wpis ilości'):
+        assert f'</span> {wyjete}' not in html, wyjete
 
 
 def test_link_do_ekranu_bez_wybranego_kafelka_wybiera_go_sam(client):
@@ -219,6 +228,9 @@ def test_wybor_kafelka_otwiera_jego_start(client):
     assert client.post('/start/displays').headers['Location'].endswith('/displays')
     assert client.post('/start/zwroty').headers['Location'].endswith('/zwroty/paczki')
     assert client.post('/start/ustawienia').headers['Location'].endswith('/admin/panel')
+    assert client.post('/start/przydzielanie').headers['Location'].endswith('/assignment')
+    assert client.post('/start/pracownicy').headers['Location'].endswith('/admin/users')
+    assert client.post('/start/zadania').headers['Location'].endswith('/zadania-dodatkowe')
 
 
 def test_logowanie_zeruje_wybrany_kafelek(client):
@@ -265,7 +277,10 @@ def test_pusta_pozycja_zwroty_przekierowuje_i_nie_ma_jej_w_menu(client):
 # ── menu A→Z ─────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize('obszar,adres', [(MAGAZYN, '/scan-paczki'),
+                                          (PRZYDZIELANIE, '/assignment'),
+                                          (PRACOWNICY, '/admin/users'),
                                           (POST_PROCESS, '/dashboard'),
+                                          (ZADANIA, '/zadania-dodatkowe'),
                                           (DISPLAYS, '/displays'),
                                           (ZWROTY, '/zwroty/paczki'),
                                           (USTAWIENIA, '/admin/panel')])
@@ -283,7 +298,7 @@ def test_menu_kafelka_alfabetycznie(client, obszar, adres):
         nazwy = [n.strip() for n in re.findall(r'</span>\s*([^<]+?)\s*</a>', belka)]
         wszystkie += len(nazwy)
         assert nazwy == sorted(nazwy, key=lambda t: [alfabet.find(c) for c in t.lower()])
-    assert wszystkie > 1
+    assert wszystkie > (0 if obszar == ZADANIA else 1)
 
 
 def test_magazyn_skaner_zmian_w_belce_zmiany_na_gorze(client):
@@ -329,20 +344,22 @@ def test_konto_stanowiska_zaklada_tylko_admin(client):
 STRONY = {
     MAGAZYN: ['/scanner/1', '/time-tracking', '/scan-paczki', '/scan-package', '/zwroty/przyjecie',
               '/dekoracje/skan'],
-    POST_PROCESS: ['/dashboard', '/forecast', '/assignment', '/data-entry', '/stats', '/paczki',
-                   '/worker-times', '/import-csv', '/general-stats', '/admin/users',
-                   '/zwroty/przydzial'],
+    PRZYDZIELANIE: ['/assignment', '/zwroty/przydzial'],
+    PRACOWNICY: ['/admin/users', '/worker-times'],
+    POST_PROCESS: ['/dashboard', '/forecast', '/stats', '/paczki', '/import-csv', '/general-stats'],
+    ZADANIA: ['/zadania-dodatkowe'],
     DISPLAYS: ['/displays', '/displays/historia', '/displays/pos', '/displays/stock'],
     ZWROTY: ['/zwroty/paczki', '/zwroty/invoice-specification', '/zwroty/sorting-data',
              '/zwroty/przydzial', '/zwroty/dashboard'],
     USTAWIENIA: ['/admin/panel', '/admin/activities', '/admin/country-mapping',
                  '/admin/user-options', '/admin/category-labels', '/admin/settings',
                  '/admin/cost-mapping', '/admin/zwroty/licencje', '/admin/zwroty/cennik',
-                 '/admin/zwroty/przyjecie', '/admin/dekoracje'],
+                 '/admin/zwroty/przyjecie', '/admin/dekoracje', '/admin/zadania/czynnosci'],
 }
 
 
-@pytest.mark.parametrize('obszar', [MAGAZYN, POST_PROCESS, DISPLAYS, ZWROTY, USTAWIENIA])
+@pytest.mark.parametrize('obszar', [MAGAZYN, PRZYDZIELANIE, PRACOWNICY, POST_PROCESS, DISPLAYS, ZWROTY,
+                                    ZADANIA, USTAWIENIA])
 def test_strony_kafelka_wolaja_api_swojego_kafelka(client, obszar):
     """Mapa w logistat/obszary.py jest reczna: kazdy adres /api/… z HTML-a
     i skryptow strony kafelka pasuje do trasy przypisanej temu kafelkowi —

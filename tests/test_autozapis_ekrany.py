@@ -9,7 +9,7 @@ from conftest import strona_z_js
 
 EKRANY_AUTOZAPISU = {
     '/assignment': 'saveAssignments()">',
-    '/data-entry': 'saveEntries()">',
+    '/zadania-dodatkowe': 'saveEntries()">',
     '/forecast': 'saveAll()">',
     '/general-stats': 'saveAll()">',
 }
@@ -24,7 +24,7 @@ def test_ekran_wsadowy_ma_autozapis_zamiast_przycisku(admin_client, url, stary_p
     assert stary_przycisk not in html
 
 
-@pytest.mark.parametrize('url', ['/data-entry', '/forecast', '/general-stats'])
+@pytest.mark.parametrize('url', ['/zadania-dodatkowe', '/forecast', '/general-stats'])
 def test_pola_zapisuja_sie_po_pauzie_w_pisaniu(admin_client, url):
     """Sam `change` gubil ostatnia liczbe przy zamknieciu karty z kursorem w polu."""
     assert 'autoZapis.poWpisaniu(' in strona_z_js(admin_client, url)

@@ -1,11 +1,11 @@
 {% extends 'base.html' %}
-{% block title %}{{ NAZWA_APLIKACJI }} — Zarządzanie użytkownikami{% endblock %}
+{% block title %}{{ NAZWA_APLIKACJI }} — Pracownicy{% endblock %}
 
 {% block content %}
 <div class="page-header">
-    <h2>👤 Zarządzanie użytkownikami</h2>
+    <h2>👥 Lista pracowników</h2>
     <p class="subtitle">Dodawaj i edytuj pracowników. Ustaw kod kreskowy EAN-128 aby skaner mógł rozpoznać operatora.
-    </p>
+        Przy każdym pracowniku: normy per proces (Post-Process, Zwroty) i czasy pracy.</p>
 </div>
 
 <div class="card">
@@ -45,6 +45,15 @@
                 {% endif %}
             </div>
             <div class="admin-actions">
+                {# Kafelek Pracownicy (operacja 2026-11-02): przejscia do norm per proces i czasow. #}
+                {% if user.role == 'operator' %}
+                <a class="btn btn-ghost btn-sm link-normy" href="{{ url_for('normy.stats', user=user.id) }}"
+                   title="Normy Post-Process (skany paczek)">📊 Normy PP</a>
+                <a class="btn btn-ghost btn-sm" href="{{ url_for('zwroty.dashboard_zwrotow_view') }}#osoba-{{ user.id }}"
+                   title="Dashboard zwrotów — paczki i paczki/h w tym miesiącu">↩️ Zwroty</a>
+                <a class="btn btn-ghost btn-sm" href="{{ url_for('czas_pracy.worker_times', user_id=user.id) }}"
+                   title="Czasy pracy tej osoby w tym miesiącu">⏱ Czas pracy</a>
+                {% endif %}
                 <button class="btn btn-ghost btn-sm" onclick='editUser({{ user.id }}, {{ user.to_dict()|tojson }}, {{ szkolenia.get(user.id, [])|tojson }})'>✏️
                     Edytuj</button>
                 {% if user.is_active_user %}
