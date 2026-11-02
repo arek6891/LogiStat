@@ -15,7 +15,8 @@ from logistat.models import (
     get_or_create_shift)
 from logistat.przydzial_zwrotow import dashboard_zwrotow
 from logistat.przyjecie_zwrotu import (
-    CZYNNOSC_ZWROTOW, KOMUNIKAT_BRAK_OBSADY, efektywne_okresy, kto_na_stanowisku, przerwy_osob)
+    CZYNNOSC_ZWROTOW, KOMUNIKAT_BRAK_OBSADY, efektywne_okresy, kto_na_stanowisku, obsada_paczki,
+    przerwy_osob)
 
 T0 = datetime(2026, 9, 2, 6, 0)
 
@@ -48,6 +49,22 @@ def test_okres_konczy_sie_na_do_koncu_pracy_albo_po_12h():
     assert kto_na_stanowisku(okresy, 10, h(2)) == [2, 3], 'koniec okresu wylaczny'
     assert kto_na_stanowisku(okresy, 10, h(12)) == []
     assert kto_na_stanowisku(okresy, None, h(1)) == [], 'Support nie stoi na stanowisku'
+
+
+def test_paczka_dzieli_sie_na_stol_i_support_calej_zmiany():
+    """Operacja 2026-11-02: Support bez stolu, udzial w kazdej paczce w swoim czasie;
+    pusty stol = bez obsady (Support go nie obsadza)."""
+    h = lambda n: T0 + timedelta(hours=n)  # noqa: E731
+    okresy = efektywne_okresy([
+        (1, 10, False, h(0), h(8)),
+        (2, 20, False, h(0), h(8)),
+        (5, None, True, h(1), h(3)),     # Support
+        (6, 10, True, h(0), h(8)),       # Support z 29.10–1.11 (jeszcze przy stole)
+    ], {})
+    assert obsada_paczki(okresy, 10, h(0.5)) == [1, 6]
+    assert obsada_paczki(okresy, 20, h(2)) == [2, 5, 6], 'Support kazdego stolu'
+    assert obsada_paczki(okresy, 30, h(2)) == [], 'pusty stol — bez obsady mimo Supportu'
+    assert kto_na_stanowisku(okresy, 10, h(2)) == [1], 'blokada przyjecia bez Supportu'
 
 
 def test_przerwy_osob_pary_otwarte_i_koniec_pracy():
@@ -132,21 +149,21 @@ def test_lider_przydziela_przenosi_i_zdejmuje(leader_client):
     assert [w.stanowisko_id for w in wiersze] == [st1.id, st2.id]
     assert wiersze[0].do == wiersze[1].od, 'przeniesienie bez dziury i nakladki'
 
-    # Support przy stanowisku (2026-10-29): miejsce = stol, bez udzialu w paczkach.
-    r = leader_client.put('/api/zwroty/przydzial', json={**body, 'miejsce': st1.id, 'support': True})
-    assert [(o['miejsce'], o['support']) for o in r.get_json()['osoby']] == [(st1.id, True)]
+    # Support calej zmiany (2026-11-02): bez stolu.
+    r = leader_client.put('/api/zwroty/przydzial', json={**body, 'miejsce': 'support'})
+    assert [o['miejsce'] for o in r.get_json()['osoby']] == ['support']
     leader_client.put('/api/zwroty/przydzial', json={**body, 'miejsce': None})
     assert PrzydzialZwrotow.query.filter_by(do=None).count() == 0
     sup = PrzydzialZwrotow.query.filter_by(support=True).one()
-    assert sup.stanowisko_id == st1.id
+    assert sup.stanowisko_id is None
 
 
 @pytest.mark.parametrize('zmiana_body,blad', [
     ({'miejsce': 999999}, 'Nieznane stanowisko'),
     ({'miejsce': True}, 'Nieznane stanowisko'),
     ({'date': '2020-01-01'}, 'bieżącej zmiany'),
-    ({'miejsce': 'support'}, 'odśwież'),          # ekran sprzed Supportu przy stole
-    ({'support': 'tak'}, 'support'),
+    ({'miejsce': 'pomoc'}, 'Nieznane stanowisko'),
+    ({'support': True}, 'odśwież'),               # ekran z Supportem przy stole (29.10–1.11)
 ])
 def test_walidacja_przydzialu(leader_client, zmiana_body, blad):
     ola = make_user('operator')
@@ -272,8 +289,7 @@ def test_dashboard_dzien_lokalny_i_godziny_dzielone_o_polnocy(flask_app):
     od, do = datetime(2026, 9, 2, 18, 0), datetime(2026, 9, 3, 0, 0)
     db.session.add_all([
         PrzydzialZwrotow(shift_id=zmiana.id, user_id=a.id, stanowisko_id=st.id, od=od, do=do),
-        PrzydzialZwrotow(shift_id=zmiana.id, user_id=s.id, stanowisko_id=st.id, support=True,
-                         od=od, do=do),
+        PrzydzialZwrotow(shift_id=zmiana.id, user_id=s.id, support=True, od=od, do=do),
     ])
     _zwrot_o(st, datetime(2026, 9, 2, 22, 30), 'polnoc')   # 03.09 00:30 w Warszawie
     db.session.commit()
@@ -283,12 +299,51 @@ def test_dashboard_dzien_lokalny_i_godziny_dzielone_o_polnocy(flask_app):
     a_ = next(o for o in d['osoby'] if o['nazwa'] == 'A')
     assert a_['dni'][d2]['godziny'] == pytest.approx(4.0)
     assert a_['dni'][d3]['godziny'] == pytest.approx(2.0)
-    assert a_['dni'][d3]['paczki'] == pytest.approx(1.0) and a_['dni'][d2]['paczki'] == 0
-    # Support: bez paczek i godzin, tylko nazwisko przy stole (operacja 2026-10-29).
-    assert a_['dni'][d3]['paczki'] == pytest.approx(1.0), 'Support nie bierze udzialu'
-    assert 'S' not in {o['nazwa'] for o in d['osoby']} and 'support' not in d
-    assert next(x for x in d['stanowiska'] if x['id'] == st.id)['support'] == ['S']
+    assert a_['dni'][d3]['paczki'] == pytest.approx(0.5) and a_['dni'][d2]['paczki'] == 0
+    # Support calej zmiany (operacja 2026-11-02): udzial w paczce i godziny jak kazdy.
+    s_ = next(o for o in d['osoby'] if o['nazwa'] == 'S')
+    assert s_['support'] is True and a_['support'] is False
+    assert s_['dni'][d3]['paczki'] == pytest.approx(0.5)
+    assert s_['godziny'] == pytest.approx(6.0)
     assert d['obsada'][d3] == {'osoby': 1, 'support': 1}
+
+
+def test_support_dostaje_udzial_suma_sie_zgadza(flask_app):
+    """Support (2026-11-02) dzieli paczki dwoch stolow; pusty stol zostaje bez obsady,
+    suma udzialow + bez obsady = paczki stanowisk."""
+    st1, st2 = make_user('stanowisko', display_name='Z1'), make_user('stanowisko', display_name='Z2')
+    a, s = make_user('operator', display_name='A'), make_user('operator', display_name='S')
+    zmiana = get_or_create_shift(date(2026, 9, 2), 1)
+    db.session.add_all([
+        PrzydzialZwrotow(shift_id=zmiana.id, user_id=a.id, stanowisko_id=st1.id, od=T0,
+                         do=T0 + timedelta(hours=4)),
+        PrzydzialZwrotow(shift_id=zmiana.id, user_id=s.id, support=True, od=T0,
+                         do=T0 + timedelta(hours=4)),
+    ])
+    _zwrot_o(st1, T0 + timedelta(hours=1), 's-1')    # A + S → po 0,5
+    _zwrot_o(st1, T0 + timedelta(hours=2), 's-2')
+    _zwrot_o(st2, T0 + timedelta(hours=2), 's-3')    # nikt przy Z2 → bez obsady
+    db.session.commit()
+    dzien = date(2026, 9, 2)
+    d = dashboard_zwrotow([dzien], teraz=datetime(2026, 9, 3))
+    osoby = {o['nazwa']: o for o in d['osoby']}
+    assert osoby['A']['paczki'] == pytest.approx(1.0)
+    assert osoby['S']['paczki'] == pytest.approx(1.0)
+    assert osoby['S']['na_godzine'] == pytest.approx(0.25)
+    assert d['nieprzypisane'] == {dzien: 1}
+    assert sum(o['paczki'] for o in d['osoby']) + 1 == d['suma_dni'][dzien] == 3
+
+
+def test_sam_support_nie_odblokowuje_stanowiska(flask_app):
+    st = make_user('stanowisko')
+    s = make_user('operator')
+    zmiana = get_or_create_shift(local_today(), 1)
+    na_zwrotach(zmiana, s)
+    db.session.add(PrzydzialZwrotow(shift_id=zmiana.id, user_id=s.id, support=True,
+                                    od=teraz_utc() - timedelta(minutes=5)))
+    db.session.commit()
+    r = klient(flask_app, st).post('/api/zwroty/przyjecie', json=zwrot())
+    assert r.status_code == 409 and r.get_json()['brak_obsady'] is True
 
 
 def test_odpowiedz_zapisu_zostawia_edycje(leader_client):
@@ -297,8 +352,7 @@ def test_odpowiedz_zapisu_zostawia_edycje(leader_client):
     st = make_user('stanowisko')
     na_zwrotach(get_or_create_shift(local_today(), 1), ola)
     r = leader_client.put('/api/zwroty/przydzial', json={
-        'date': local_today().isoformat(), 'shift': 1, 'user_id': ola.id, 'miejsce': st.id,
-        'support': True})
+        'date': local_today().isoformat(), 'shift': 1, 'user_id': ola.id, 'miejsce': 'support'})
     assert r.get_json()['edycja'] is True
     r = leader_client.get('/api/zwroty/przydzial?date=2020-01-01&shift=1')
     assert r.get_json()['edycja'] is False
