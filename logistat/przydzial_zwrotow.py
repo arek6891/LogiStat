@@ -3,9 +3,10 @@
 Pracownik nie skanuje identyfikatora przy przyjeciu zwrotu — paczka nalezy do
 STANOWISKA (konto roli `stanowisko`, ktore ja zapisalo), a osoby do stanowiska
 przydziela lider: Przydzielanie → czynnosc „Zwroty” → ekran stanowisk. Paczka
-dzieli sie po rowno na osoby przydzielone do stanowiska w chwili przyjecia.
-Kto byl na stanowisku, liczy JEDNA funkcja `kto_na_stanowisku()` — ta sama dla
-blokady przyjecia (409 bez obsady) i dla dashboardu.
+dzieli sie po rowno na osoby przydzielone do stanowiska w chwili przyjecia
+i na Support calej zmiany (2026-11-02). Kto byl na stanowisku, liczy JEDNA funkcja
+`kto_na_stanowisku()` — ta sama dla blokady przyjecia (409 bez obsady) i dla
+`obsada_paczki()` (podzial paczki w dashboardzie).
 """
 from datetime import timedelta
 
@@ -15,7 +16,8 @@ from logistat.models import (
     Activity, ActivityAssignment, PrzydzialZwrotow, Shift, User, WorkerTimeEvent, ZwrotPaczki)
 from logistat.okresy import odejmij_okresy
 from logistat.przyjecie_zwrotu import (
-    CZYNNOSC_ZWROTOW, MAX_GODZIN_PRZYDZIALU, efektywne_okresy, kto_na_stanowisku, przerwy_osob)
+    CZYNNOSC_ZWROTOW, MAX_GODZIN_PRZYDZIALU, SUPPORT, efektywne_okresy, kto_na_stanowisku,
+    obsada_paczki, przerwy_osob)
 
 
 def stanowiska_zwrotow():
@@ -80,17 +82,14 @@ def stan_przydzialu(shift):
         if (pula or otwarte_os) else {}
 
     def miejsce(w):
-        # Support siedzi przy stanowisku (2026-10-29) — miejsce = to stanowisko,
-        # `support` mowi, ze bez udzialu w paczkach.
+        # Support = cala zmiana (2026-11-02), takze wiersz z 29.10–1.11 przy stole.
         if w is None or w.shift_id != shift.id:
             return None
-        return w.stanowisko_id
+        return SUPPORT if w.support else w.stanowisko_id
 
     osoby = sorted((
         {'user_id': u, 'nazwa': ludzie[u].display_name if u in ludzie else f'#{u}',
          'miejsce': miejsce(otwarte_os.get(u)),
-         'support': bool(otwarte_os.get(u) and otwarte_os[u].shift_id == shift.id
-                         and otwarte_os[u].support),
          'od': iso_z(otwarte_os[u].od) if u in otwarte_os else None,
          'na_innej_zmianie': u in otwarte_os and otwarte_os[u].shift_id != shift.id,
          'poza_zwrotami': u not in na_zwrotach}
@@ -98,7 +97,7 @@ def stan_przydzialu(shift):
     zmiany = {s.id: s for s in Shift.query.filter(
         Shift.id.in_({w.shift_id for w in otwarte})).all()} if otwarte else {}
     inne = [{'user_id': w.user_id, 'nazwa': ludzie[w.user_id].display_name,
-             'stanowisko_id': w.stanowisko_id, 'support': w.support,
+             'stanowisko_id': None if w.support else w.stanowisko_id, 'support': w.support,
              'od': iso_z(w.od),
              'zmiana': f'{zmiany[w.shift_id].date:%d.%m} · Zmiana {zmiany[w.shift_id].shift_number}'}
             for w in otwarte if w.shift_id != shift.id]
@@ -125,17 +124,18 @@ def zamknij_otwarty(user_id, teraz):
     return True
 
 
-def przydziel(shift, user_id, stanowisko_id, support, teraz, kto_id):
+def przydziel(shift, user_id, miejsce, teraz, kto_id):
     """Przeniesienie osoby: zamyka jej otwarty wiersz i otwiera nowy w TEJ SAMEJ
-    chwili (bez dziury i nakladki). `stanowisko_id` None = zdjecie; `support` =
-    pomaga przy tym stanowisku bez udzialu w paczkach.
+    chwili (bez dziury i nakladki). `miejsce`: id stanowiska, SUPPORT (cala
+    zmiana, bez stolu) albo None = zdjecie.
     Commit robi wolajacy (blad indeksu „jeden otwarty” = rownolegla zmiana)."""
     zamknij_otwarty(user_id, teraz)
     db.session.flush()
-    if stanowisko_id is not None:
+    if miejsce is not None:
+        support = miejsce == SUPPORT
         db.session.add(PrzydzialZwrotow(
-            shift_id=shift.id, user_id=user_id, stanowisko_id=stanowisko_id,
-            support=bool(support), od=teraz, przydzielil_id=kto_id))
+            shift_id=shift.id, user_id=user_id, stanowisko_id=None if support else miejsce,
+            support=support, od=teraz, przydzielil_id=kto_id))
 
 
 def zamknij_poza_zwrotami(shift, teraz):
@@ -178,33 +178,35 @@ def przerwy_w_zakresie(osoby, start, koniec, teraz):
 
 def dashboard_zwrotow(dni, teraz):
     """Statystyki dni `dni` (lista dat lokalnych, np. caly miesiac): przyjete paczki
-    per stanowisko (+ kto pomagal jako Support), paczki i godziny per osoba (paczka
-    po rowno na obsade stanowiska w chwili przyjecia) i obsada dnia.
-    Godziny = czas na stanowisku NETTO — bez przerw i „Innych” z Czasu pracy
-    (operacja 2026-10-29, jak w PP); trwajacy przydzial liczony do `teraz`.
-    Support nie ma statystyk (operacja 2026-10-29) — tylko nazwiska przy stole."""
+    per stanowisko, paczki i godziny per osoba (paczka po rowno na obsade stanowiska
+    + Support w chwili przyjecia — `obsada_paczki()`) i obsada dnia.
+    Godziny = czas na stanowisku / w Supporcie NETTO — bez przerw i „Innych” z Czasu
+    pracy (operacja 2026-10-29, jak w PP); trwajacy przydzial liczony do `teraz`.
+    Support ma statystyki jak kazdy (operacja 2026-11-02), wiersz z `support: True`."""
     start, koniec = local_day_bounds(dni[0])[0], local_day_bounds(dni[-1])[1]
     okresy = okresy_w_zakresie(start, koniec)
-    przerwy = przerwy_w_zakresie({o[0] for o in okresy if not o[2]}, start, koniec, teraz)
+    przerwy = przerwy_w_zakresie({o[0] for o in okresy}, start, koniec, teraz)
+    wsparcie = [o for o in okresy if o[2]]
     po_stanowisku = {}
     for o in okresy:
-        po_stanowisku.setdefault(o[1], []).append(o)
+        if not o[2]:
+            po_stanowisku.setdefault(o[1], []).append(o)
 
-    stanowiska = {s.id: {'id': s.id, 'nazwa': s.display_name, 'dni': {}, 'suma': 0, 'support': []}
+    stanowiska = {s.id: {'id': s.id, 'nazwa': s.display_name, 'dni': {}, 'suma': 0}
                   for s in stanowiska_zwrotow()}
-    osoby, support, nieprzypisane = {}, {}, {}
+    osoby, nieprzypisane = {}, {}
     zwroty = db.session.query(ZwrotPaczki.przyjal_id, ZwrotPaczki.przyjeto_at).filter(
         ZwrotPaczki.przyjeto_at >= start, ZwrotPaczki.przyjeto_at < koniec).all()
     for przyjal_id, kiedy in zwroty:
         dzien = utc_to_local(kiedy).date()
         if przyjal_id not in stanowiska:
             konto = db.session.get(User, przyjal_id) if przyjal_id else None
-            stanowiska[przyjal_id] = {'id': przyjal_id, 'dni': {}, 'suma': 0, 'support': [],
+            stanowiska[przyjal_id] = {'id': przyjal_id, 'dni': {}, 'suma': 0,
                                       'nazwa': konto.display_name if konto else '—'}
         st = stanowiska[przyjal_id]
         st['dni'][dzien] = st['dni'].get(dzien, 0) + 1
         st['suma'] += 1
-        obsada = kto_na_stanowisku(po_stanowisku.get(przyjal_id, []), przyjal_id, kiedy)
+        obsada = obsada_paczki(po_stanowisku.get(przyjal_id, []) + wsparcie, przyjal_id, kiedy)
         if not obsada:
             nieprzypisane[dzien] = nieprzypisane.get(dzien, 0) + 1
         for u in obsada:
@@ -214,34 +216,25 @@ def dashboard_zwrotow(dni, teraz):
             os_['paczki'] += 1 / len(obsada)
 
     obsada_dnia = {d: {'osoby': set(), 'support': set()} for d in dni}
-    for user_id, stanowisko_id, sup, od, do in okresy:
-        if sup:
-            # Support: kto pomagal przy ktorym stole i ilu ich bylo w dniu — bez godzin.
-            dni_okresu = _godziny_na_dni(od, min(do, teraz), dni)
-            if dni_okresu:
-                support.setdefault(stanowisko_id, set()).add(user_id)
-            for d in dni_okresu:
-                obsada_dnia[d]['support'].add(user_id)
-            continue
+    pomocnicy = set()
+    for user_id, _, sup, od, do in okresy:
         for czesc_od, czesc_do in odejmij_okresy(od, min(do, teraz), przerwy.get(user_id, ())):
             for d, godz in _godziny_na_dni(czesc_od, czesc_do, dni).items():
                 os_ = osoby.setdefault(user_id, {'dni': {}, 'paczki': 0.0, 'godziny': 0.0})
                 komorka = os_['dni'].setdefault(d, {'paczki': 0.0, 'godziny': 0.0})
                 komorka['godziny'] += godz
                 os_['godziny'] += godz
-                obsada_dnia[d]['osoby'].add(user_id)
+                obsada_dnia[d]['support' if sup else 'osoby'].add(user_id)
+                if sup:
+                    pomocnicy.add(user_id)
 
-    pomocnicy = set().union(*support.values()) if support else set()
     nazwy = {u.id: (u.display_name, u.is_active_user) for u in User.query.filter(
-        User.id.in_(set(osoby) | pomocnicy)).all()} if (osoby or pomocnicy) else {}
-    for stanowisko_id, ludzie in support.items():
-        if stanowisko_id in stanowiska:
-            stanowiska[stanowisko_id]['support'] = sorted(
-                (nazwy.get(u, (f'#{u}',))[0] for u in ludzie), key=str.lower)
+        User.id.in_(osoby)).all()} if osoby else {}
 
     def wiersz(user_id, dane):
         nazwa, aktywny = nazwy.get(user_id, (f'#{user_id}', True))
-        return {'id': user_id, 'nazwa': nazwa, 'aktywny': aktywny, **dane}
+        return {'id': user_id, 'nazwa': nazwa, 'aktywny': aktywny,
+                'support': user_id in pomocnicy, **dane}
 
     for dane in osoby.values():
         dane['na_godzine'] = dane['paczki'] / dane['godziny'] if dane['godziny'] > 0 else None

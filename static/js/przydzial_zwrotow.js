@@ -1,10 +1,11 @@
 // Skrypt strony templates/przydzial_zwrotow.html (2026-10-27): osoby z czynnosci
-// „Zwroty” → stanowiska zwrotow, na stanowisku albo jako Support przy nim
-// (2026-10-29: Support bez udzialu w paczkach, „pod wynik stolu”). Kazdy wybor
+// „Zwroty” → stanowiska zwrotow albo Support (2026-11-02: bez stolu, pomaga calej
+// zmianie i dostaje udzial w kazdej paczce przyjetej w tym czasie). Kazdy wybor
 // zapisuje sie od razu (autoZapis, klucz = osoba) i liczy od chwili zapisu.
 // Nazwy przez textContent.
 
 const URL_API = '/api/zwroty/przydzial';
+const SUPPORT = 'support';
 let stan = null;
 
 function el(tag, klasa, tekst) {
@@ -17,8 +18,8 @@ function el(tag, klasa, tekst) {
 const godzina = iso => iso ? new Date(iso).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }) : '';
 const nazwaStanowiska = id => (stan.stanowiska.find(s => s.id === id) || { nazwa: `#${id}` }).nazwa;
 
-function zapisz(userId, miejsce, support = false) {
-    const body = { date: PRZYDZIAL.date, shift: PRZYDZIAL.shift, user_id: userId, miejsce, support };
+function zapisz(userId, miejsce) {
+    const body = { date: PRZYDZIAL.date, shift: PRZYDZIAL.shift, user_id: userId, miejsce };
     autoZapis.zaplanuj(`osoba:${userId}`, async () => {
         try {
             rysuj(await zapiszJson(URL_API, 'PUT', body));
@@ -32,19 +33,17 @@ function zapisz(userId, miejsce, support = false) {
 function rysujStanowiska() {
     const box = document.getElementById('przydzialStanowiska');
     box.replaceChildren();
-    stan.stanowiska.forEach(st => {
-        const karta = el('div', 'card przydzial-stanowisko');
-        const tu = stan.osoby.filter(o => o.miejsce === st.id);
-        const osoby = tu.filter(o => !o.support);
-        const pomoc = tu.filter(o => o.support);
-        karta.append(el('h4', '', `🖥️ ${st.nazwa}`), el('div', 'przydzial-liczba', `${osoby.length} os.`));
+    const karta = (tytul, osoby, klasa) => {
+        const k = el('div', `card przydzial-stanowisko ${klasa || ''}`);
+        k.append(el('h4', '', tytul), el('div', 'przydzial-liczba', `${osoby.length} os.`));
         const lista = el('ul');
         osoby.forEach(o => lista.append(el('li', '', `${o.nazwa} · od ${godzina(o.od)}`)));
-        pomoc.forEach(o => lista.append(el('li', 'przydzial-support', `🤝 ${o.nazwa} · od ${godzina(o.od)}`)));
-        if (!osoby.length) karta.classList.add('pusta');
-        karta.append(lista);
-        box.append(karta);
-    });
+        if (!osoby.length) k.classList.add('pusta');
+        k.append(lista);
+        box.append(k);
+    };
+    stan.stanowiska.forEach(st => karta(`🖥️ ${st.nazwa}`, stan.osoby.filter(o => o.miejsce === st.id)));
+    karta('🤝 Support — cała zmiana', stan.osoby.filter(o => o.miejsce === SUPPORT), 'przydzial-support');
 }
 
 function rysujOsoby() {
@@ -63,24 +62,16 @@ function rysujOsoby() {
         const imie = el('td', '', o.nazwa);
         if (o.poza_zwrotami) imie.append(el('small', 'przydzial-uwaga', ' (już nie na „Zwrotach” w Przydzielaniu)'));
         if (o.na_innej_zmianie) imie.append(el('small', 'przydzial-uwaga', ' (na stanowisku z innej zmiany)'));
-        // Wartosc opcji: '' | 's:<id>' (na stanowisku) | 'p:<id>' (Support przy nim).
+        // Wartosc opcji: '' | id stanowiska | 'support' (cala zmiana).
         const wybor = el('select', 'form-control');
         wybor.append(new Option('— nie na stanowisku —', ''));
-        const naStanowisku = el('optgroup');
-        naStanowisku.label = 'Na stanowisku (dostaje paczki)';
-        const wsparcie = el('optgroup');
-        wsparcie.label = 'Support przy stanowisku (bez paczek)';
-        stan.stanowiska.forEach(s => {
-            naStanowisku.append(new Option(`🖥️ ${s.nazwa}`, `s:${s.id}`));
-            wsparcie.append(new Option(`🤝 Support — ${s.nazwa}`, `p:${s.id}`));
-        });
-        wybor.append(naStanowisku, wsparcie);
-        wybor.value = o.miejsce === null ? '' : `${o.support ? 'p' : 's'}:${o.miejsce}`;
+        stan.stanowiska.forEach(s => wybor.append(new Option(`🖥️ ${s.nazwa}`, String(s.id))));
+        wybor.append(new Option('🤝 Support — cała zmiana', SUPPORT));
+        wybor.value = o.miejsce === null ? '' : String(o.miejsce);
         wybor.disabled = !stan.edycja || (o.poza_zwrotami && o.miejsce === null);
         wybor.addEventListener('change', () => {
             const v = wybor.value;
-            if (v === '') zapisz(o.user_id, null);
-            else zapisz(o.user_id, parseInt(v.slice(2), 10), v.startsWith('p:'));
+            zapisz(o.user_id, v === '' ? null : (v === SUPPORT ? SUPPORT : parseInt(v, 10)));
         });
         const td = el('td');
         td.append(wybor);
@@ -96,8 +87,7 @@ function rysujInne() {
     box.hidden = !stan.inne_zmiany.length;
     stan.inne_zmiany.forEach(w => {
         const tr = el('tr');
-        const gdzie = w.stanowisko_id === null ? '🤝 Support'
-            : (w.support ? `🤝 Support — ${nazwaStanowiska(w.stanowisko_id)}` : `🖥️ ${nazwaStanowiska(w.stanowisko_id)}`);
+        const gdzie = w.support ? '🤝 Support' : `🖥️ ${nazwaStanowiska(w.stanowisko_id)}`;
         const td = el('td');
         const b = el('button', 'btn btn-danger btn-sm', 'Zakończ');
         b.type = 'button';
