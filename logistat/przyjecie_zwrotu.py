@@ -110,7 +110,9 @@ def pos_nummer(wartosc):
 # ── Przydzial osob do stanowisk zwrotow (operacja 2026-10-27) ────────────────
 # Lider przydziela osoby z czynnosci „Zwroty” (Przydzielanie, po NAZWIE — zmiana
 # nazwy czynnosci odcina ten ekran) do stanowisk = kont roli `stanowisko`, albo jako
-# Support przy stanowisku (2026-10-29: bez paczek i statystyk, „pod wynik stolu”). Osoba liczy sie od chwili przydzialu do przeniesienia / zdjecia,
+# Support (operacja 2026-11-02: bez stolu, pomaga calej zmianie i dostaje udzial w
+# kazdej paczce przyjetej w tym czasie — `obsada_paczki()`; 2026-10-29…11-01 Support
+# siedzial przy stole bez paczek). Osoba liczy sie od chwili przydzialu do przeniesienia / zdjecia,
 # skanu „Koniec pracy” albo MAX_GODZIN_PRZYDZIALU (zmiany nie maja godzin).
 CZYNNOSC_ZWROTOW = 'Zwroty'
 SUPPORT = 'support'
@@ -178,3 +180,17 @@ def kto_na_stanowisku(okresy, stanowisko_id, chwila):
     Okres [start, koniec) — przy przeniesieniu o 10:00 paczka z 10:00 idzie na nowe miejsce."""
     return sorted({u for u, s, sup, start, koniec in okresy
                    if not sup and s == stanowisko_id and start <= chwila < koniec})
+
+
+def obsada_paczki(okresy, stanowisko_id, chwila):
+    """Na kogo dzieli sie po rowno paczka przyjeta na stanowisku w danej chwili:
+    osoby na tym stanowisku + kazdy Support w tej chwili (operacja 2026-11-02 —
+    Support pomaga calej zmianie, nie jednemu stolowi). Pusty stol → [] („Bez
+    obsady”): sam Support stanowiska nie obsadza (blokada przyjecia patrzy tylko na
+    `kto_na_stanowisku()`), wiec suma udzialow + bez obsady = paczki stanowiska.
+    Wiersz Support z 29.10–1.11 ma jeszcze `stanowisko_id` — liczy sie jak kazdy Support."""
+    stol = kto_na_stanowisku(okresy, stanowisko_id, chwila)
+    if not stol:
+        return []
+    return sorted(set(stol) | {u for u, _, sup, start, koniec in okresy
+                               if sup and start <= chwila < koniec})

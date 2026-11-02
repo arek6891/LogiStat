@@ -11,7 +11,7 @@
   i przyciski (brandy, kurierzy, Verpackungsvorschrift) ustawia admin.
   Bez osob przydzielonych do stanowiska przyjecie jest zablokowane (409).
 - „Przydział zwrotów” i „Dashboard zwrotów” (2026-10-27): lider przydziela osoby
-  z czynnosci Zwroty do stanowisk / Supportu; statystyki dni miesiaca.
+  z czynnosci Zwroty do stanowisk / Supportu calej zmiany; statystyki dni miesiaca.
 """
 import logging
 import uuid
@@ -568,20 +568,17 @@ def api_przydzial_zwrotow():
 @bp.route('/api/zwroty/przydzial', methods=['PUT'])
 @leader_required
 def api_przydzial_zwrotow_zapisz():
-    """{date, shift, user_id, miejsce: id stanowiska | null, support: bool}.
+    """{date, shift, user_id, miejsce: id stanowiska | "support" | null}.
     Przeniesienie liczy sie od chwili zapisu; null = zejscie ze stanowiska.
-    `support` = pomaga przy tym stanowisku bez udzialu w paczkach (2026-10-29)."""
+    "support" = pomaga calej zmianie, bez stolu, z udzialem w paczkach (2026-11-02)."""
     d = json_body()
     dzien = parse_date(d.get('date'))
     numer = parse_shift_number(d.get('shift'))
     user_id = require_int(d.get('user_id'), 'user_id')
     miejsce = d.get('miejsce')
-    if miejsce == SUPPORT:
-        # Ekran sprzed 2026-10-29 (Support bez stolu).
-        abort(400, 'Support wybiera się teraz przy stanowisku — odśwież stronę.')
-    support = d.get('support', False)
-    if not isinstance(support, bool):
-        abort(400, 'Pole „support” musi być true/false.')
+    if d.get('support') is True:
+        # Ekran z 29.10–1.11 (Support przy stole).
+        abort(400, 'Support wybiera się teraz dla całej zmiany, bez stanowiska — odśwież stronę.')
     shift = _zmiana_przydzialu(dzien, numer)
     # Dwoch liderow na jednej zmianie — kolejno, nie na raz.
     shift = Shift.query.filter_by(id=shift.id).with_for_update().one()
@@ -593,10 +590,10 @@ def api_przydzial_zwrotow_zapisz():
         if user_id not in {o['user_id'] for o in stan['osoby'] if not o['poza_zwrotami']}:
             abort(400, f'Ta osoba nie jest przydzielona do czynności „{stan["czynnosc"]}” '
                        'na tej zmianie — najpierw Przydzielanie.')
-        if isinstance(miejsce, bool) or not isinstance(miejsce, int) \
-                or miejsce not in {s.id for s in stanowiska_zwrotow()}:
+        if miejsce != SUPPORT and (isinstance(miejsce, bool) or not isinstance(miejsce, int)
+                                   or miejsce not in {s.id for s in stanowiska_zwrotow()}):
             abort(400, 'Nieznane stanowisko.')
-        przydziel(shift, user_id, miejsce, support, teraz, current_user.id)
+        przydziel(shift, user_id, miejsce, teraz, current_user.id)
     try:
         db.session.commit()
     except IntegrityError:
