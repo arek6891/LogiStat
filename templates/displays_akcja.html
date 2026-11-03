@@ -126,5 +126,6 @@
 <script>
 const AKCJA = {{ {'id': akcja.id, 'zakonczona': akcja.zakonczona, 'etapy': akcja.etapy, 'dostawy': dostawy}|tojson }};
 </script>
+<script src="{{ static_v('js/etapy_akcji.js') }}"></script>
 <script src="{{ static_v('js/displays_akcja.js') }}"></script>
 {% endblock %}

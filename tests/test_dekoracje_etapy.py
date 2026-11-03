@@ -137,3 +137,23 @@ def test_gantt_pokazuje_ostrzezenia(leader_client):
         ('Dostawa komponentów', 'po_terminie'), ('Dostawa materiałów opakowaniowych', 'konczy_sie')]
     assert akcje['Spokojna']['ostrzezenia'] == []
     assert 'ostrzezenia' in leader_client.get('/displays').get_data(as_text=True)
+
+
+def test_gantt_rozwiniecie_ma_wszystkie_etapy_z_datami(leader_client):
+    """Rozwiniecie Gantta (2026-11-03): pod akcja wszystkie kamienie milowe —
+    dane strony niosa pelna liste etapow ze stanem i datami (nie tylko ostrzezenia)."""
+    import json
+    import re
+    dzis = local_today()
+    a = nowa_akcja(leader_client, od=dzis - timedelta(days=5), do=dzis + timedelta(days=20))
+    termin(leader_client, a, 'assembly', dzis + timedelta(days=5), dzis + timedelta(days=10))
+    leader_client.put(url(a, 'picking'), json={'nie_dotyczy': True})
+    html = leader_client.get('/displays').get_data(as_text=True)
+    assert 'id="ganttRozwin"' in html and 'js/etapy_akcji.js' in html
+    assert html.index('js/etapy_akcji.js') < html.index('js/displays.js')
+    gantt = json.loads(re.search(r'const GANTT = (.*);', html).group(1))
+    etapy = {e['klucz']: e for e in next(x for x in gantt['akcje'] if x['id'] == a['id'])['etapy']}
+    assert list(etapy) == list(KLUCZE_ETAPOW)
+    assert (etapy['assembly']['od'], etapy['assembly']['do'], etapy['assembly']['stan']) == (
+        (dzis + timedelta(days=5)).isoformat(), (dzis + timedelta(days=10)).isoformat(), 'planowany')
+    assert etapy['picking']['stan'] == 'nie_dotyczy' and etapy['komponenty']['stan'] == 'bez_terminu'

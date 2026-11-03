@@ -8,13 +8,16 @@
 <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:1rem;">
     <div>
         <h2>💍 Dekoracje — akcje</h2>
-        <p class="subtitle">Akcje w toku i zaplanowane. Kliknij akcję, żeby wpisać indexy. Zakończone akcje są w
+        <p class="subtitle">Akcje w toku i zaplanowane. Kliknij akcję, żeby wpisać indexy; ▸ przy akcji pokazuje jej kamienie milowe. Zakończone akcje są w
             <a href="{{ url_for('displays.historia') }}">Historii akcji</a>.</p>
     </div>
     <button type="button" class="btn btn-primary" id="nowaAkcja">➕ Nowa akcja</button>
 </div>
 
 <div class="card">
+    <div class="gantt-narzedzia">
+        <button type="button" class="btn btn-ghost" id="ganttRozwin" hidden>▸ Rozwiń kamienie milowe</button>
+    </div>
     <div class="gantt" id="gantt"></div>
 </div>
 
@@ -46,5 +49,6 @@
 <script>
 const GANTT = {{ {'akcje': akcje, 'dzis': dzis.isoformat()}|tojson }};
 </script>
+<script src="{{ static_v('js/etapy_akcji.js') }}"></script>
 <script src="{{ static_v('js/displays.js') }}"></script>
 {% endblock %}
