@@ -41,13 +41,9 @@ function przelicz() {
 }
 
 // ── Kamienie milowe (2026-10-29) ──
-// Stan liczy serwer (stan_etapu, dzien lokalny serwera) — tu tylko etykiety.
+// Stan liczy serwer (stan_etapu, dzien lokalny serwera) — etykiety STANY_ETAPU
+// w static/js/etapy_akcji.js (wspolne z Gantem).
 // Daty etapu ida razem: zapis dopiero gdy obie wpisane albo obie puste.
-const STANY_ETAPU = {
-    bez_terminu: ['Bez terminu', ''], nie_dotyczy: ['Nie dotyczy', ''],
-    planowany: ['Zaplanowany', ''], w_toku: ['W toku', 'w-toku'],
-    konczy_sie: ['⏳ Kończy się', 'konczy-sie'], po_terminie: ['⚠ Po terminie', 'po-terminie'],
-};
 const DZIEN_MS = 86400000;
 const nrDnia = iso => { const [r, m, d] = iso.split('-').map(Number); return Date.UTC(r, m - 1, d) / DZIEN_MS; };
 const krotko = iso => `${iso.slice(8, 10)}.${iso.slice(5, 7)}`;

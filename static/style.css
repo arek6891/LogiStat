@@ -1857,6 +1857,25 @@ a.gantt-nazwa:hover { color: var(--accent); text-decoration: underline; }
 .gantt-etapy { flex: none; display: inline-flex; gap: 6px; font-size: .75rem; font-weight: 700; white-space: nowrap; cursor: help; }
 .gantt-etapy .po-terminie { color: var(--danger); }
 .gantt-etapy .konczy-sie { color: var(--warning); }
+.gantt-narzedzia { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+/* Rozwiniecie kamieni milowych pod akcja (2026-11-03) */
+.gantt-rozwin { flex: none; width: 26px; height: 26px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg-card-solid); color: var(--accent); font-size: .85rem; cursor: pointer; padding: 0; line-height: 1; }
+.gantt-rozwin:hover, .gantt-rozwin[aria-expanded="true"] { border-color: var(--accent); }
+.gantt-etap-kom { padding-left: 32px; min-width: 0; line-height: 1.2; }
+.gantt-etap-nazwa { font-size: .82rem; font-weight: 600; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gantt-etap-opis { font-size: .75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gantt-etap-opis .dekoracje-etap-stan { font-size: .75rem; }
+.gantt-tor-etapu { height: 30px; background: none; }
+.gantt-zakres-akcji { position: absolute; top: 4px; bottom: 4px; background: rgb(var(--accent-rgb) / .08); border-radius: 4px; }
+.gantt-etap-pasek { position: absolute; top: 7px; bottom: 7px; min-width: 4px; border-radius: 4px; background: var(--text-muted);
+    color: var(--on-accent); font-size: .7rem; font-weight: 600; padding: 0 6px; display: flex; align-items: center;
+    overflow: hidden; white-space: nowrap; text-decoration: none; }
+.gantt-etap-pasek.w-toku { background: var(--accent); }
+.gantt-etap-pasek.konczy-sie { background: var(--warning); }
+.gantt-etap-pasek.po-terminie { background: var(--danger); }
+.gantt-etap-pasek:hover { filter: brightness(1.1); }
+@media (max-width: 700px) { .gantt-etap-kom { padding-left: 8px; } }
 
 /* ── Zadania dodatkowe (2026-11-02): suwak zakresu godzin z dwoma uchwytami ── */
 .zadania-tabela td { vertical-align: top; }
