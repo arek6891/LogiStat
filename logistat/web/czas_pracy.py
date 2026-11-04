@@ -9,8 +9,8 @@ from logistat.czas import iso_z, local_day_bounds, local_today, teraz_utc
 from logistat.czas_pracy_dane import MAX_DNI_OSOBY, otwarci_szkoleni, wiersze_czasow
 from logistat.extensions import db
 from logistat.models import (
-    EVENT_TYPES, KOMUNIKATY_TRWANIA, Shift, ShiftAttendance, TRYBY_CZASU, TRYBY_SKANU, User,
-    WorkerTimeEvent, get_setting_int)
+    EVENT_TYPES, KOMUNIKATY_TRWANIA, Shift, ShiftAttendance, TRWAJA_W_PRZERWIE, TRYBY_CZASU,
+    TRYBY_SKANU, User, WorkerTimeEvent, get_setting_int)
 from logistat.web.wspolne import (
     json_body, leader_required, magazyn_required, parse_czas_utc, require_int)
 
@@ -189,10 +189,13 @@ def api_time_scan():
 
     trwa = mode in trwajace
     # Przerwa, „Inne" i szkolenie nie moga trwac jednoczesnie — przerwa
-    # i „Inne" odjelyby ten sam czas dwa razy, a paczka z przerwy liczylaby
-    # sie jako szkolenie.
-    if not trwa and trwajace:
-        return jsonify({'error': f'{user.display_name} {KOMUNIKATY_TRWANIA[trwajace[0]]}'}), 409
+    # i „Inne" odjelyby ten sam czas dwa razy. Wyjatek: przerwa w trakcie
+    # szkolenia (operacje 2026-11-04) — szkolenie trwa dalej, a jego minuty
+    # liczymy bez przerwy (`_compute_worker_times`).
+    blokuja = [m for m in trwajace
+               if not (mode == 'break' and m in TRWAJA_W_PRZERWIE)]
+    if not trwa and blokuja:
+        return jsonify({'error': f'{user.display_name} {KOMUNIKATY_TRWANIA[blokuja[0]]}'}), 409
 
     event_type = f'{mode}_end' if trwa else f'{mode}_start'
 
@@ -208,7 +211,10 @@ def api_time_scan():
         'other_start': 'wyszedł/wyszła — Inne 🚪',
         'other_end':   'wrócił/wróciła (Inne) ✅',
     }
-    return jsonify({'message': f'{user.display_name} — {etykiety[event_type]}',
+    komunikat = f'{user.display_name} — {etykiety[event_type]}'
+    if mode == 'break' and any(m in trwajace for m in TRWAJA_W_PRZERWIE):
+        komunikat += ' · szkolenie trwa dalej 🎓'
+    return jsonify({'message': komunikat,
                     'event_type': event_type, 'user': user.to_dict()}), 200
 
 
@@ -245,7 +251,11 @@ def api_training_trener():
     stan = stan_czasu_dzis(trener)
     if stan['work_ended']:
         abort(409, f'{trener.display_name} już zakończył/a pracę.')
-    inne = [m for m in stan['trwajace'] if m != 'training']
+    # Na przerwie w trakcie szkolenia ekran musi dac sie otworzyc, zeby moc
+    # zakonczyc szkolenie; dopisanie osoby i tak odrzuci krok 2.
+    trwa = 'training' in stan['trwajace']
+    inne = [m for m in stan['trwajace']
+            if m != 'training' and not (trwa and m == 'break')]
     if inne:
         abort(409, f'{trener.display_name} {KOMUNIKATY_TRWANIA[inne[0]]}')
     return jsonify(opis_szkolenia(trener, stan)), 200

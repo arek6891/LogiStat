@@ -63,6 +63,9 @@ EVENT_TYPES = ('break_start', 'break_end', 'other_start', 'other_end',
 TRYBY_CZASU = ('break', 'other', 'training', 'trainee')
 # Przelaczane zwyklym skanem w `/api/time/scan`; szkolenie ma wlasna zakladke.
 TRYBY_SKANU = ('break', 'other')
+# Stany, ktore trwaja dalej w czasie przerwy (operacje 2026-11-04): przerwa
+# nie wylacza szkolenia — po powrocie nie trzeba go rejestrowac od nowa.
+TRWAJA_W_PRZERWIE = ('training', 'trainee')
 KOMUNIKATY_TRWANIA = {
     'break':    'jest na przerwie — najpierw zakończ przerwę.',
     'other':    'jest na „Inne" — najpierw zakończ „Inne".',

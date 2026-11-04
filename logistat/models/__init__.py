@@ -59,6 +59,7 @@ from logistat.models.czas_pracy import (  # noqa: F401
     EVENT_TYPES,
     TRYBY_CZASU,
     TRYBY_SKANU,
+    TRWAJA_W_PRZERWIE,
     KOMUNIKATY_TRWANIA,
     HistoriaCelu,
     historia_celu_lista,
