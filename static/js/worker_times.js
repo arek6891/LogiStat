@@ -195,10 +195,10 @@ function osCzasu(w, sk) {
                  data-shift-id="${w.shift_id}">
                 <div class="os-odcinek os-praca ${w.work_ended ? '' : 'os-otwarta'}"
                      style="left:${lPraca}%;width:${Math.max(rPraca - lPraca, .4)}%;"></div>
-                ${w.breaks.map(b => odcinek('os-przerwa', b, 'Przerwa')).join('')}
                 ${(w.others || []).map(b => odcinek('os-inne', b, 'Inne')).join('')}
                 ${(w.trainings || []).map(b => odcinek('os-szkolenie', b, 'Szkolenie (prowadzi)')).join('')}
                 ${(w.trainee_periods || []).map(b => odcinek('os-szkolony', b, 'Szkolony/a')).join('')}
+                ${w.breaks.map(b => odcinek('os-przerwa', b, 'Przerwa')).join('')}
                 <button type="button" class="os-znacznik os-wejscie js-edit-wejscie ${popr ? 'os-poprawione' : ''}"
                     style="left:${lPraca}%;" title="${escapeHtml(tytulWejscia)}"
                     data-attendance-id="${w.attendance_id}" data-user-name="${escapeHtml(w.user_name)}"

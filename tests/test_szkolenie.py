@@ -255,18 +255,72 @@ def test_dwa_szkolenia_naraz_koncza_sie_osobno(leader_client):
     assert zdarzenia(s3)[-1][0] == 'trainee_start'
 
 
-def test_szkolony_nie_wyjdzie_na_przerwe(leader_client):
-    t, _, _ = ekipa()
+def test_szkolony_wychodzi_na_przerwe_a_szkolenie_trwa(leader_client):
+    # Operacje 2026-11-04: przerwa nie wylacza szkolenia.
+    t, s1, _ = ekipa()
     dopisz(leader_client, t, 'S1')
     r = skan(leader_client, 'break', barcode='S1')
+    assert r.status_code == 200 and r.get_json()['event_type'] == 'break_start'
+    assert 'szkolenie trwa' in r.get_json()['message']
+    assert skan(leader_client, 'break', barcode='S1').get_json()['event_type'] == 'break_end'
+    assert [e[0] for e in zdarzenia(s1)] == ['trainee_start', 'break_start', 'break_end']
+
+
+def test_szkolacy_wychodzi_na_przerwe_a_szkolenie_trwa(leader_client):
+    t, s1, _ = ekipa()
+    dopisz(leader_client, t, 'S1')
+    r = skan(leader_client, 'break')
+    assert r.status_code == 200 and 'szkolenie trwa' in r.get_json()['message']
+    # Na przerwie nie dopisze nowych osob, ale szkolenie wciaz trwa
+    # i skan szkolacego otwiera ekran (zeby dalo sie je zakonczyc).
+    assert dopisz(leader_client, t, 'S2').status_code == 409
+    r = wybierz_trenera(leader_client)
+    assert r.status_code == 200 and r.get_json()['trwa'] is True
+    szk = leader_client.get('/api/time/training/aktywne').get_json()['szkolenia']
+    assert [s['trener']['id'] for s in szk] == [t.id]
+    # Po przerwie — bez ponownej rejestracji szkolenia.
+    assert skan(leader_client, 'break').get_json()['event_type'] == 'break_end'
+    assert dopisz(leader_client, t, 'S2').status_code == 200
+    assert [e[0] for e in zdarzenia(t)] == ['training_start', 'break_start', 'break_end']
+    assert [e[0] for e in zdarzenia(s1)] == ['trainee_start']
+
+
+def test_inne_w_trakcie_szkolenia_nadal_zablokowane(leader_client):
+    t, _, _ = ekipa()
+    dopisz(leader_client, t, 'S1')
+    r = skan(leader_client, 'other')
+    assert r.status_code == 409 and 'szkolenie' in r.get_json()['error']
+    r = skan(leader_client, 'other', barcode='S1')
     assert r.status_code == 409 and 'szkolona' in r.get_json()['error']
 
 
-def test_szkolacy_nie_wyjdzie_na_przerwe_w_trakcie(leader_client):
-    t, _, _ = ekipa()
+def test_koniec_szkolenia_w_trakcie_przerwy(leader_client):
+    t, s1, _ = ekipa()
     dopisz(leader_client, t, 'S1')
-    r = skan(leader_client, 'break')
-    assert r.status_code == 409 and 'szkolenie' in r.get_json()['error']
+    skan(leader_client, 'break')
+    assert zakoncz(leader_client, t).status_code == 200
+    assert [e[0] for e in zdarzenia(t)] == ['training_start', 'break_start', 'training_end']
+    assert [e[0] for e in zdarzenia(s1)] == ['trainee_start', 'trainee_end']
+    # Przerwa zostaje otwarta — konczy ja zwykly skan.
+    assert skan(leader_client, 'break').get_json()['event_type'] == 'break_end'
+
+
+def test_minuty_szkolenia_bez_przerwy(leader_client):
+    t = szkolacy()
+    shift = get_or_create_shift(DZIEN, 1)
+    wej = chwila(DZIEN, 6)
+    db.session.add(ShiftAttendance(shift_id=shift.id, user_id=t.id, scanned_at=wej))
+    for typ, godz, minut in (('training_start', 8, 0), ('break_start', 9, 0),
+                             ('break_end', 9, 30), ('training_end', 10, 0),
+                             ('work_end', 14, 0)):
+        db.session.add(WorkerTimeEvent(user_id=t.id, shift_id=shift.id, event_type=typ,
+                                       timestamp=chwila(DZIEN, godz, minut)))
+    db.session.commit()
+    w = _compute_worker_times(t.id, shift, wej)
+    assert w['training_minutes'] == 90          # 2 h szkolenia − 30 min przerwy
+    assert w['trainings'][0]['minutes'] == 90
+    assert w['break_minutes'] == 30
+    assert w['work_minutes'] == 8 * 60 - 30
 
 
 def test_bledy_przy_dopisywaniu(leader_client):

@@ -9,7 +9,7 @@ from logistat.czas import iso_z, teraz_utc
 from logistat.extensions import db
 from logistat.models import (
     Activity, ActivityAssignment, Shift, ShiftAttendance, User, WorkerTimeEvent)
-from logistat.okresy import suma_zlaczonych_okresow
+from logistat.okresy import odejmij_okresy, suma_zlaczonych_okresow, zlacz_okresy
 
 # Filtr po osobie na /worker-times: najdluzszy zakres dni naraz.
 MAX_DNI_OSOBY = 92
@@ -109,6 +109,8 @@ def _compute_worker_times(uid, shift, attendance_time, events=None):
     trainings = []
     trainee_periods = []
     okresy = []          # (start, koniec) wszystkich zamknietych przerw i „Innych"
+    szkolenia = []       # (start, koniec) zamknietych szkolen (prowadzi)
+    jako_szkolony = []   # (start, koniec) zamknietych okresow bycia szkolonym
 
     for e in events:
         if e.event_type == 'break_start':
@@ -133,23 +135,37 @@ def _compute_worker_times(uid, shift, attendance_time, events=None):
             open_training = e.timestamp
         elif e.event_type == 'training_end' and open_training:
             # Szkolenie to praca — NIE trafia do `okresy`, wiec nie pomniejsza
-            # czasu pracy; raportujemy je tylko osobno.
-            secs = (e.timestamp - open_training).total_seconds()
-            trainings.append({'start': iso_z(open_training), 'end': iso_z(e.timestamp),
-                              'minutes': int(secs / 60)})
-            training_secs += secs
+            # czasu pracy; raportujemy je tylko osobno (minuty po petli —
+            # bez przerw w trakcie szkolenia).
+            szkolenia.append((open_training, e.timestamp))
             open_training = None
         elif e.event_type == 'trainee_start':
             open_trainee = e.timestamp
         elif e.event_type == 'trainee_end' and open_trainee:
             # Bycie szkolonym to tez praca — nie pomniejsza czasu pracy.
-            secs = (e.timestamp - open_trainee).total_seconds()
-            trainee_periods.append({'start': iso_z(open_trainee), 'end': iso_z(e.timestamp),
-                                    'minutes': int(secs / 60)})
-            trainee_secs += secs
+            jako_szkolony.append((open_trainee, e.timestamp))
             open_trainee = None
         elif e.event_type == 'work_end':
             work_end_ts = e.timestamp
+
+    end_ref = work_end_ts or teraz_utc()
+    # Przerwa w trakcie szkolenia (operacje 2026-11-04) nie wylacza szkolenia,
+    # ale nie jest jego czasem: minuty szkolenia liczymy bez przerw i „Innych"
+    # (tez otwartej przerwy — do teraz / konca pracy).
+    poza_praca = zlacz_okresy(okresy + [(o, end_ref) for o in (open_break, open_other) if o])
+
+    def netto(start, koniec):
+        return sum((k - s).total_seconds() for s, k in odejmij_okresy(start, koniec, poza_praca))
+
+    for start, koniec in szkolenia:
+        secs = netto(start, koniec)
+        trainings.append({'start': iso_z(start), 'end': iso_z(koniec), 'minutes': int(secs / 60)})
+        training_secs += secs
+    for start, koniec in jako_szkolony:
+        secs = netto(start, koniec)
+        trainee_periods.append({'start': iso_z(start), 'end': iso_z(koniec),
+                                'minutes': int(secs / 60)})
+        trainee_secs += secs
 
     if open_break:
         breaks.append({'start': iso_z(open_break), 'end': None, 'minutes': None})
@@ -160,7 +176,6 @@ def _compute_worker_times(uid, shift, attendance_time, events=None):
     if open_trainee:
         trainee_periods.append({'start': iso_z(open_trainee), 'end': None, 'minutes': None})
 
-    end_ref = work_end_ts or teraz_utc()
     # „Inne" (np. wyjscie do HR) pomniejsza czas pracy tak samo jak przerwa,
     # ale jest raportowane osobno — przerwa i „Inne" to rozne rzeczy dla operacji.
     #
