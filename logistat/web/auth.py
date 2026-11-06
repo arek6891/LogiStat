@@ -52,22 +52,22 @@ def index():
 # Po zalogowaniu wybiera sie kafelek; menu pokazuje tylko jego moduly. Rola
 # decyduje, ktore kafelki widac (`ROLE_OBSZARY`) i do czego jest dostep; kafelek
 # niczego nie blokuje. Od 2026-10-28 ekran startowy pokazuje GRUPY kafelkow
-# (`GRUPY`): Dzial etykietowania rozwija sie w swoje kafelki, grupa z jednym
-# kafelkiem prowadzi od razu do niego; jedna grupa z jednym kafelkiem (stanowisko)
-# — od razu do niego.
+# (`GRUPY`): grupa z kilkoma kafelkami roli rozwija sie w nie, grupa z jednym
+# kafelkiem prowadzi od razu do niego. Konto stanowiska ma jedna grupe (Operacje
+# magazynowe, od 2026-11-06 cztery kafelki) — od razu jej ekran.
 
 def _wejdz_do_obszaru(obszar):
     session['obszar'] = obszar
-    return redirect(url_for(OBSZARY[obszar]['start']))
+    return redirect(url_for(OBSZARY[obszar]['start'], **OBSZARY[obszar].get('start_args', {})))
 
 
 @bp.route('/start')
 @login_required
 def kafelki():
     """Ekran startowy: kafelki-grupy roli (operacja 2026-10-28), a z `?grupa=`
-    kafelki tej grupy. Grupa z jednym kafelkiem roli = od razu do niego, wiec
-    jedna grupa z jednym kafelkiem (stanowisko) = od razu do Magazynu. Nieznana
-    grupa albo spoza roli → ekran glowny."""
+    kafelki tej grupy. Grupa z jednym kafelkiem roli = od razu do niego; rola
+    z jedna grupa (stanowisko) = od razu ekran tej grupy. Nieznana grupa albo
+    spoza roli → ekran glowny."""
     grupy = grupy_roli(current_user.role)
     if len(grupy) == 1:
         klucz = grupy[0][0]

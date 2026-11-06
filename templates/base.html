@@ -29,19 +29,22 @@
             </a>
             {% endif %}
             <ul class="sidebar-nav">
-                {% if 'magazyn' in menu_obszary %}
-                {# Kafelek Magazyn (operacja 2026-10-26): Skaner zmian osobno na gorze („Zmiany"),
-                   reszta stanowisk pod belka „Post-Processing". A→Z w obrebie belki. #}
+                {# Operacje magazynowe (operacja 2026-11-06): cztery kafelki po procesach,
+                   kazdy ze swoja belka — Zmiany, Post-processing, Zwroty, Dekoracje. A→Z w belce.
+                   Ikona belki Zwroty 📥 inna niz kafelka Zwroty ↩️ (admin bez kafelka widzi obie). #}
+                {% if 'magazyn_zmiany' in menu_obszary %}
                 <li class="nav-section">🔁 Zmiany</li>
-                <li><a href="{{ url_for('stanowisko.scanner', shift_number=1) }}"
-                        class="{% if request.endpoint == 'stanowisko.scanner' %}active{% endif %}">
-                        <span class="icon">📷</span> Skaner zmian
-                    </a></li>
-                <li class="nav-section">👷 Post-Processing</li>
                 <li><a href="{{ url_for('czas_pracy.time_tracking') }}"
                         class="{% if request.endpoint == 'czas_pracy.time_tracking' %}active{% endif %}">
                         <span class="icon">🕐</span> Czas pracy
                     </a></li>
+                <li><a href="{{ url_for('stanowisko.scanner', shift_number=1) }}"
+                        class="{% if request.endpoint == 'stanowisko.scanner' %}active{% endif %}">
+                        <span class="icon">📷</span> Skaner zmian
+                    </a></li>
+                {% endif %}
+                {% if 'magazyn_pp' in menu_obszary %}
+                <li class="nav-section">👷 Post-processing</li>
                 <li><a href="{{ url_for('stanowisko.scan_paczki') }}"
                         class="{% if request.endpoint == 'stanowisko.scan_paczki' %}active{% endif %}">
                         <span class="icon">⏱</span> Czasy paczek
@@ -50,14 +53,15 @@
                         class="{% if request.endpoint == 'stanowisko.scan_package' %}active{% endif %}">
                         <span class="icon">🔎</span> Paczki inspektor
                     </a></li>
-                {# Belka Zwroty kafelka Magazyn (operacja 2026-10-27) — inna ikona niz sekcja
-                   kafelka Zwroty (admin bez wybranego kafelka widzi obie). #}
+                {% endif %}
+                {% if 'magazyn_zwroty' in menu_obszary %}
                 <li class="nav-section">📥 Zwroty</li>
                 <li><a href="{{ url_for('zwroty.przyjecie_zwrotu') }}"
                         class="{% if request.endpoint == 'zwroty.przyjecie_zwrotu' %}active{% endif %}">
                         <span class="icon">📥</span> Przyjęcie zwrotu
                     </a></li>
-                {# Belka Dekoracje kafelka Magazyn: skan nosnik → strefa (2026-10-28), dostawy produktow (2026-10-29). #}
+                {% endif %}
+                {% if 'magazyn_dekoracje' in menu_obszary %}
                 <li class="nav-section">💍 Dekoracje</li>
                 <li><a href="{{ url_for('displays.dostawy_stanowisko') }}"
                         class="{% if request.endpoint == 'displays.dostawy_stanowisko' %}active{% endif %}">

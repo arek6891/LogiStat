@@ -1,8 +1,9 @@
 """Kafelki po zalogowaniu (operacja 2026-10-24, grupy 2026-10-28): na ekranie
 startowym trzy kafelki-GRUPY — Operacje magazynowe / Dzial etykietowania /
-Supervisor; Dzial etykietowania po kliknieciu pokazuje swoje kafelki
-(od 2026-11-02: Przydzielanie, Pracownicy, Post-Process, Dekoracje, Zwroty,
-Zadania dodatkowe). Grupa to tylko ekran wyboru — dostep, menu
+Supervisor; grupa po kliknieciu pokazuje swoje kafelki — Operacje magazynowe
+(od 2026-11-06, po procesach: Zmiany, Post-processing, Zwroty, Dekoracje),
+Dzial etykietowania (od 2026-11-02: Przydzielanie, Pracownicy, Post-Process,
+Dekoracje, Zwroty, Zadania dodatkowe). Grupa to tylko ekran wyboru — dostep, menu
 i `session['obszar']` dzialaja dalej na kafelkach (obszarach) ponizej.
 
 Kazdy endpoint nalezy do jednego lub kilku obszarow (kafelkow), albo do
@@ -16,7 +17,13 @@ bez wpisu tutaj = czerwony test.
 Czysta logika — bez Flaska i bazy (import z `aplikacja.py` i `web/`).
 """
 
-MAGAZYN = 'magazyn'
+# Operacje magazynowe — ekrany stanowisk, po procesach (operacja 2026-11-06;
+# do tego dnia jeden kafelek `magazyn`).
+MAGAZYN_ZMIANY = 'magazyn_zmiany'
+MAGAZYN_PP = 'magazyn_pp'
+MAGAZYN_ZWROTY = 'magazyn_zwroty'
+MAGAZYN_DEKORACJE = 'magazyn_dekoracje'
+MAGAZYN = (MAGAZYN_ZMIANY, MAGAZYN_PP, MAGAZYN_ZWROTY, MAGAZYN_DEKORACJE)
 PRZYDZIELANIE = 'przydzielanie'
 PRACOWNICY = 'pracownicy'
 POST_PROCESS = 'post_process'
@@ -25,11 +32,25 @@ ZWROTY = 'zwroty'
 ZADANIA = 'zadania'
 USTAWIENIA = 'ustawienia'
 
-# Kolejnosc = kolejnosc kafelkow. `start` = pierwszy ekran po wyborze kafelka.
+# Kolejnosc = kolejnosc kafelkow. `start` = pierwszy ekran po wyborze kafelka
+# (`start_args` = jego argumenty adresu).
 OBSZARY = {
-    MAGAZYN: {
-        'nazwa': 'Operacje magazynowe', 'ikona': '👷', 'start': 'stanowisko.scan_paczki',
-        'opis': 'Stanowiska: skaner zmian, czas pracy, czasy paczek, inspektor paczek, przyjęcie zwrotu',
+    MAGAZYN_ZMIANY: {
+        'nazwa': 'Zmiany', 'ikona': '🔁', 'start': 'stanowisko.scanner',
+        'start_args': {'shift_number': 1},
+        'opis': 'Skaner zmian, czas pracy',
+    },
+    MAGAZYN_PP: {
+        'nazwa': 'Post-processing', 'ikona': '👷', 'start': 'stanowisko.scan_paczki',
+        'opis': 'Czasy paczek, paczki inspektor',
+    },
+    MAGAZYN_ZWROTY: {
+        'nazwa': 'Zwroty', 'ikona': '📥', 'start': 'zwroty.przyjecie_zwrotu',
+        'opis': 'Przyjęcie zwrotu',
+    },
+    MAGAZYN_DEKORACJE: {
+        'nazwa': 'Dekoracje', 'ikona': '💍', 'start': 'displays.dostawy_stanowisko',
+        'opis': 'Dostawy, skan stojaków',
     },
     # Operacja 2026-11-02: Przydzielanie i Pracownicy wyjete z menu Post-Process.
     PRZYDZIELANIE: {
@@ -69,8 +90,8 @@ OBSZARY = {
 # Kolejnosc = kolejnosc na ekranie; kazdy obszar w dokladnie jednej grupie.
 GRUPY = {
     'magazynowe': {
-        'nazwa': 'Operacje magazynowe', 'ikona': '🏭', 'obszary': (MAGAZYN,),
-        'opis': 'Wszystkie moduły magazynu: skaner zmian, czas pracy, czasy paczek, przyjęcie zwrotu',
+        'nazwa': 'Operacje magazynowe', 'ikona': '🏭', 'obszary': MAGAZYN,
+        'opis': 'Zmiany, Post-processing, Zwroty, Dekoracje',
     },
     'etykietowanie': {
         'nazwa': 'Dział etykietowania', 'ikona': '🏷️',
@@ -85,9 +106,9 @@ GRUPY = {
 
 # Rola → kafelki. Operator (skanowany na zmianie) nie loguje sie wcale.
 ROLE_OBSZARY = {
-    'stanowisko': (MAGAZYN,),
-    'leader': (MAGAZYN, PRZYDZIELANIE, PRACOWNICY, POST_PROCESS, DISPLAYS, ZWROTY, ZADANIA),
-    'admin': (MAGAZYN, PRZYDZIELANIE, PRACOWNICY, POST_PROCESS, DISPLAYS, ZWROTY, ZADANIA, USTAWIENIA),
+    'stanowisko': MAGAZYN,
+    'leader': (*MAGAZYN, PRZYDZIELANIE, PRACOWNICY, POST_PROCESS, DISPLAYS, ZWROTY, ZADANIA),
+    'admin': (*MAGAZYN, PRZYDZIELANIE, PRACOWNICY, POST_PROCESS, DISPLAYS, ZWROTY, ZADANIA, USTAWIENIA),
 }
 
 # Dostepne zawsze po zalogowaniu (i przed wyborem kafelka).
@@ -97,7 +118,7 @@ WSPOLNE = frozenset({
 })
 
 _ENDPOINTY = {
-    MAGAZYN: {
+    MAGAZYN_ZMIANY: {
         # Skaner zmian
         'stanowisko.scanner', 'stanowisko.api_scan', 'stanowisko.api_unscan',
         'stanowisko.api_shift_attendances',
@@ -105,14 +126,20 @@ _ENDPOINTY = {
         'czas_pracy.time_tracking', 'czas_pracy.api_time_scan',
         'czas_pracy.api_training_aktywne', 'czas_pracy.api_training_trener',
         'czas_pracy.api_training_szkolony', 'czas_pracy.api_training_koniec',
+    },
+    MAGAZYN_PP: {
         # Czasy paczek
         'stanowisko.scan_paczki', 'stanowisko.api_employee_lookup',
         'stanowisko.api_package_time_start', 'stanowisko.api_package_time_end',
         'stanowisko.api_package_time_przekaz', 'stanowisko.api_package_time_dolacz',
         # Paczki inspektor
         'stanowisko.scan_package', 'stanowisko.api_package_lookup',
+    },
+    MAGAZYN_ZWROTY: {
         # Przyjecie zwrotu (2026-10-27) — wiersze raportu Zwroty Paczek
         'zwroty.przyjecie_zwrotu', 'zwroty.api_przyjecie_zwrotu', 'zwroty.api_przyjecie_sprawdz',
+    },
+    MAGAZYN_DEKORACJE: {
         # Dekoracje: skan stojakow nosnik → strefa (2026-10-28)
         'displays.skan_stojakow', 'displays.api_nosnik', 'displays.api_skan',
         # Dekoracje: dostawa produktow — kontener / Beeline (2026-10-29)

@@ -1,10 +1,12 @@
 """Kafelki po zalogowaniu: Magazyn / Post-Process / Dekoracje / Zwroty / Ustawienia
 (operacja 2026-10-24), od 2026-10-28 w grupach na ekranie startowym: Operacje
-magazynowe (Magazyn) / Dzial etykietowania (od 2026-11-02: Przydzielanie, Pracownicy,
+magazynowe (od 2026-11-06 cztery kafelki: Zmiany, Post-processing, Zwroty,
+Dekoracje — wczesniej jeden Magazyn) / Dzial etykietowania (od 2026-11-02: Przydzielanie, Pracownicy,
 Post-Process, Dekoracje, Zwroty, Zadania dodatkowe) / Supervisor (Ustawienia).
 
-- rola → kafelki: stanowisko = Magazyn, lider = Magazyn + Post-Process + Dekoracje
-  + Zwroty, admin = wszystkie piec; konto stanowiska po zalogowaniu od razu w Magazynie,
+- rola → kafelki: stanowisko = cztery kafelki Operacji magazynowych, lider = do tego
+  Dzial etykietowania, admin = wszystkie; konto stanowiska po zalogowaniu od razu
+  na ekranie Operacji magazynowych,
 - ekran startowy: lider 2 grupy, admin 3; Dzial etykietowania pokazuje swoje kafelki,
 - kafelek wybiera tylko MENU (wersja lagodna, operacja 2026-10-24): ekran z innego
   kafelka roli otwiera sie i przelacza menu; API kafelka nie zmienia,
@@ -14,8 +16,9 @@ Post-Process, Dekoracje, Zwroty, Zadania dodatkowe) / Supervisor (Ustawienia).
 import pytest
 from conftest import PASSWORD, login, make_user
 
-from logistat.obszary import DISPLAYS, GRUPY, MAGAZYN, OBSZARY, POST_PROCESS, PRACOWNICY, \
-    PRZYDZIELANIE, USTAWIENIA, ZADANIA, ZWROTY, obszary_endpointu, wszystkie_przypisane
+from logistat.obszary import DISPLAYS, GRUPY, MAGAZYN_DEKORACJE, MAGAZYN_PP, MAGAZYN_ZMIANY, \
+    MAGAZYN_ZWROTY, OBSZARY, POST_PROCESS, PRACOWNICY, PRZYDZIELANIE, USTAWIENIA, ZADANIA, ZWROTY, \
+    obszary_endpointu, wszystkie_przypisane
 
 
 def zaloguj(client, rola):
@@ -36,26 +39,45 @@ def test_kazda_trasa_ma_kafelek(flask_app):
     assert nieprzypisane == [], 'nowa trasa → dopisz ja w logistat/obszary.py'
 
 
-def test_ekrany_stanowisk_sa_w_magazynie():
-    for ep in ('stanowisko.scan_paczki', 'stanowisko.api_package_time_end',
-               'czas_pracy.api_time_scan', 'stanowisko.scanner'):
-        assert obszary_endpointu(ep) == {MAGAZYN}
+def test_ekrany_stanowisk_w_kafelkach_procesow():
+    """Operacja 2026-11-06: Operacje magazynowe podzielone po procesach."""
+    for ep, obszar in (('stanowisko.scanner', MAGAZYN_ZMIANY), ('czas_pracy.api_time_scan', MAGAZYN_ZMIANY),
+                       ('stanowisko.scan_paczki', MAGAZYN_PP), ('stanowisko.api_package_time_end', MAGAZYN_PP),
+                       ('stanowisko.scan_package', MAGAZYN_PP),
+                       ('zwroty.api_przyjecie_zwrotu', MAGAZYN_ZWROTY),
+                       ('displays.dostawy_stanowisko', MAGAZYN_DEKORACJE),
+                       ('displays.api_skan', MAGAZYN_DEKORACJE)):
+        assert obszary_endpointu(ep) == {obszar}, ep
     assert obszary_endpointu('admin.api_settings_update') == {USTAWIENIA}
     assert obszary_endpointu('dashboard.api_dashboard') == {POST_PROCESS}
 
 
 # ── stanowisko ───────────────────────────────────────────────────────────────
 
-def test_stanowisko_loguje_sie_i_trafia_od_razu_do_magazynu(client):
+KAFELKI_MAGAZYNU = ((MAGAZYN_ZMIANY, 'Zmiany', '/scanner/1'),
+                    (MAGAZYN_PP, 'Post-processing', '/scan-paczki'),
+                    (MAGAZYN_ZWROTY, 'Zwroty', '/zwroty/przyjecie'),
+                    (MAGAZYN_DEKORACJE, 'Dekoracje', '/dekoracje/dostawy'))
+
+
+def test_stanowisko_loguje_sie_i_widzi_kafelki_procesow(client):
+    """Operacja 2026-11-06: po zalogowaniu stanowisko widzi od razu cztery kafelki
+    Operacji magazynowych (bez ekranu grup — ma tylko te jedna grupe)."""
     _, r = zaloguj(client, 'stanowisko')
     assert r.status_code == 302 and r.headers['Location'].endswith('/start')
 
-    r = client.get('/start')
+    html = client.get('/start').get_data(as_text=True)
 
-    assert r.status_code == 302 and r.headers['Location'].endswith('/scan-paczki')
-    with client.session_transaction() as s:
-        assert s['obszar'] == MAGAZYN and s.permanent is True
-    assert client.get('/scan-paczki').status_code == 200
+    assert html.count('data-obszar=') == len(KAFELKI_MAGAZYNU) and 'data-grupa=' not in html
+    pozycje = [html.index(f'data-obszar="{o}"') for o, _, _ in KAFELKI_MAGAZYNU]
+    assert pozycje == sorted(pozycje)
+    assert '⬅ Wszystkie kafelki' not in html
+    for obszar, nazwa, adres in KAFELKI_MAGAZYNU:
+        r = wybierz(client, obszar)
+        assert r.status_code == 302 and r.headers['Location'].endswith(adres), obszar
+        with client.session_transaction() as s:
+            assert s['obszar'] == obszar and s.permanent is True
+        assert client.get(adres).status_code == 200, adres
     assert client.get('/time-tracking').status_code == 200
 
 
@@ -81,13 +103,16 @@ def test_stanowisko_nie_dostanie_api_lidera_ani_admina(client):
 
 def test_stanowisko_menu_bez_lidera_i_hasla(client):
     zaloguj(client, 'stanowisko')
-    client.get('/start')
+    wybierz(client, MAGAZYN_PP)
 
     html = client.get('/scan-paczki').get_data(as_text=True)
 
-    assert 'Czasy paczek' in html and 'Skaner zmian' in html
+    assert 'Czasy paczek' in html and 'Skaner zmian' not in html
     assert 'Dashboard' not in html and 'Panel Admina' not in html
-    assert 'Zmień hasło' not in html and '⬅ Kafelki' not in html
+    assert 'Zmień hasło' not in html
+    # Cztery kafelki → powrot do ekranu Operacji magazynowych.
+    assert 'href="/start?grupa=magazynowe"' in html
+    assert 'Operacje magazynowe › <strong>Post-processing</strong>' in html
 
 
 def test_operator_dalej_sie_nie_loguje(client):
@@ -141,17 +166,26 @@ def test_dzial_etykietowania_pokazuje_swoje_kafelki(client):
     assert 'Akcje - Displays' not in html
 
 
+def test_operacje_magazynowe_pokazuja_kafelki_procesow(client):
+    """Operacja 2026-11-06: lider w Operacjach magazynowych wybiera proces."""
+    zaloguj(client, 'leader')
+    html = client.get('/start?grupa=magazynowe').get_data(as_text=True)
+    assert html.count('data-obszar=') == len(KAFELKI_MAGAZYNU)
+    for obszar, nazwa, _ in KAFELKI_MAGAZYNU:
+        assert f'data-obszar="{obszar}"' in html and nazwa in html
+    assert '⬅ Wszystkie kafelki' in html
+
+
 def test_grupa_z_jednym_kafelkiem_prowadzi_od_razu_do_niego(client):
     zaloguj(client, 'admin')
-    r = client.get('/start?grupa=magazynowe')
-    assert r.status_code == 302 and r.headers['Location'].endswith('/scan-paczki')
     r = client.get('/start?grupa=supervisor')
     assert r.status_code == 302 and r.headers['Location'].endswith('/admin/panel')
     with client.session_transaction() as s:
         assert s['obszar'] == USTAWIENIA
     # Na ekranie glownym grupa z jednym kafelkiem to od razu POST do kafelka.
     html = client.get('/start').get_data(as_text=True)
-    assert 'action="/start/magazyn"' in html and 'action="/start/ustawienia"' in html
+    assert 'action="/start/ustawienia"' in html
+    assert 'name="grupa" value="magazynowe"' in html
 
 
 def test_grupa_spoza_roli_albo_nieznana_pokazuje_ekran_glowny(client):
@@ -166,13 +200,18 @@ def test_grupa_spoza_roli_albo_nieznana_pokazuje_ekran_glowny(client):
 
 
 def test_powrot_z_menu_do_grupy(client):
-    """„⬅ Kafelki” z kafelka Dzialu etykietowania wraca do ekranu tej grupy;
-    z Operacji magazynowych / Supervisor — na ekran glowny."""
+    """„⬅ Kafelki” z kafelka grupy kilku kafelkow (Dzial etykietowania, od 2026-11-06
+    tez Operacje magazynowe) wraca do ekranu tej grupy; z Supervisor — na ekran glowny."""
     zaloguj(client, 'admin')
     wybierz(client, ZWROTY)
     html = client.get('/zwroty/paczki').get_data(as_text=True)
     assert 'href="/start?grupa=etykietowanie"' in html
     assert 'Dział etykietowania › <strong>Zwroty</strong>' in html
+
+    wybierz(client, MAGAZYN_ZWROTY)
+    html = client.get('/zwroty/przyjecie').get_data(as_text=True)
+    assert 'href="/start?grupa=magazynowe"' in html
+    assert 'Operacje magazynowe › <strong>Zwroty</strong>' in html
 
     wybierz(client, USTAWIENIA)
     html = client.get('/admin/panel').get_data(as_text=True)
@@ -185,12 +224,12 @@ def test_kafelek_wybiera_tylko_menu(client):
     sie na Post-Process. API innego kafelka dziala i NIE przestawia menu, wiec
     dwie karty na roznych kafelkach pracuja obie."""
     zaloguj(client, 'leader')
-    r = wybierz(client, MAGAZYN)
+    r = wybierz(client, MAGAZYN_PP)
     assert r.headers['Location'].endswith('/scan-paczki')
 
     assert client.get('/api/dashboard').status_code == 200
     with client.session_transaction() as s:
-        assert s['obszar'] == MAGAZYN, 'API nie zmienia kafelka'
+        assert s['obszar'] == MAGAZYN_PP, 'API nie zmienia kafelka'
 
     html = client.get('/dashboard').get_data(as_text=True)
     assert 'Forecast' in html and 'Czasy paczek' not in html
@@ -235,7 +274,7 @@ def test_wybor_kafelka_otwiera_jego_start(client):
 
 def test_logowanie_zeruje_wybrany_kafelek(client):
     u, _ = zaloguj(client, 'leader')
-    wybierz(client, MAGAZYN)
+    wybierz(client, MAGAZYN_PP)
     client.post('/logout')
     login(client, u.username)
 
@@ -276,7 +315,9 @@ def test_pusta_pozycja_zwroty_przekierowuje_i_nie_ma_jej_w_menu(client):
 
 # ── menu A→Z ─────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize('obszar,adres', [(MAGAZYN, '/scan-paczki'),
+@pytest.mark.parametrize('obszar,adres', [(MAGAZYN_ZMIANY, '/scanner/1'),
+                                          (MAGAZYN_PP, '/scan-paczki'),
+                                          (MAGAZYN_DEKORACJE, '/dekoracje/skan'),
                                           (PRZYDZIELANIE, '/assignment'),
                                           (PRACOWNICY, '/admin/users'),
                                           (POST_PROCESS, '/dashboard'),
@@ -298,24 +339,26 @@ def test_menu_kafelka_alfabetycznie(client, obszar, adres):
         nazwy = [n.strip() for n in re.findall(r'</span>\s*([^<]+?)\s*</a>', belka)]
         wszystkie += len(nazwy)
         assert nazwy == sorted(nazwy, key=lambda t: [alfabet.find(c) for c in t.lower()])
-    assert wszystkie > (0 if obszar == ZADANIA else 1)
+    assert wszystkie > (0 if obszar in (ZADANIA, MAGAZYN_ZWROTY) else 1)
 
 
-def test_magazyn_skaner_zmian_w_belce_zmiany_na_gorze(client):
-    """Operacja 2026-10-26: w Magazynie najpierw belka „Zmiany" (tylko Skaner zmian),
-    pod nia „Post-Processing" z pozostalymi ekranami stanowisk."""
+@pytest.mark.parametrize('obszar,adres,belka,pozycje', [
+    (MAGAZYN_ZMIANY, '/scanner/1', '🔁 Zmiany', ['Czas pracy', 'Skaner zmian']),
+    (MAGAZYN_PP, '/scan-paczki', '👷 Post-processing', ['Czasy paczek', 'Paczki inspektor']),
+    (MAGAZYN_ZWROTY, '/zwroty/przyjecie', '📥 Zwroty', ['Przyjęcie zwrotu']),
+    (MAGAZYN_DEKORACJE, '/dekoracje/dostawy', '💍 Dekoracje', ['Dostawy', 'Skan stojaków'])])
+def test_kafelek_magazynu_ma_jedna_belke_swojego_procesu(client, obszar, adres, belka, pozycje):
+    """Operacja 2026-11-06: kafelek procesu = tylko jego ekrany (Czas pracy przeszedl
+    z Post-processingu do Zmian)."""
+    import re
     zaloguj(client, 'stanowisko')
-    html = client.get('/scan-paczki').get_data(as_text=True)
+    wybierz(client, obszar)
+    html = client.get(adres).get_data(as_text=True)
     menu = html[html.index('class="sidebar-nav"'):html.index('class="sidebar-footer"')]
     belki = menu.split('class="nav-section"')[1:]
 
-    assert [b[1:b.index('</li>')] for b in belki] == ['🔁 Zmiany', '👷 Post-Processing', '📥 Zwroty', '💍 Dekoracje']
-    assert 'Skan stojaków' in belki[3]
-    assert 'Skaner zmian' in belki[0] and 'Czas pracy' not in belki[0]
-    assert 'Skaner zmian' not in belki[1]
-    assert all(n in belki[1] for n in ('Czas pracy', 'Czasy paczek', 'Paczki inspektor'))
-    # Operacja 2026-10-27: trzecia belka „Zwroty” z Przyjęciem zwrotu.
-    assert 'Przyjęcie zwrotu' in belki[2] and 'Przyjęcie zwrotu' not in belki[1]
+    assert [b[1:b.index('</li>')] for b in belki] == [belka]
+    assert [n.strip() for n in re.findall(r'</span>\s*([^<]+?)\s*</a>', belki[0])] == pozycje
 
 
 # ── zakladanie kont stanowisk ────────────────────────────────────────────────
@@ -342,8 +385,10 @@ def test_konto_stanowiska_zaklada_tylko_admin(client):
 # ── strony kafelka siegaja tylko po API ze swojego kafelka ───────────────────
 
 STRONY = {
-    MAGAZYN: ['/scanner/1', '/time-tracking', '/scan-paczki', '/scan-package', '/zwroty/przyjecie',
-              '/dekoracje/skan'],
+    MAGAZYN_ZMIANY: ['/scanner/1', '/time-tracking'],
+    MAGAZYN_PP: ['/scan-paczki', '/scan-package'],
+    MAGAZYN_ZWROTY: ['/zwroty/przyjecie'],
+    MAGAZYN_DEKORACJE: ['/dekoracje/skan', '/dekoracje/dostawy'],
     PRZYDZIELANIE: ['/assignment', '/zwroty/przydzial'],
     PRACOWNICY: ['/admin/users', '/worker-times'],
     POST_PROCESS: ['/dashboard', '/forecast', '/stats', '/paczki', '/import-csv', '/general-stats'],
@@ -358,7 +403,8 @@ STRONY = {
 }
 
 
-@pytest.mark.parametrize('obszar', [MAGAZYN, PRZYDZIELANIE, PRACOWNICY, POST_PROCESS, DISPLAYS, ZWROTY,
+@pytest.mark.parametrize('obszar', [MAGAZYN_ZMIANY, MAGAZYN_PP, MAGAZYN_ZWROTY, MAGAZYN_DEKORACJE,
+                                    PRZYDZIELANIE, PRACOWNICY, POST_PROCESS, DISPLAYS, ZWROTY,
                                     ZADANIA, USTAWIENIA])
 def test_strony_kafelka_wolaja_api_swojego_kafelka(client, obszar):
     """Mapa w logistat/obszary.py jest reczna: kazdy adres /api/… z HTML-a
