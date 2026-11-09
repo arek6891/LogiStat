@@ -148,9 +148,10 @@ def api_scan():
     existing = ShiftAttendance.query.filter_by(
         shift_id=shift.id, user_id=user.id
     ).first()
+    osoba = _dane_osoby(user)
     juz = {
         'warning': f'{user.display_name} już zarejestrowany/a na zmianę {shift_number}.',
-        'user': user.to_dict(),
+        'user': osoba,
         'already_scanned': True
     }
     if existing:
@@ -168,8 +169,8 @@ def api_scan():
 
     return jsonify({
         'message': f'{user.display_name} zarejestrowany/a na zmianę {shift_number}.',
-        'user': user.to_dict(),
-        'attendance': attendance.to_dict()
+        'user': osoba,
+        'attendance': _obecnosc(attendance)
     }), 201
 
 
@@ -192,13 +193,31 @@ def api_unscan(attendance_id):
     return jsonify({'message': 'Usunięto rejestrację.'}), 200
 
 
+def _dane_osoby(user):
+    """Osoba w odpowiedzi skanera: konto stanowiska dostaje tylko id i imie —
+    bez loginu, roli i kodu identyfikatora (przeglad bezpieczenstwa 2026-11-09:
+    z kodow innych osob mozna bylo rejestrowac za nie przerwy i paczki)."""
+    if current_user.role == 'stanowisko':
+        return user.dane_dla_stanowiska()
+    return user.to_dict()
+
+
+def _obecnosc(attendance):
+    dane = attendance.to_dict()
+    dane['user'] = _dane_osoby(attendance.user)
+    return dane
+
+
 @bp.route('/api/shift/attendances', methods=['GET'])
 @magazyn_required
 def api_shift_attendances():
-    shift_date = request.args.get('date', local_today().isoformat())
+    shift_date = parse_date(request.args.get('date', local_today().isoformat()))
+    if current_user.role == 'stanowisko':
+        # Stanowisko widzi tylko dzisiejsza zmiane (przeglad bezpieczenstwa 2026-11-09).
+        shift_date = local_today()
     shift_number = parse_shift_number(request.args.get('shift_number', 1))
     shift = Shift.query.filter_by(
-        date=parse_date(shift_date),
+        date=shift_date,
         shift_number=shift_number
     ).first()
     if not shift:
@@ -207,7 +226,7 @@ def api_shift_attendances():
         .options(joinedload(ShiftAttendance.user))\
         .order_by(ShiftAttendance.scanned_at.desc()).all()
     return jsonify({
-        'attendances': [a.to_dict() for a in attendances],
+        'attendances': [_obecnosc(a) for a in attendances],
         'shift': shift.to_dict()
     }), 200
 
