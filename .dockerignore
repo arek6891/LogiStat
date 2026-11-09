@@ -1,0 +1,22 @@
+# Kontekst budowania obrazu (przeglad bezpieczenstwa 2026-11-09): bez tego
+# `COPY . .` wkladal do obrazu kopie bazy (backups/), override z SECRET_KEY
+# i haslem bazy, .env i stare instance/. Obraz potrzebuje tylko kodu aplikacji.
+backups/
+instance/
+.env
+.env.*
+docker-compose.override.yml
+*.log
+*.log.gz
+*.sql
+*.sql.gz
+.git/
+.github/
+tests/
+docs/
+scripts/instrukcja/
+.playwright-mcp/
+.claude/
+**/__pycache__/
+*.pyc
+.pytest_cache/

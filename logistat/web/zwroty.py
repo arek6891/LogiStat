@@ -39,7 +39,7 @@ from logistat.przyjecie_zwrotu import (
     KOMUNIKAT_BRAK_OBSADY, KOMUNIKAT_JUZ_PRZYJETA, KOMUNIKAT_NIE_STANOWISKO, MAX_GODZIN_PRZYDZIALU,
     MAX_LICZNIK,
     MIESIACE_PL, OPAKOWANIE, PAKETNUMMER_MAX, RODZAJE_PRZYJECIA, SUPPORT, TOKEN_MAX, pos_nummer)
-from logistat.web.excel import odpowiedz_xlsx
+from logistat.web.excel import formula, odpowiedz_xlsx
 from logistat.web.wspolne import (
     acting_as_admin, admin_required, json_body, leader_required, magazyn_required, parse_date,
     parse_shift_number, require_int)
@@ -253,7 +253,7 @@ def invoice_specification_export():
             c = ws.cell(nr, 5, w['cena'])
             c.alignment, c.number_format = _SRODEK, _FORMAT_EUR
             # Formula jak w arkuszu — plik dalej liczy po poprawce w Excelu.
-            c = ws.cell(nr, 6, f'=E{nr}*C{nr}')
+            c = formula(ws, nr, 6, f'=E{nr}*C{nr}')
             c.number_format = _FORMAT_EUR
         nr += 1
     ostatni_wiersz = nr - 1
@@ -262,7 +262,7 @@ def invoice_specification_export():
         for kol in range(2, 7):
             ws.cell(nr, kol).fill = _TLO_NAGLOWKA
         ws.cell(nr, 2, 'Total charge')
-        c = ws.cell(nr, 6, f'=SUM(F11:F{ostatni_wiersz})')
+        c = formula(ws, nr, 6, f'=SUM(F11:F{ostatni_wiersz})')
         c.number_format = _FORMAT_EUR
     return odpowiedz_xlsx(wb, f'Invoice_specification_{rok}-{miesiac:02d}.xlsx')
 
@@ -331,12 +331,11 @@ def sorting_data_export():
             for i, pole in enumerate(POLA_SORTING):
                 kol = 2 * m + i
                 if formula_sumy:
-                    wartosc = formula_sumy(get_column_letter(kol))
+                    c = formula(ws, nr, kol, formula_sumy(get_column_letter(kol)))
                 elif tylko_cartons is not None:
-                    wartosc = tylko_cartons.get(m) if pole == 'cartons' else None
+                    c = ws.cell(nr, kol, tylko_cartons.get(m) if pole == 'cartons' else None)
                 else:
-                    wartosc = mies[m][pole]
-                c = ws.cell(nr, kol, wartosc)
+                    c = ws.cell(nr, kol, mies[m][pole])
                 c.alignment, c.border = _SRODEK, _RAMKA
                 if tlo:
                     c.fill = tlo
