@@ -124,6 +124,12 @@ KOMUNIKAT_JUZ_PRZYJETA = ('Paczka {numer} była już przyjęta {kiedy} ({gdzie})
                           'liderowi — dopisze ją w Zwrotach Paczek.')
 KOMUNIKAT_BRAK_OBSADY = ('Nie przydzielono nikogo do stanowiska! Skontaktuj się z liderem, '
                          'aby przydzielił stanowisko do zwrotów.')
+# Konto lidera / admina nigdy nie przyjmuje zwrotu (paczka nalezy do konta
+# stanowiska) — bez tego dostawalo komunikat o przydziale i szukano bledu tam
+# (.31, 2026-11-06).
+KOMUNIKAT_NIE_STANOWISKO = ('To konto nie jest kontem stanowiska — zwroty przyjmuje się tylko '
+                            'na koncie stanowiska (np. STANOWISKO1). Wyloguj się i zaloguj '
+                            'kontem stanowiska, do którego lider przydzielił osoby.')
 
 
 def efektywne_okresy(wiersze, konce_pracy):

@@ -36,7 +36,8 @@ from logistat.przydzial_zwrotow import (
     zamknij_otwarty, zmiana_edytowalna)
 from logistat.przyjecie_zwrotu import (
     BRAK_POS, BRAND, ETYKIETA_MAX, ETYKIETY_DOMYSLNE, KOLUMNA_ETYKIETY, KURIER, LICZNIKI,
-    KOMUNIKAT_BRAK_OBSADY, KOMUNIKAT_JUZ_PRZYJETA, MAX_GODZIN_PRZYDZIALU, MAX_LICZNIK,
+    KOMUNIKAT_BRAK_OBSADY, KOMUNIKAT_JUZ_PRZYJETA, KOMUNIKAT_NIE_STANOWISKO, MAX_GODZIN_PRZYDZIALU,
+    MAX_LICZNIK,
     MIESIACE_PL, OPAKOWANIE, PAKETNUMMER_MAX, RODZAJE_PRZYJECIA, SUPPORT, TOKEN_MAX, pos_nummer)
 from logistat.web.excel import odpowiedz_xlsx
 from logistat.web.wspolne import (
@@ -380,7 +381,12 @@ def przyjecie_zwrotu():
     return render_template('przyjecie_zwrotu.html', etykiety=etykiety_przyjecia(),
                            listy=listy_przyjecia(), liczniki=LICZNIKI, brak_pos=BRAK_POS,
                            max_licznik=MAX_LICZNIK, obsada=obsada,
-                           brak_obsady=KOMUNIKAT_BRAK_OBSADY)
+                           brak_obsady=_komunikat_blokady(current_user))
+
+
+def _komunikat_blokady(konto):
+    """Czemu przyjecie stoi: konto spoza roli `stanowisko` albo brak obsady."""
+    return KOMUNIKAT_BRAK_OBSADY if konto.role == 'stanowisko' else KOMUNIKAT_NIE_STANOWISKO
 
 
 def _obsada_nazwy(konto, chwila):
@@ -452,7 +458,7 @@ def api_przyjecie_zwrotu():
     teraz = teraz_utc()
     obsada = _obsada_nazwy(current_user, teraz)
     if not obsada:
-        return jsonify({'error': KOMUNIKAT_BRAK_OBSADY, 'brak_obsady': True}), 409
+        return jsonify({'error': _komunikat_blokady(current_user), 'brak_obsady': True}), 409
     # Druga paczka z tym numerem na stanowisku — odmowa (operacja 2026-10-29);
     # czesc 2/2 dopisuje lider. Blokada na numer: dwa stanowiska naraz.
     zablokuj_paketnummer(dane['paketnummer'])
