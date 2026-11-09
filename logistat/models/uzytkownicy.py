@@ -1,4 +1,6 @@
 """Konta i listy slownikowe uzytkownikow; role."""
+import hashlib
+
 from flask_login import UserMixin
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -34,6 +36,21 @@ class User(UserMixin, db.Model):
         if not self.password_hash:
             return False
         return check_password_hash(self.password_hash, password)
+
+    def odcisk_hasla(self):
+        """Krotki odcisk hasha hasla — zmienia sie z kazda zmiana hasla."""
+        return hashlib.sha256((self.password_hash or '').encode()).hexdigest()[:16]
+
+    def get_id(self):
+        """Id w sesji = id + odcisk hasla (przeglad bezpieczenstwa 2026-11-09):
+        zmiana hasla uniewaznia kazda wczesniejsza sesje konta (`load_user()`),
+        np. ciasteczko skopiowane z tabletu stanowiska (sesja 30 dni)."""
+        return f'{self.id}:{self.odcisk_hasla()}'
+
+    def dane_dla_stanowiska(self):
+        """Osoba w odpowiedziach dla konta stanowiska — bez loginu, roli i kodu
+        identyfikatora (ekran pokazuje tylko imie)."""
+        return {'id': self.id, 'display_name': self.display_name}
 
     def to_dict(self):
         return {

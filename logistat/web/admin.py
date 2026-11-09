@@ -1,7 +1,7 @@
 """Administracja: uzytkownicy (role, szkolenia z czynnosci), czynnosci, listy
 slownikowe, ustawienia, nazwy kategorii, mapowanie krajow i stawek."""
 from flask import Blueprint, abort, jsonify, render_template
-from flask_login import current_user
+from flask_login import current_user, login_user
 from sqlalchemy import func
 
 from logistat.czas import teraz_utc
@@ -392,6 +392,9 @@ def api_user_update(user_id):
         user.set_password(data['password'])
 
     db.session.commit()
+    if user.id == current_user.id:
+        # Admin zmienil wlasne haslo: ta karta zostaje, inne jego sesje wylatuja.
+        login_user(user)
     return jsonify(user.to_dict()), 200
 
 

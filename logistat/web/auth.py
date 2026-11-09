@@ -5,6 +5,7 @@ from datetime import timedelta
 from flask import (Blueprint, abort, flash, jsonify, redirect, render_template, request, session,
                    url_for)
 from flask_login import current_user, login_required, login_user, logout_user
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from logistat.config import DEFAULT_ADMIN_PASSWORD
 from logistat.czas import teraz_utc
@@ -12,6 +13,8 @@ from logistat.extensions import db
 from logistat.models import ProbaLogowania, ROLE_Z_LOGOWANIEM, User
 from logistat.obszary import OBSZARY, WSPOLNE, grupy_roli, obszary_endpointu, obszary_roli
 from logistat.web.wspolne import bezpieczny_next
+
+_HASH_ZASTEPCZY = generate_password_hash('logistat-brak-konta')
 
 bp = Blueprint('auth', __name__)
 
@@ -152,8 +155,12 @@ def login():
             flash(f'Zbyt wiele nieudanych prób logowania. Spróbuj ponownie za {minuty} min.', 'error')
             return render_template('login.html'), 429
         user = User.query.filter_by(username=username).first()
-        if (user and user.is_active_user and user.role in ROLE_Z_LOGOWANIEM
-                and user.check_password(password)):
+        if not (user and user.is_active_user and user.role in ROLE_Z_LOGOWANIEM):
+            # Tyle samo pracy co przy zlym hasle — czas odpowiedzi nie zdradza,
+            # czy login istnieje (przeglad bezpieczenstwa 2026-11-09).
+            check_password_hash(_HASH_ZASTEPCZY, password)
+            user = None
+        if user and user.check_password(password):
             ProbaLogowania.query.filter_by(login=klucz).delete()
             db.session.commit()
             login_user(user)
@@ -208,6 +215,8 @@ def profile():
         else:
             current_user.set_password(new)
             db.session.commit()
+            # Nowy odcisk hasla w sesji — inaczej zmiana wylogowalaby tez te karte.
+            login_user(current_user)
             session.pop('wymus_zmiane_hasla', None)
             flash('Hasło zostało zmienione.', 'success')
             return redirect(url_for('auth.profile'))

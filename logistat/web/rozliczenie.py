@@ -31,16 +31,19 @@ def general_stats_export():
     date_to_str = request.args.get('date_to', '')
 
     query = GeneralStat.query
-    if date_from_str:
-        try:
-            query = query.filter(GeneralStat.loading_date >= datetime.strptime(date_from_str, '%Y-%m-%d').date())
-        except ValueError:
-            pass
-    if date_to_str:
-        try:
-            query = query.filter(GeneralStat.loading_date <= datetime.strptime(date_to_str, '%Y-%m-%d').date())
-        except ValueError:
-            pass
+    od = do = None
+    try:
+        od = datetime.strptime(date_from_str, '%Y-%m-%d').date() if date_from_str else None
+    except ValueError:
+        pass
+    try:
+        do = datetime.strptime(date_to_str, '%Y-%m-%d').date() if date_to_str else None
+    except ValueError:
+        pass
+    if od:
+        query = query.filter(GeneralStat.loading_date >= od)
+    if do:
+        query = query.filter(GeneralStat.loading_date <= do)
     stats = query.order_by(GeneralStat.loading_date.asc()).all()
 
     dr_amounts = double_rate_amount_map()
@@ -168,7 +171,8 @@ def general_stats_export():
 
     ws.freeze_panes = 'A3'
 
-    return odpowiedz_xlsx(wb, f"statystyki_{date_from_str or 'all'}_{date_to_str or 'all'}.xlsx")
+    # Nazwa z dat po odczycie, nie z surowego zapytania (cudzyslow w nazwie pliku).
+    return odpowiedz_xlsx(wb, f"statystyki_{od.isoformat() if od else 'all'}_{do.isoformat() if do else 'all'}.xlsx")
 
 
 @bp.route('/general-stats')

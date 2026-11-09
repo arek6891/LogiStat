@@ -216,4 +216,5 @@ def api_forecast_export():
 
         ws.add_chart(chart, 'G2')
 
-    return odpowiedz_xlsx(wb, f'forecast_{date_from_str}_{date_to_str}.xlsx')
+    # Nazwa z dat po odczycie, nie z surowego zapytania (cudzyslow w nazwie pliku).
+    return odpowiedz_xlsx(wb, f'forecast_{date_from.isoformat()}_{date_to.isoformat()}.xlsx')

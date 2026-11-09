@@ -1,5 +1,6 @@
 """Fabryka aplikacji Flask (`create_app`) i ladowanie uzytkownika sesji.
 `create_app()` NIE dotyka bazy — schemat, migracje i seed: `logistat.baza.init_db()`."""
+import hmac
 import logging
 import os
 from datetime import timedelta
@@ -159,12 +160,16 @@ def brak_sesji():
 @login_manager.user_loader
 def load_user(user_id):
     """Zwraca None dla konta nieaktywnego, wiec dezaktywacja wyrzuca tez z
-    trwajacej sesji (nie tylko blokuje kolejne logowanie)."""
+    trwajacej sesji (nie tylko blokuje kolejne logowanie) — i dla sesji sprzed
+    zmiany hasla: `user_id` to „id:odcisk hasla” (`User.get_id()`)."""
     from logistat.models import User
+    ident, _, odcisk = str(user_id).partition(':')
     try:
-        user = db.session.get(User, int(user_id))
+        user = db.session.get(User, int(ident))
     except (TypeError, ValueError):
         return None
     if user is None or not user.is_active_user:
+        return None
+    if not odcisk or not hmac.compare_digest(odcisk, user.odcisk_hasla()):
         return None
     return user
