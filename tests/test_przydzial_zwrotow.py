@@ -15,7 +15,7 @@ from logistat.models import (
     get_or_create_shift)
 from logistat.przydzial_zwrotow import dashboard_zwrotow
 from logistat.przyjecie_zwrotu import (
-    CZYNNOSC_ZWROTOW, KOMUNIKAT_BRAK_OBSADY, efektywne_okresy, kto_na_stanowisku, obsada_paczki,
+    CZYNNOSC_ZWROTOW, KOMUNIKAT_BRAK_OBSADY, KOMUNIKAT_NIE_STANOWISKO, efektywne_okresy, kto_na_stanowisku, obsada_paczki,
     przerwy_osob)
 
 T0 = datetime(2026, 9, 2, 6, 0)
@@ -105,8 +105,14 @@ def test_bez_obsady_przyjecie_zablokowane(flask_app):
 
 
 def test_konto_lidera_to_nie_stanowisko(leader_client):
+    """.31, 2026-11-06: przyjecie otwarte z konta lidera mowilo „Nie przydzielono
+    nikogo”, choc dwie osoby staly na STANOWISKO1 — szukano bledu w przydziale.
+    Konto spoza roli `stanowisko` dostaje wlasny komunikat (ekran i zapis)."""
     r = leader_client.post('/api/zwroty/przyjecie', json=zwrot())
     assert r.status_code == 409 and r.get_json()['brak_obsady'] is True
+    assert r.get_json()['error'] == KOMUNIKAT_NIE_STANOWISKO
+    html = leader_client.get('/zwroty/przyjecie').get_data(as_text=True)
+    assert 'kontem stanowiska' in html and 'Nie przydzielono nikogo' not in html
 
 
 def test_z_obsada_zapis_i_imiona_w_odpowiedzi(flask_app):
