@@ -176,7 +176,7 @@ function saveRow(row) {
     const categoryData = {};
     inputs.forEach(inp => {
         // Backend no longer needs cost, but we preserve the schema structure
-        categoryData[inp.dataset.cat] = { amount: parseInt(inp.value) || 0, cost: 0 };
+        categoryData[inp.dataset.cat] = { amount: ilosc(inp.value), cost: 0 };
     });
     const payload = isDr
         ? { double_rate_category_data: categoryData }

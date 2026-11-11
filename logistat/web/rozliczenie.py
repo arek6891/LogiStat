@@ -11,7 +11,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from logistat.czas import local_today, teraz_utc
 from logistat.extensions import db
 from logistat.kategorie import (
-    STAT_CATEGORIES, STAT_CATEGORY_LABELS, TOTAL_AMOUNT_BEZ, total_amount_wiersza)
+    STAT_CATEGORIES, STAT_CATEGORY_LABELS, TOTAL_AMOUNT_BEZ, liczba, total_amount_wiersza)
 from logistat.models import CostMapping, GeneralStat, nazwy_kategorii_pl
 from logistat.rozliczenie import double_rate_amount_map, scan_category_totals, scan_coverage_map
 from logistat.tabela_ilosci import ZRODLO_KATEGORII
@@ -267,6 +267,15 @@ def api_general_stats():
     return jsonify(wynik), 200
 
 
+def _ilosci_linii(surowe):
+    """Ilosci z formularza przez `liczba()` — polowki zostaja, tekst nie trafia
+    do bazy (wywracal `to_dict()` i eksport do Excela)."""
+    if not isinstance(surowe, dict):
+        abort(400, 'Złe ilości kategorii.')
+    return {kat: {**v, 'amount': liczba(v.get('amount'))}
+            for kat, v in surowe.items() if isinstance(v, dict)}
+
+
 @bp.route('/api/general-stats/<int:stat_id>', methods=['PUT'])
 @admin_required
 def api_general_stat_update(stat_id):
@@ -277,9 +286,9 @@ def api_general_stat_update(stat_id):
         if (stat.category_source or 'manual') == 'scan':
             abort(400, 'Kategorie tej linii pochodzą ze skanów paczek — '
                        'popraw ilości przy paczce (Paczki → ✎ Ilości).')
-        stat.set_category_data(data['category_data'])
+        stat.set_category_data(_ilosci_linii(data['category_data']))
     if 'double_rate_category_data' in data:
-        stat.set_double_rate_category_data(data['double_rate_category_data'])
+        stat.set_double_rate_category_data(_ilosci_linii(data['double_rate_category_data']))
     stat.updated_at = teraz_utc()
     stat.updated_by = current_user.id
 

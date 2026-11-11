@@ -454,6 +454,15 @@ def api_package_zamknij_zespol(carton_id):
                     'carton': carton.to_dict()}), 200
 
 
+def _karton_z_blokada(carton_id):
+    """Karton z `FOR UPDATE` — ta sama blokada co koniec na stanowisku, inaczej
+    zapis lidera nadpisuje koniec zatwierdzony chwile wczesniej (przeglad 2026-11-11)."""
+    carton = db.session.query(ImportedCarton).filter_by(id=carton_id).with_for_update().first()
+    if not carton:
+        abort(404)
+    return carton
+
+
 @bp.route('/api/packages/<int:carton_id>/categories', methods=['PUT'])
 @leader_required
 def api_package_categories_update(carton_id):
@@ -464,7 +473,7 @@ def api_package_categories_update(carton_id):
     wiec bez tego wejscia pomylki na paczce z importu nie dalo sie naprawic.
     Zmieniamy WYLACZNIE ilosci — pola grupujace zostaja nietkniete.
     """
-    carton = db.get_or_404(ImportedCarton, carton_id)
+    carton = _karton_z_blokada(carton_id)
     data = json_body()
 
     kategorie, blad = parse_scan_categories(data.get('categories'))
@@ -555,7 +564,7 @@ def api_package_unlock_scan(carton_id):
     tu start, przez co paczka wraca do stanu „nierozpoczeta" i ktokolwiek moze
     ja zeskanowac od nowa. Paczki zakonczonej nie ruszamy.
     """
-    carton = db.get_or_404(ImportedCarton, carton_id)
+    carton = _karton_z_blokada(carton_id)
 
     if carton.scan_end_at:
         return jsonify({'error': 'Paczka jest zakończona — nie ma czego odblokowywać.'}), 409

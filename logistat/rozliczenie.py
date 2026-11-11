@@ -112,6 +112,15 @@ def recompute_general_stat(uebergabe_nr, land, data_pliku, actor_id=None, from_s
     """
     if not (uebergabe_nr and data_pliku):
         return
+    # Blokada linii PRZED suma (przeglad kodu 2026-11-11): dwa konce paczek
+    # jednej linii naraz liczyly sume rownolegle, kazdy bez kartonu drugiego,
+    # i pozniejszy zapis gubil ilosci pierwszego. Po blokadzie SUM jest nowym
+    # zapytaniem i widzi kartony zatwierdzone przez tego, na kogo czekal.
+    existing = GeneralStat.query.filter_by(
+        list_id=uebergabe_nr,
+        country_ledger=land,
+        loading_date=data_pliku,
+    ).with_for_update().first()
     total = db.session.query(
         func.coalesce(func.sum(ImportedCarton.stueckzahl), 0)
     ).filter(
@@ -119,12 +128,6 @@ def recompute_general_stat(uebergabe_nr, land, data_pliku, actor_id=None, from_s
         ImportedCarton.land == land,
         ImportedCarton.data_pliku == data_pliku,
     ).scalar() or 0
-
-    existing = GeneralStat.query.filter_by(
-        list_id=uebergabe_nr,
-        country_ledger=land,
-        loading_date=data_pliku,
-    ).first()
 
     if existing:
         existing.amounts = total
