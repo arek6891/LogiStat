@@ -60,10 +60,8 @@ def policz_wydajnosc(paczki, szkolenia=(), cel_dnia=None, jako_szkolony=()):
                     and cel_dnia(dzien) > 0:
                 paczek_szkolenia += 1
                 continue
-            sztuk_zwykle += sztuk
-            if start:
-                wszystkie_okresy.append((start, koniec))
-                zwykle_okresy.append((start, koniec))
+            # Sztuki bez godzin tylko w `sztuk` (prawdziwa suma) — w liczniku
+            # szt./h i sredniej zawyzalyby wynik (przeglad kodu 2026-11-11).
             continue
 
         pozostale = (odejmij_okresy(start, koniec, jako_szkolony)
