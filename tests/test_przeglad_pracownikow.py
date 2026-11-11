@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta
 
 from conftest import make_user, strona_z_js
 
-from logistat.czas import local_day_bounds, local_today
+from logistat.czas import local_day_bounds, local_today, teraz_utc
 from logistat.extensions import db
 from logistat.models import ImportedCarton, UserOption, get_setting_int, set_setting
 
@@ -175,6 +175,27 @@ def test_paczki_bez_czasu_nie_zawyzaja_sredniej(leader_client):
     db.session.commit()
 
     assert przeglad(leader_client)['srednia_szt_h'] == 100.0
+
+
+def test_paczka_bez_czasu_obok_mierzonych_nie_zawyza_osoby(leader_client):
+    """Przeglad kodu 2026-11-11: osoba z mierzonymi paczkami i jedna bez startu
+    (albo start == koniec) — sztuki bez godzin szly do licznika szt./h i do
+    sredniej zespolu (bylo 1000 szt./h zamiast 100)."""
+    a = make_user('operator', username='a', display_name='Ala')
+    godziny_pracy(a, 3, sztuk_na_paczke=50, minut_na_paczke=30)       # 100 szt./h
+    db.session.add(ImportedCarton(
+        barcode='BEZ-STARTU-A', land='PL', stueckzahl=5000, ziel_datum=ZIEL, data_pliku=ZIEL,
+        uebergabe_nr='UB-1', scan_end_at=teraz_utc(), scan_end_by=a.id))
+    db.session.commit()
+    t = local_day_bounds(local_today())[0] + timedelta(hours=20)
+    paczka('ZERO-A', a, 700, t, t)
+
+    dane = przeglad(leader_client)
+    r = wiersz(dane, 'Ala')
+
+    assert r['szt_h'] == 100.0
+    assert r['sztuk'] == 150 + 5000 + 700, 'prawdziwa suma sztuk zostaje'
+    assert dane['srednia_szt_h'] == 100.0
 
 
 def test_oceny_dobra_ok_slaba(leader_client):
