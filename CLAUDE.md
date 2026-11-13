@@ -188,7 +188,7 @@ Every PR: **green CI** (`.github/workflows/testy.yml` — pytest on Postgres 16 
 - Baseline = **team mean for the period** (`srednia_szt_h` = all pieces / all scanning hours), never a stored norm. Includes the „za mało danych" bucket (hour-weighted); cartons without measured time excluded. `proc_sredniej` = vs colleagues, and the UI says so.
 - `min_packages_rank` (3) gates **ranking and verdicts only**, not the mean; below it → „za mało danych" (never hidden).
 - `AppSetting`: `norm_good_pct` (110, 🟢, `>=`), `norm_weak_pct` (90, 🔴, `<=`), `min_packages_rank` (3) — via `PUT /api/settings`, `/admin/settings`.
-- Pieces without measured time → `szt_h: null` (not 0). Nothing divides by zero.
+- Pieces without measured time → `szt_h: null` (not 0). Nothing divides by zero. A person with both: untimed cartons count only in `sztuk` (the real total), **never in the szt./h numerator or the team mean** (code review 2026-11-11 — a 5000-piece carton without Start next to timed ones gave 3900 szt./h instead of 100).
 - Soft-deleted workers stay in figures, badged „nieaktywna" (`is_active_user` on the row).
 - Range filters `scan_end_at` via `local_day_bounds()`, half-open.
 - Target `target_szt_h` (current value; the history above decides past days; 0 = unset → `cel_szt_h: null`, columns hidden) adds `proc_celu` / `ocena_celu` **beside** the mean. Verdict is two-state (`>= 100 %` → `spelnia`), not the mean's bands. `spelnia_cel` is `null` when unset **or ranking empty**.
